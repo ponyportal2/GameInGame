@@ -91,14 +91,14 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     root.add_child(runner)
     var agent = _controller(created.name, created.path, runner)
     var tool_events: Array[String] = []
-    var thought := ""
-    var streamed := ""
+    var thought := {"text": ""}
+    var streamed := {"text": ""}
     agent.llm_snippet.connect(func(kind, text):
         if kind == "tool": tool_events.append(str(text))
     )
     agent.llm_stream_delta.connect(func(kind, text):
-        if kind == "thinking": thought += str(text)
-        elif kind == "assistant": streamed += str(text)
+        if kind == "thinking": thought.text += str(text)
+        elif kind == "assistant": streamed.text += str(text)
     )
 
     agent.send_player_request("Build a tiny test game")
@@ -109,8 +109,8 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     assert_true(runner.has_active_game(), "Pi custom reload_game round-tripped into GameRunner")
     assert_true(tool_events.any(func(v): return "write" in v), "real Pi tool events reach GameSmith")
     assert_true(tool_events.any(func(v): return "reload_game" in v), "custom GameSmith tool event reaches UI stream")
-    assert_true(streamed.contains("Built the initial"), "real Pi text deltas stream to GameSmith")
-    assert_true(thought != "", "provider-exposed Pi thinking deltas stream to GameSmith")
+    assert_true(str(streamed.text).contains("Built the initial"), "real Pi text deltas stream to GameSmith")
+    assert_true(str(thought.text) != "", "provider-exposed Pi thinking deltas stream to GameSmith")
     var log = WorkspaceStoreScript.new().git.log(created.path, 5)
     assert_true("build initial Pi game" in str(log.get("output", "")), "Pi custom git_commit creates milestone")
 
@@ -119,7 +119,7 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     assert_true(bool(ok), "real Pi completes second edit turn")
     main = FileAccess.get_file_as_string(created.path.path_join("main.gd"))
     assert_true("var speed := 400.0" in main and not "var speed := 200.0" in main, "Pi built-in edit changes existing game safely")
-    assert_true(streamed.contains("Player speed is now 400"), "second final response also streams")
+    assert_true(str(streamed.text).contains("Player speed is now 400"), "second final response also streams")
 
     var state = await agent.rpc.command({"type": "get_state"}, 15.0)
     assert_true(bool(state.get("success", false)), "Pi RPC state is available")
