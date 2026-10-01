@@ -34,6 +34,7 @@ var turn_count := 0
 var limit_abort_sent := false
 var streamed_text := false
 var bridge_dir := ""
+var restart_after_finish := false
 
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
@@ -95,6 +96,9 @@ func send_player_request(text: String) -> void:
     await _maybe_auto_compact("after_turn")
     status_changed.emit("Ready")
     busy = false
+    if restart_after_finish:
+        restart_after_finish = false
+        restart_runtime()
     finished.emit(true)
 
 func compact_now() -> Dictionary:
@@ -127,6 +131,15 @@ func restart_runtime() -> void:
     rpc = null
     runtime_config = {}
     bridge_dir = ""
+
+func settings_changed() -> void:
+    if busy:
+        restart_after_finish = true
+    else:
+        restart_runtime()
+
+func context_tokens() -> int:
+    return last_context_tokens
 
 func _exit_tree() -> void:
     restart_runtime()
@@ -290,6 +303,9 @@ func _fail(message: String) -> void:
     assistant_message.emit("Error: " + message)
     status_changed.emit("Ready")
     busy = false
+    if restart_after_finish:
+        restart_after_finish = false
+        restart_runtime()
     finished.emit(false)
 
 func _snippet(text: String) -> String:
