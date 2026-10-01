@@ -186,7 +186,6 @@ func _command_line(config: Dictionary) -> String:
         "--mode", "rpc",
         "--session-dir", str(config.session_dir),
         "--session-id", "gamesmith",
-        "--name", str(config.get("game_name", "GameSmith")),
         "--no-extensions",
         "--no-skills",
         "--no-prompt-templates",
@@ -196,14 +195,8 @@ func _command_line(config: Dictionary) -> String:
         "--no-builtin-tools",
         "--tools", "read,edit,write,grep,find,ls,delete_path,move_path,git_status,git_diff,git_log,git_commit,reload_game,read_runtime_log",
         "--extension", str(config.extension_path),
-        "--provider", str(config.provider),
-        "--model", str(config.model),
         "--approve"
     ]
-    var thinking = str(config.get("thinking", ""))
-    if thinking != "":
-        args.append("--thinking")
-        args.append(thinking)
 
     if OS.get_name() == "Windows":
         var command = "cd /D " + _quote_windows(str(config.workspace)) + " && " + _quote_windows(pi_bin)
