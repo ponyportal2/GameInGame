@@ -6,6 +6,7 @@ const AppLoggerScript = preload("res://src/core/app_logger.gd")
 
 signal status_changed(text: String)
 signal assistant_message(text: String)
+signal llm_snippet(kind: String, text: String)
 signal finished(ok: bool)
 
 const DEFAULT_MAX_STEPS = 150
@@ -92,6 +93,13 @@ func send_player_request(text: String) -> void:
         var message: Dictionary = result.message.duplicate(true)
         messages.append(message)
         var calls: Array = message.get("tool_calls", [])
+        var thinking_snippet = _snippet(message.get("reasoning_content", message.get("reasoning", "")))
+        if thinking_snippet != "":
+            llm_snippet.emit("thinking", thinking_snippet)
+        if not calls.is_empty():
+            var content_snippet = _snippet(message.get("content", ""))
+            if content_snippet != "":
+                llm_snippet.emit("assistant", content_snippet)
         if calls.is_empty():
             var content = str(message.get("content", "Done."))
             if content.strip_edges() == "": content = "Done."
@@ -133,6 +141,9 @@ func send_player_request(text: String) -> void:
                 continue
             var fn_name = str(fn.get("name", ""))
             var raw_args = str(fn.get("arguments", "{}"))
+            var call_snippet = _snippet("%s %s" % [fn_name, raw_args])
+            if call_snippet != "":
+                llm_snippet.emit("tool", call_snippet)
             var json = JSON.new()
             var parse_error = json.parse(raw_args)
             var parsed = json.data if parse_error == OK else null
@@ -161,6 +172,14 @@ func send_player_request(text: String) -> void:
             conversation.append(game_name, tool_message)
     _fail("The agent reached the per-request step limit (%d). Your files were left as-is; continue with another message if needed." % max_steps)
 
+
+func _snippet(value: Variant) -> String:
+    if value == null:
+        return ""
+    var flat = str(value).replace("\r", " ").replace("\n", " ").strip_edges()
+    if flat == "":
+        return ""
+    return flat.left(50) + ("…" if flat.length() > 50 else "")
 
 func _wait_for_provider_slot(delay_sec: float, throttle_key: String, step_number: int) -> void:
     if delay_sec <= 0.0:

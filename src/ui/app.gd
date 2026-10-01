@@ -231,6 +231,7 @@ func _open_game(name: String) -> void:
     agent = AgentControllerScript.new(); add_child(agent); agent.configure(name, tools)
     agent.status_changed.connect(func(text): status_label.text = text)
     agent.assistant_message.connect(func(text): _append_chat("assistant", text))
+    agent.llm_snippet.connect(func(kind, text): _append_chat(kind, text))
     agent.finished.connect(_on_agent_finished)
     _load_transcript()
     if FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
@@ -276,8 +277,8 @@ func _send_chat() -> void:
     agent.send_player_request(text)
 
 func _append_chat(role: String, text: String) -> void:
-    var label = "YOU" if role == "user" else ("AGENT" if role == "assistant" else "HOST")
-    var color = "9bb7ff" if role == "user" else ("c2f0cb" if role == "assistant" else "8393b2")
+    var label = {"user": "YOU", "assistant": "AGENT", "thinking": "THINK", "tool": "TOOL"}.get(role, "HOST")
+    var color = {"user": "9bb7ff", "assistant": "c2f0cb", "thinking": "6f7ea3", "tool": "e5b978"}.get(role, "8393b2")
     transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n%s\n\n" % [color, label, text])
     await get_tree().process_frame
     transcript_view.scroll_to_line(maxi(0, transcript_view.get_line_count() - 1))

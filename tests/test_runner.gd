@@ -60,6 +60,7 @@ func run() -> void:
     await _test_chat_pause_keeps_host_alive()
     await _test_chat_owns_mouse_mode_across_generated_reload()
     await _test_enter_sends_chat_message()
+    await _test_llm_snippets_reach_chat()
     await _test_library_is_blocked_while_agent_works()
     await _test_legacy_user_data_migration()
     await _test_debug_logs_and_redaction()
@@ -243,6 +244,50 @@ func _test_enter_sends_chat_message() -> void:
     assert_eq(fake.call_count, 1, "Shift+Enter does not send the chat message")
     assert_true("\n" in app.chat_input.text, "Shift+Enter inserts a newline for multiline editing")
 
+    app.queue_free()
+    paused = false
+    await process_frame
+    store.delete_game(name)
+
+func _test_llm_snippets_reach_chat() -> void:
+    var store = WorkspaceStoreScript.new(); store.ensure()
+    var name = "LLM Snippets %d" % Time.get_ticks_msec()
+    var created: Dictionary = store.create_game(name)
+    assert_true(bool(created.get("ok", false)), "creates llm-snippet workspace")
+    if not created.get("ok", false): return
+    _write(created.path.path_join("main.gd"), "extends Node\n")
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app._open_game(name)
+    await process_frame
+    app._set_chat_visible(true)
+    var thinking_raw = "I should inspect the workspace files before answering this question in detail."
+    var assistant_raw = "Let me check the current files first so I can answer this accurately."
+    var query_raw = "find the player speed constant inside all workspace scripts"
+    var tool_raw = "search_text " + JSON.stringify({"query": query_raw})
+    var fake = FakeProvider.new(self)
+    fake.push({"ok": true, "message": {"role": "assistant", "content": assistant_raw, "reasoning_content": thinking_raw, "tool_calls": [_tool_call("search-1", "search_text", {"query": query_raw})]}})
+    fake.push({"ok": true, "message": {"role": "assistant", "content": "All done."}})
+    app.agent.provider_override = fake
+    app.chat_input.text = "what is the status"
+    app._send_chat()
+    for _i in 600:
+        if not app.agent.busy: break
+        await process_frame
+    await process_frame
+    var ui_text: String = app.transcript_view.get_parsed_text()
+    var thinking_snip = thinking_raw.left(50) + "…"
+    var assistant_snip = assistant_raw.left(50) + "…"
+    var tool_snip = tool_raw.left(50) + "…"
+    assert_true(not app.agent.busy, "llm snippet request finishes")
+    assert_true(thinking_snip in ui_text, "thinking block snippet reaches chat")
+    assert_true(not thinking_raw in ui_text, "thinking block is truncated to a snippet")
+    assert_true(assistant_snip in ui_text, "intermediate assistant snippet reaches chat")
+    assert_true(not assistant_raw in ui_text, "intermediate assistant text is truncated to a snippet")
+    assert_true(tool_snip in ui_text, "tool call snippet reaches chat")
+    assert_true("All done." in ui_text, "final assistant message still posts in full")
+    assert_eq(TranscriptStoreScript.new().read_all(name).size(), 2, "snippets stay out of the durable transcript")
     app.queue_free()
     paused = false
     await process_frame
