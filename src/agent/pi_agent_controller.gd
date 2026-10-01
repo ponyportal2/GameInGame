@@ -33,6 +33,8 @@ var last_error := ""
 var turn_count := 0
 var limit_abort_sent := false
 var streamed_text := false
+var current_streamed_text := false
+var current_streamed_thinking := false
 var bridge_dir := ""
 var restart_after_finish := false
 
@@ -243,6 +245,11 @@ func _maybe_auto_compact(phase: String) -> void:
 func _on_pi_record(record: Dictionary) -> void:
     var type = str(record.get("type", ""))
     match type:
+        "message_start":
+            var started_message: Dictionary = record.get("message", {})
+            if str(started_message.get("role", "")) == "assistant":
+                current_streamed_text = false
+                current_streamed_thinking = false
         "message_update":
             var event: Dictionary = record.get("assistantMessageEvent", {})
             var event_type = str(event.get("type", ""))
@@ -250,12 +257,14 @@ func _on_pi_record(record: Dictionary) -> void:
                 var delta = str(event.get("delta", ""))
                 if delta != "":
                     streamed_text = true
+                    current_streamed_text = true
                     llm_stream_delta.emit("assistant", delta)
             elif event_type == "text_end":
                 llm_stream_end.emit("assistant")
             elif event_type == "thinking_delta":
                 var thinking = str(event.get("delta", ""))
                 if thinking != "":
+                    current_streamed_thinking = true
                     llm_stream_delta.emit("thinking", thinking)
             elif event_type == "thinking_end":
                 llm_stream_end.emit("thinking")
@@ -275,8 +284,26 @@ func _on_pi_record(record: Dictionary) -> void:
                 rpc.command({"type": "abort"}, 10.0)
         "message_end":
             var message: Dictionary = record.get("message", {})
-            if str(message.get("role", "")) == "assistant" and str(message.get("stopReason", "")) == "error":
-                last_error = str(message.get("errorMessage", "Pi provider request failed."))
+            if str(message.get("role", "")) == "assistant":
+                var content = message.get("content", [])
+                if typeof(content) == TYPE_ARRAY:
+                    if not current_streamed_text:
+                        for block in content:
+                            if typeof(block) == TYPE_DICTIONARY and str(block.get("type", "")) == "text":
+                                var text = str(block.get("text", ""))
+                                if text != "":
+                                    streamed_text = true
+                                    llm_stream_delta.emit("assistant", text)
+                                    llm_stream_end.emit("assistant")
+                    if not current_streamed_thinking:
+                        for block in content:
+                            if typeof(block) == TYPE_DICTIONARY and str(block.get("type", "")) == "thinking":
+                                var thinking = str(block.get("thinking", ""))
+                                if thinking != "":
+                                    llm_stream_delta.emit("thinking", thinking)
+                                    llm_stream_end.emit("thinking")
+                if str(message.get("stopReason", "")) == "error":
+                    last_error = str(message.get("errorMessage", "Pi provider request failed."))
         "auto_retry_start":
             status_changed.emit("Pi retry %d/%d…" % [int(record.get("attempt", 1)), int(record.get("maxAttempts", 3))])
             AppLoggerScript.game_event(game_name, "pi.retry", JSON.stringify(record), "WARN")
