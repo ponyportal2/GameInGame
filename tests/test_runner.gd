@@ -79,6 +79,7 @@ func run() -> void:
     await _test_provider_settings_surface()
     await _test_custom_provider_and_reasoning_payload()
     await _test_agent_llm_call_delay()
+    await _test_agent_auto_compaction_threshold()
     await _test_agent_malformed_tool_arguments()
     await _test_agent_provider_failure()
     await _test_agent_step_limit()
@@ -414,14 +415,14 @@ func _test_app_identity_settings_and_compact_ui() -> void:
     app.agent_steps_spin.value = 77
     app.llm_delay_spin.value = 2.5
     if app.get("compaction_auto_spin") != null:
-        app.compaction_auto_spin.value = 54321
+        app.compaction_auto_spin.value = 54000
     if app.get("compaction_keep_spin") != null:
-        app.compaction_keep_spin.value = 12345
+        app.compaction_keep_spin.value = 12000
     app._save_settings()
     assert_eq(int(metadata.global_settings().get("max_agent_steps", -1)), 77, "Settings UI persists edited agent action limit")
     assert_eq(float(metadata.global_settings().get("llm_call_delay_sec", -1.0)), 2.5, "Settings UI persists edited LLM call delay")
-    assert_eq(int(metadata.global_settings().get("compaction_auto_tokens", -1)), 54321, "Settings UI persists automatic compaction threshold")
-    assert_eq(int(metadata.global_settings().get("compaction_keep_recent_tokens", -1)), 12345, "Settings UI persists recent-token compaction budget")
+    assert_eq(int(metadata.global_settings().get("compaction_auto_tokens", -1)), 54000, "Settings UI persists automatic compaction threshold")
+    assert_eq(int(metadata.global_settings().get("compaction_keep_recent_tokens", -1)), 12000, "Settings UI persists recent-token compaction budget")
     metadata.save_global_settings(original_settings)
     var send = _find_button_with_text(app.chat_overlay, "Send")
     assert_true(send != null and send.custom_minimum_size.y <= 68.0, "chat composer Send button is not oversized")
@@ -819,6 +820,60 @@ func _test_agent_llm_call_delay() -> void:
     agent.queue_free(); runner.queue_free(); await process_frame
     store.delete_game(name)
     metadata.save_global_settings(original_settings)
+
+func _test_agent_auto_compaction_threshold() -> void:
+    var metadata = MetadataStoreScript.new()
+    var original_settings = metadata.global_settings().duplicate(true)
+    var settings = original_settings.duplicate(true)
+    settings.provider = "custom"
+    settings.model = "auto-compact-test-%d" % Time.get_ticks_msec()
+    settings.llm_call_delay_sec = 0.0
+    settings.compaction_auto_tokens = 5000
+    settings.compaction_keep_recent_tokens = 1000
+    metadata.save_global_settings(settings)
+
+    var store = WorkspaceStoreScript.new(); store.ensure()
+    var name = "Auto Compaction %d" % Time.get_ticks_msec()
+    var created = store.create_game(name)
+    assert_true(bool(created.get("ok", false)), "creates auto-compaction workspace")
+    if not created.get("ok", false):
+        metadata.save_global_settings(original_settings)
+        return
+
+    var conv = ConversationStoreScript.new()
+    for i in 12:
+        conv.append(name, {"role": "user", "content": "old-request-%d %s" % [i, "q".repeat(1600)]})
+        conv.append(name, {"role": "assistant", "content": "old-answer-%d" % i})
+
+    var runner = GameRunnerScript.new(); root.add_child(runner)
+    var fake = FakeProvider.new(self)
+    fake.push({"ok": true, "message": {"role": "assistant", "content": "## Goal\nContinue the game.\n\n## Constraints & Preferences\n- none\n\n## Progress\n### Done\n- [x] Prior turns\n\n### In Progress\n- [ ] Continue\n\n### Blocked\n- none\n\n## Key Decisions\n- **Keep state**: continue\n\n## Next Steps\n1. Continue\n\n## Critical Context\n- existing game"}})
+    fake.push({"ok": true, "message": {"role": "assistant", "content": "Continued after compaction."}})
+    var agent = AgentControllerScript.new(); root.add_child(agent)
+    agent.configure(name, GameToolsScript.new(created.path, runner))
+    agent.provider_override = fake
+    agent.send_player_request("tell me the current status")
+    assert_true(await agent.finished, "agent continues normally after automatic compaction")
+    assert_eq(fake.call_count, 2, "crossing threshold makes one summary call then one normal agent call")
+    if fake.seen_tools.size() >= 2:
+        assert_true((fake.seen_tools[0] as Array).is_empty(), "automatic compaction summary call has no coding tools")
+        assert_true(not (fake.seen_tools[1] as Array).is_empty(), "normal call after compaction receives coding tools")
+    if fake.seen_messages.size() >= 2:
+        var normal_messages: Array = fake.seen_messages[1]
+        assert_true(normal_messages.size() >= 3, "normal call receives system, checkpoint/tail, and new user")
+        assert_true("The conversation history before this point was compacted into the following summary:" in JSON.stringify(normal_messages), "normal call receives persisted Pi compaction checkpoint")
+        assert_true(str(normal_messages[-1].get("content", "")) == "tell me the current status", "new user message follows compacted stable prefix")
+    var entries = conv.read_entries(name)
+    var has_checkpoint = false
+    for entry in entries:
+        if str(entry.get("type", "")) == "compaction":
+            has_checkpoint = true
+    assert_true(has_checkpoint, "automatic compaction persists append-only checkpoint marker")
+
+    agent.queue_free(); runner.queue_free(); await process_frame
+    store.delete_game(name)
+    metadata.save_global_settings(original_settings)
+
 
 func _test_agent_malformed_tool_arguments() -> void:
     var store = WorkspaceStoreScript.new(); store.ensure()
