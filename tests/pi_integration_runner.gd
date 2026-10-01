@@ -260,7 +260,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     agent.send_player_request("remember this long context " + "x".repeat(6000))
     var ok = await agent.finished
     assert_true(bool(ok), "real Pi stores long context before manual compaction")
-    agent.send_player_request("remember this second context span too " + "z".repeat(3000))
+    agent.send_player_request("remember this second context span too " + "z".repeat(6000))
     ok = await agent.finished
     assert_true(bool(ok), "real Pi stores a second user span so manual compaction has an older span to summarize")
     var manual_stats = await agent.rpc.command({"type": "get_session_stats"}, 15.0)
