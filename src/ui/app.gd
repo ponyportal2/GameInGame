@@ -4,7 +4,7 @@ const WorkspaceStoreScript = preload("res://src/core/workspace_store.gd")
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
-const AgentControllerScript = preload("res://src/agent/agent_controller.gd")
+const AgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const ProviderFactoryScript = preload("res://src/providers/provider_factory.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
@@ -58,6 +58,7 @@ var game_override_provider: OptionButton
 var game_override_model: LineEdit
 var gameplay_mouse_mode := Input.MOUSE_MODE_VISIBLE
 var generated_input_states: Array = []
+var stream_open_kind := ""
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -391,6 +392,10 @@ func _open_game(name: String) -> void:
     agent.status_changed.connect(func(text): status_label.text = text)
     agent.assistant_message.connect(func(text): _append_chat("assistant", text))
     agent.llm_snippet.connect(func(kind, text): _append_chat(kind, text))
+    if agent.has_signal("llm_stream_delta"):
+        agent.llm_stream_delta.connect(_append_stream_delta)
+    if agent.has_signal("llm_stream_end"):
+        agent.llm_stream_end.connect(_end_stream_block)
     agent.finished.connect(_on_agent_finished)
     _load_transcript()
     if FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
@@ -452,6 +457,24 @@ func _append_chat(role: String, text: String) -> void:
     await get_tree().process_frame
     transcript_view.scroll_to_line(maxi(0, transcript_view.get_line_count() - 1))
 
+func _append_stream_delta(kind: String, text: String) -> void:
+    if text == "":
+        return
+    if stream_open_kind != kind:
+        if stream_open_kind != "":
+            transcript_view.append_text("\n\n")
+        var label = {"assistant": "AGENT", "thinking": "THINK"}.get(kind, "AGENT")
+        var color = {"assistant": "c2f0cb", "thinking": "6f7ea3"}.get(kind, "c2f0cb")
+        transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n" % [color, label])
+        stream_open_kind = kind
+    transcript_view.append_text(_escape_bbcode(text))
+    transcript_view.scroll_to_line(maxi(0, transcript_view.get_line_count() - 1))
+
+func _end_stream_block(kind: String) -> void:
+    if stream_open_kind == kind:
+        transcript_view.append_text("\n\n")
+        stream_open_kind = ""
+
 func _escape_bbcode(text: String) -> String:
     # Godot's documented RichTextLabel escaping pattern: blocking opening
     # brackets is enough to prevent user/model/tool text from becoming tags.
@@ -459,6 +482,7 @@ func _escape_bbcode(text: String) -> String:
 
 func _load_transcript() -> void:
     transcript_view.clear()
+    stream_open_kind = ""
     for entry in transcript.read_all(current_game):
         _append_chat(str(entry.get("role", "system")), str(entry.get("content", "")))
 
@@ -591,8 +615,8 @@ func _open_settings() -> void:
         game_override_model.text = str(game_meta.get("model_override", ""))
         game_override_provider.disabled = false
         game_override_model.editable = true
-        var estimated = agent.conversation.estimate_provider_tokens(current_game) if is_instance_valid(agent) else 0
-        compaction_status_label.text = "Current provider history: ~%d estimated tokens." % estimated
+        var estimated = agent.context_tokens() if is_instance_valid(agent) and agent.has_method("context_tokens") else 0
+        compaction_status_label.text = "Current Pi context: ~%d tokens." % estimated if estimated > 0 else "Pi context size is available after the first provider response."
         compact_now_button.disabled = not is_instance_valid(agent) or agent.busy
     else:
         game_override_provider.select(0)
@@ -661,6 +685,8 @@ func _save_settings() -> void:
         game_meta.provider_override = str(game_override_provider.get_item_metadata(game_override_provider.selected))
         game_meta.model_override = game_override_model.text.strip_edges()
         metadata.write_game(current_game, game_meta)
+        if is_instance_valid(agent) and agent.has_method("settings_changed"):
+            agent.settings_changed()
     settings_dialog.visible = false
     _toast("Settings saved.")
 
