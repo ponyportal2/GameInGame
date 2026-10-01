@@ -17,21 +17,21 @@
 - Bounded global `user://logs/gamesmith-app.log` plus bounded per-game `user://host/games/<game>/gamesmith.log`, with API-key/Authorization redaction.
 - Compact library/chat action controls and Settings access from both library and game chat.
 
-## Windows GitHub-checkout launcher
+## Windows release ZIP
 
-The repository root contains `GameSmith.exe`, a deterministic 1.5 KB PE32+ x86-64 GUI launcher, plus `launch-gamesmith.ps1`.
+The repository root contains `GameSmith-Windows.zip` rather than a loose executable. After extraction it contains `GameSmith.exe`, `GameSmith.pck`, and the supplied Godot 4.7.2 Windows x64 runtime under `runtime/`.
 
-The launcher uses `runtime/Godot_v4.7.2-stable_win64.exe` directly when present. The PowerShell bootstrap downloads the official Godot 4.7.2 x64 ZIP **only when that executable is missing**, verifies SHA-256 `731980f9608d61333e5baf54a2ef17210acc7a538446c0cb9969f002aca1e953`, extracts it, then launches this source checkout via `--path`.
+Normal Windows startup is therefore fully local and does not download Godot. The launcher still retains its checksum-verified missing-runtime fallback, but the bundled executable satisfies the existing-runtime/no-network path.
 
-The ~180 MB Godot runtime is intentionally excluded from ordinary Git because it exceeds GitHub's normal 100 MB per-file Git limit. Users who put it at the documented `runtime/` path get a fully local launch.
+Package verification checks ZIP integrity and requires the launcher, PCK, bundled runtime, and README to be present. The current release ZIP is below GitHub's 100 MB per-file Git limit.
 
-`tools/windows-bootstrap/` retains the fuller release bootstrap and unit tests for existing-runtime/no-network, missing-runtime download/cache, checksum rejection, invalid existing paths, and ZIP traversal rejection. `tools/windows-repo-launcher/build.py` deterministically reproduces/validates the root executable.
+`tools/windows-bootstrap/` contains the release launcher and unit tests for existing-runtime/no-network, missing-runtime download/cache, checksum rejection, invalid existing paths, and ZIP traversal rejection.
 
 ## Verification
 
 Final source verification on Godot 4.7.2:
 
-- deterministic root Windows launcher verification: **pass**;
+- self-contained root Windows ZIP verification: **pass**;
 - Go Windows bootstrap tests: **pass**;
 - fast Godot suite: **135/135**;
 - real windowed hostile-input suite: **10/10**;

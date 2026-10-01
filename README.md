@@ -2,19 +2,27 @@
 
 GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with an LLM agent. Every generated game lives in its own Git workspace, the agent can only use structured workspace/Git/reload/log tools, and successful code changes are hot-reloaded without restarting the host.
 
-## Windows: run from this GitHub checkout
+## Windows
 
-Double-click **`GameSmith.exe` in the repository root**.
+Download **`GameSmith-Windows.zip` from the repository root**, then:
 
-The root launcher runs this source tree directly. It first looks for:
+1. **Extract the entire ZIP** (do not run it from inside the ZIP viewer).
+2. Open the extracted `GameSmith-Windows` folder.
+3. Double-click **`GameSmith.exe`**.
+
+The ZIP is self-contained and already includes:
 
 ```text
-runtime\Godot_v4.7.2-stable_win64.exe
+GameSmith-Windows/
+  GameSmith.exe
+  GameSmith.pck
+  runtime/
+    Godot_v4.7.2-stable_win64.exe
 ```
 
-If that executable exists, **no runtime download is attempted**. If it is genuinely missing, `launch-gamesmith.ps1` downloads the official Godot 4.7.2 x64 ZIP, verifies SHA-256 `731980f9608d61333e5baf54a2ef17210acc7a538446c0cb9969f002aca1e953`, extracts it under `runtime/`, and launches `project.godot`. The runtime directory is ignored by Git because the Godot GUI executable is larger than GitHub's normal per-file Git limit.
+The bundled Godot runtime means normal startup requires **no Godot download**. The launcher still contains the verified download path as a recovery fallback if someone deletes the bundled runtime.
 
-Git for Windows must be available on `PATH` for generated-game repositories.
+Git for Windows must be installed and available on `PATH` for generated-game repositories.
 
 Linux/development launch:
 
@@ -22,7 +30,7 @@ Linux/development launch:
 ./Godot_v4.7.2-stable_linux.x86_64 --path .
 ```
 
-The older release-package bootstrapper and its unit tests remain under `tools/windows-bootstrap/`; the source-checkout launcher is documented under `tools/windows-repo-launcher/`.
+The release launcher source and unit tests remain under `tools/windows-bootstrap/`.
 
 ## Settings
 
@@ -88,6 +96,6 @@ Full source verification:
 GODOT_BIN=./Godot_v4.7.2-stable_linux.x86_64 tools/testing/run-verification.sh
 ```
 
-The full workflow verifies the deterministic root Windows launcher, the Go runtime-bootstrap unit tests (when Go is installed), fast agent/runtime/storage tests, a windowed hostile-generated-input regression (when `xvfb-run` is present), real OpenAI-compatible `/v1/chat/completions` traffic through the production HTTP adapter, two-process durable conversation replay, and a process-level migration from the old `GameSmith Host` app-data directory to `GameSmithHost`.
+The full workflow verifies the self-contained root Windows ZIP, the Go runtime-bootstrap unit tests (when Go is installed), fast agent/runtime/storage tests, a windowed hostile-generated-input regression (when `xvfb-run` is present), real OpenAI-compatible `/v1/chat/completions` traffic through the production HTTP adapter, two-process durable conversation replay, and a process-level migration from the old `GameSmith Host` app-data directory to `GameSmithHost`.
 
 The fake-v1 acceptance server is under `tools/fake-openai-endpoint/`; GameSmith-specific orchestration is documented in `tools/testing/README.md`. The server requires Node but no npm install for the GameSmith scripted workflow.

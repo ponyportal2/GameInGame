@@ -8,7 +8,7 @@ if [[ -z "$GODOT_BIN" || ! -x "$GODOT_BIN" ]]; then
 fi
 TMP="${GAMESMITH_TEST_TMP:-$(mktemp -d)}"
 
-python3 "$ROOT/tools/windows-repo-launcher/build.py" --verify "$ROOT/GameSmith.exe"
+python3 "$ROOT/tools/testing/verify_windows_package.py"
 if command -v go >/dev/null 2>&1; then
   (cd "$ROOT/tools/windows-bootstrap" && go test ./...)
 else
