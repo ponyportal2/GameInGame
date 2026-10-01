@@ -1,6 +1,8 @@
 # GameSmith
 
-GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with an LLM agent. Every generated game lives in its own Git workspace, the agent can only use structured workspace/Git/reload/log tools, and successful code changes are hot-reloaded without restarting the host.
+GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Production agent behavior is provided by a globally installed **Pi coding agent** process; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls.
+
+The integration/test target is `@earendil-works/pi-coding-agent@0.99.2`.
 
 ## Windows
 
@@ -16,64 +18,54 @@ GameSmith-Windows/
     Godot_v4.7.2-stable_win64.exe
 ```
 
-Clone/download the repository, open `GameSmith-Windows`, and double-click **`GameSmith.exe`**. There is no release ZIP to unpack.
+Clone/download the repository, open `GameSmith-Windows`, and double-click **`GameSmith.exe`**. The bundled Godot runtime means normal startup needs no Godot download. Git for Windows must be installed and available on `PATH` for generated-game repositories.
 
-The bundled Godot runtime means normal startup requires **no Godot download**. The launcher still contains the verified download path as a recovery fallback if someone deletes the bundled runtime.
+GameSmith also expects a global `pi` executable. CI pins the integration target with:
 
-The Godot runtime is larger than GitHub's normal 100 MB Git-object limit, so that one file is stored with **Git LFS**. A Git clone with Git LFS resolves it to the real executable; browser-generated source archives depend on the repository's Git LFS archive setting.
+```bash
+npm install -g @earendil-works/pi-coding-agent@0.99.2
+```
 
-Git for Windows must be installed and available on `PATH` for generated-game repositories.
-
-Linux/development launch:
+For development on Linux:
 
 ```bash
 ./Godot_v4.7.2-stable_linux.x86_64 --path .
 ```
 
-The release launcher source and unit tests remain under `tools/windows-bootstrap/`.
+The Windows launcher source and unit tests are under `tools/windows-bootstrap/`.
 
 ## Settings
 
-Use **Settings** from either the library or an open game's chat toolbar. Current global controls are:
+Use **Settings** from either the library or an open game's chat toolbar. Current controls are Pi-oriented:
 
-- provider and model;
+- global Pi provider and model;
 - optional Custom OpenAI-compatible `/v1` base address;
-- provider API key;
-- `reasoning_effort` (`Provider default` omits the field);
-- **Agent action limit per request**, default **150**, configurable from 1 to 500;
-- **Delay between LLM calls**, default **6 seconds**;
-- **Automatic conversation compaction threshold**, default **100,000 estimated tokens**; set to **0** to disable;
-- **Recent context kept verbatim during compaction**, default **20,000 estimated tokens**;
-- **Compact now** when a game is open, for an explicit manual checkpoint.
+- provider API key passed to Pi;
+- Pi thinking/reasoning level;
+- **Pi turn limit per request**, default **150**, configurable from 1 to 500;
+- **Delay between Pi provider calls**, default **6 seconds**;
+- **Automatic Pi compaction threshold**, default **100,000 current-context tokens**; set to **0** to disable GameSmith's threshold;
+- **Recent tokens kept verbatim by Pi compaction**, default **20,000**;
+- **Compact now** when a game is open.
 
-Clicking **Compact now** returns to chat immediately so the operation is visible. GameSmith posts an ephemeral HOST progress line, disables the composer, Send, and Library controls until compaction finishes, then posts an explicit **finished**, **skipped**, or **failed** result. These status lines are UI-only and are not added to `transcript.jsonl` or future model context.
+OpenRouter, OpenCode Go, Command Code, and Custom OpenAI-compatible routes are mapped into Pi configuration. Custom can be used without an API key for local servers. **OpenAI subscription** delegates to Pi's global `openai-codex` authentication instead of GameSmith implementing a separate subscription token flow.
 
-Supported adapters in this build are OpenRouter, OpenCode Go, Command Code (OpenAI-compatible routes), and a Custom OpenAI-compatible provider. The Custom provider can be used without an API key for local servers.
+Per-game provider/model overrides remain available. Saving provider/model/thinking settings restarts only that game's Pi runtime; the generated game itself is not restarted.
 
-OpenAI subscription authentication remains behind the provider abstraction rather than being faked: the ChatGPT subscription path is not a plain embeddable API-key endpoint.
+## Agent activity and tools
 
-Settings is rendered as a host-owned in-canvas overlay rather than a modal subwindow. This keeps it visible and interactive above generated-game CanvasLayers even while gameplay is paused behind chat.
+Pi streams assistant text and provider-exposed thinking to GameSmith while a turn is running. GameSmith also shows short ephemeral **TOOL** activity snippets. Intermediate activity is not written to the human-readable transcript.
 
-## Live agent activity
+The model receives Pi's built-in coding tools such as `read`, `edit`, `write`, `grep`, `find`, and `ls`. GameSmith's Pi extension adds game-specific tools:
 
-While an agent turn is running, chat can show ephemeral **AGENT**, **TOOL**, and **THINK** snippets. These are *intermediate activity messages*, not token streaming: each appears after a provider response arrives and before/while its tool work is executed.
+- `delete_path`, `move_path`;
+- `git_status`, `git_diff`, `git_log`, `git_commit`;
+- `reload_game`;
+- `read_runtime_log`.
 
-- **AGENT** shows short assistant text that accompanied tool calls.
-- **TOOL** shows the tool name plus a short argument preview.
-- **THINK** is shown only when the provider explicitly exposes reasoning as a plain string (for example `reasoning_content` or `reasoning`). Null, structured, or unknown reasoning payloads are ignored.
-- Snippets are not persisted to the readable transcript and are not inserted into future provider context.
-- User/model/tool text is escaped before RichTextLabel BBCode parsing, so generated text such as `[color=red]` is displayed literally rather than interpreted as UI markup.
+No shell/bash/PowerShell tool is exposed to the model.
 
-## Agent file-tool behavior
-
-GameSmith keeps the model-facing file tools deliberately small. The current read/edit contract follows the useful parts of Pi/OMP-style coding-agent tooling without importing their shell or full patch languages:
-
-- `read_file(path, offset?, limit?)` returns a bounded **line window** (default 300, max 1000) with `line_start`, `line_end`, `total_lines`, `truncated`, and `next_offset`.
-- A truncated read is explicitly a preview. The agent is instructed to continue with `next_offset` or use `search_text`.
-- `patch_file` requires one exact unique match **against the complete file on disk**. It never edits the truncated read preview.
-- `write_file` is explicitly described as a complete overwrite and is reserved for new files or intentional full rewrites.
-
-This separation matters for large generated scripts: preview truncation can never silently truncate the persisted file during a surgical patch.
+GameSmith verifies completion at Pi's settlement boundary. A text-only `Done` is not accepted when a game-changing request has not produced the required workspace/reload state. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain Pi-owned.
 
 ## Library/chat behavior
 
@@ -81,14 +73,14 @@ This separation matters for large generated scripts: preview truncation can neve
 - **Enter** sends.
 - **Shift+Enter** inserts a newline.
 - **Escape** closes chat.
-- **Return to Library is disabled and programmatically blocked while the agent is working.** This prevents abandoning a live tool/reload sequence halfway through a request.
+- **Return to Library** is disabled and programmatically blocked while Pi is working.
 - While chat is open, GameSmith owns input: generated processing and generated `Control` mouse interception are suspended, captured mouse mode is released, and the prior gameplay input state is restored when chat closes.
 
-The library and chat toolbars intentionally use compact action buttons rather than full-height controls. Global **Logs** and **Settings** are available directly from the library; per-game **Folder**, **Logs**, and **Settings** are available in chat.
+Settings is rendered as a host-owned in-canvas overlay above generated-game CanvasLayers.
 
-## Data and logs
+## Data, sessions, and logs
 
-The writable application directory is now named **`GameSmithHost`** (no space).
+The writable application directory is named **`GameSmithHost`**.
 
 On Windows this is normally:
 
@@ -96,46 +88,50 @@ On Windows this is normally:
 %APPDATA%\Godot\app_userdata\GameSmithHost\
 ```
 
-On first launch after upgrading from v1.4 or earlier, GameSmith copies missing files from the old sibling `GameSmith Host` directory into `GameSmithHost`. Existing new-directory files win, and the old directory is deliberately left untouched as a safety copy.
+On first launch after upgrading from v1.4 or earlier, GameSmith copies missing files from the old sibling `GameSmith Host` directory into `GameSmithHost`. Existing files in the new directory win, and the old directory is left untouched as a safety copy.
 
 Important paths:
 
 - `user://games/<game>/` — generated game workspace and Git repository;
-- `user://host/games/<game>/` — transcript, provider-visible conversation, metadata, last-working snapshot, and **`gamesmith.log`**;
-- `user://host/credentials.json` — provider credentials outside all game workspaces;
-- `user://logs/gamesmith-app.log` — **global GameSmith log**.
+- `user://host/games/<game>/transcript.jsonl` — readable user/final-assistant transcript used by the UI;
+- `user://host/games/<game>/pi/` — GameSmith's Pi agent config, bridge files, and native Pi sessions;
+- `user://host/games/<game>/gamesmith.log` — per-game host/Pi/tool/reload log;
+- `user://host/credentials.json` — provider credentials outside game workspaces;
+- `user://logs/gamesmith-app.log` — global GameSmith log.
 
-Use **Logs** in the library to open the global log folder, or **Logs** inside a game's chat to open that game's host-data/log folder. These logs record high-level app/agent/provider/tool/reload/navigation events and are bounded in size. Authorization/API-key-like values are redacted before writing so the files are safer to share for debugging.
+Logs are bounded and redact Authorization/API-key-like values.
 
-## Conversation persistence, Pi-native compaction, and caching
+### Legacy transcript migration
 
-Production GameSmith now keeps the coding-agent session in **Pi's native session store**. Pi owns assistant reasoning, tool calls/results, session projection, checkpoint entries, and compaction; GameSmith does not rebuild or continuously reduce that history between ordinary turns.
+A game that has readable pre-Pi dialogue but no Pi session imports that dialogue into the **empty Pi session once**. GameSmith starts/resumes Pi before appending the current player request to `transcript.jsonl`, so that new request cannot be mistaken for legacy history. Once the Pi session has entries, restart/resume does not import the readable transcript again.
 
-GameSmith keeps the product controls around Pi's native compactor:
+The readable transcript remains a product/UI artifact. It is not used to reconstruct an existing Pi provider history.
 
-- **Auto compact at estimated tokens** defaults to 100,000; 0 disables GameSmith's threshold.
-- **Keep recent tokens verbatim** defaults to 20,000 and is passed directly to Pi as `compaction.keepRecentTokens`.
+## Pi-native compaction and prompt-cache friendliness
+
+Pi owns the durable agent session, including assistant reasoning, tool calls/results, checkpoint entries, and compaction.
+
+GameSmith keeps only product-level controls around Pi's native compactor:
+
+- **Auto compact at estimated tokens** defaults to 100,000; 0 disables GameSmith's trigger.
+- **Keep recent tokens verbatim** defaults to 20,000 and is written to Pi's `compaction.keepRecentTokens`.
 - **Compact now** invokes Pi's native `compact` RPC.
-- GameSmith disables Pi's independent context-window threshold so there is only one user-visible automatic policy; when the configured GameSmith threshold is crossed, it invokes the same native Pi compactor.
-- If Pi reports that the session is too small to compact, GameSmith reports **Compaction skipped** rather than treating that normal no-op as a provider failure.
+- GameSmith disables Pi's separate automatic threshold so there is one user-visible automatic policy.
+- If Pi reports that a session is too small to compact, GameSmith shows **Compaction skipped** rather than treating it as a provider failure.
 
-This remains cache-friendly. Between compactions, Pi's existing session prefix is left alone and new work appends normally. A native compaction intentionally creates one Pi checkpoint and changes the provider prefix once; the checkpoint plus retained recent tail then remain stable. Restarting GameSmith resumes that same Pi session instead of reconstructing the prompt from GameSmith's readable transcript. Real-Pi acceptance tests compare the persisted entry list byte-for-byte across a GameSmith controller restart after compaction and verify that the next provider request contains Pi's checkpoint.
+Between compactions, GameSmith does not rebuild or rewrite Pi history. A native compaction intentionally changes the prefix once by adding Pi's checkpoint; the checkpoint plus retained recent tail then remain stable until further work is appended. Restarting GameSmith resumes the same Pi session. Real-Pi acceptance tests compare persisted entries byte-for-byte across restart and verify that the next provider request receives Pi's checkpoint.
 
-The automatic trigger uses Pi's canonical current-context usage from `get_session_stats`, but the threshold value itself remains explicitly configurable because arbitrary Custom/OpenAI-compatible models do not reliably provide trustworthy context-window metadata. Actual provider-side prompt-cache eligibility, minimum prefix size, TTL, and billing remain model/provider-specific.
+Actual provider-side prompt-cache eligibility, prefix-size requirements, TTLs, and billing remain provider/model-specific.
 
-## Provider failures and debug logs
+## Failures and diagnostics
 
-Provider calls now distinguish **transport failures** (timeout, DNS, connection, TLS, no response) from real HTTP status codes. The default provider request timeout is **300 seconds** so slower reasoning models are not mislabeled as `HTTP 0` after 90 seconds.
+GameSmith logs Pi process lifecycle, retries, tool execution, compaction, stderr, reload state, and host verification. A missing configured/global Pi executable fails before process launch with a clear user-facing error.
 
-Per-game logs include a safe provider request/response diagnostic line with the sanitized endpoint, model, timeout, message/context size, transport result, HTTP status, elapsed time, response size, finish reason/token usage when supplied, and safe request-ID/server headers. Authorization/API-key values and URL query strings are not logged.
-
-If a model repeatedly replies with progress text/`Done` without using tools for a game-changing request, GameSmith now stops after **3 consecutive verifier rejections** instead of potentially burning the full agent action budget. Those internal verifier nudges are ephemeral and are no longer written into durable model history. Old persisted verifier pollution is filtered when conversation history is replayed, and interrupted prior turns get one explicit recovery marker before a new request.
-
-For debugging, share the per-game `gamesmith.log` plus `conversation.jsonl`/workspace snapshot. The per-game log should now be sufficient to tell whether a failure was provider transport, HTTP/API, malformed response, verifier-loop, tool, or reload related.
+The Pi process owns provider transport and retry behavior. For debugging a game turn, the useful artifacts are the per-game `gamesmith.log`, its Pi session directory, and the generated workspace/Git history. The readable transcript is useful for the player-visible conversation but is not the full provider trace.
 
 ## Verification
 
-Fast in-process suite:
+Fast host/core/UI suite:
 
 ```bash
 ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
@@ -147,6 +143,14 @@ Full source verification:
 GODOT_BIN=./Godot_v4.7.2-stable_linux.x86_64 tools/testing/run-verification.sh
 ```
 
-The full workflow verifies the self-contained root Windows folder, the Go runtime-bootstrap unit tests (when Go is installed), fast agent/runtime/storage tests, a windowed hostile-generated-input regression (when `xvfb-run` is present), real OpenAI-compatible `/v1/chat/completions` traffic through the production HTTP adapter, two-process durable conversation replay, and a process-level migration from the old `GameSmith Host` app-data directory to `GameSmithHost`.
+The full workflow verifies:
 
-The fake-v1 acceptance server is under `tools/fake-openai-endpoint/`; GameSmith-specific orchestration is documented in `tools/testing/README.md`. The server requires Node but no npm install for the GameSmith scripted workflow.
+1. the self-contained Windows folder and Go launcher tests;
+2. fast Godot host/UI/storage behavior;
+3. real-window hostile generated-input ownership when `xvfb-run` is available;
+4. **real globally installed Pi** Part 1 normal-agent acceptance against a deterministic OpenAI-compatible streaming endpoint;
+5. Part 2 Pi-native compaction/restart acceptance;
+6. Part 3 one-time legacy transcript import and source-level removal of the old runtime;
+7. process-level migration from `GameSmith Host` to `GameSmithHost`.
+
+The deterministic Pi provider fixture is `tools/fake-openai-endpoint/pi-server.mjs`; it requires Node but no `npm install`.
