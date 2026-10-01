@@ -44,9 +44,6 @@ func write_game(name: String, data: Dictionary) -> bool:
 func transcript_path(name: String) -> String:
     return game_meta_dir(name).path_join("transcript.jsonl")
 
-func conversation_path(name: String) -> String:
-    return game_meta_dir(name).path_join("conversation.jsonl")
-
 func game_meta_dir(name: String) -> String:
     return META_ROOT.path_join(name)
 
