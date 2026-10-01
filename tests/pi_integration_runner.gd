@@ -5,6 +5,7 @@ const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
+const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 const PiRpcSessionScript = preload("res://src/pi/pi_rpc_session.gd")
 
@@ -43,6 +44,10 @@ func run() -> void:
 
     if part == "" or part == "2":
         await _test_real_pi_manual_and_auto_compaction()
+
+    if part == "" or part == "3":
+        await _test_legacy_transcript_import_is_one_time()
+        _test_legacy_runtime_sources_are_removed()
 
     var label = "ALL" if part == "" else "PART " + part
     print("PI %s INTEGRATION TESTS: %d passed, %d failed" % [label, passed, failures])
@@ -339,6 +344,74 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     runner.queue_free()
     await process_frame
     WorkspaceStoreScript.new().delete_game(created.name)
+
+
+func _test_legacy_transcript_import_is_one_time() -> void:
+    _settings("pi-gamesmith-legacy-import", 0.0, 150, 0, 1000)
+    var created = _new_game("Pi Legacy Import")
+    assert_true(bool(created.get("ok", false)), "creates legacy-transcript migration game")
+    if not created.get("ok", false):
+        return
+    _write(created.path.path_join("main.gd"), "extends Node\n")
+    var readable = TranscriptStoreScript.new()
+    readable.append(created.name, "user", "Build a blue square")
+    readable.append(created.name, "assistant", "Built the blue square.")
+    var legacy_before = readable.read_all(created.name, 100)
+    assert_eq(legacy_before.size(), 2, "legacy readable transcript fixture starts with exactly two entries")
+
+    var runner = GameRunnerScript.new()
+    root.add_child(runner)
+    var agent = _controller(created.name, created.path, runner)
+    agent.send_player_request("What did we build?")
+    var ok = await agent.finished
+    assert_true(bool(ok), "first Pi turn after legacy migration succeeds")
+
+    var records = _fake_records("pi-gamesmith-legacy-import")
+    assert_true(not records.is_empty(), "fake provider captured first request after legacy migration")
+    if not records.is_empty():
+        var rendered = JSON.stringify(records[0].get("messages", []))
+        assert_true("Build a blue square" in rendered and "Built the blue square." in rendered, "legacy readable dialogue is visible to the first Pi provider request")
+        assert_eq(rendered.split("What did we build?").size() - 1, 1, "current player request appears exactly once and is not re-imported as legacy history")
+
+    var after_turn = readable.read_all(created.name, 100)
+    assert_eq(after_turn.size(), 4, "migration leaves readable transcript human-owned and only appends the new turn")
+    if after_turn.size() >= 4:
+        assert_eq(str(after_turn[0].get("content", "")), "Build a blue square", "legacy readable user entry remains unchanged")
+        assert_eq(str(after_turn[1].get("content", "")), "Built the blue square.", "legacy readable assistant entry remains unchanged")
+        assert_eq(str(after_turn[2].get("content", "")), "What did we build?", "new user turn is appended after imported legacy dialogue")
+
+    var entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
+    var before_restart_json = JSON.stringify(entries.get("data", {}).get("entries", []))
+    assert_eq(before_restart_json.split("gamesmith-legacy-dialogue").size() - 1, 1, "Pi persists exactly one legacy-import checkpoint entry")
+
+    agent.restart_runtime()
+    agent.queue_free()
+    await process_frame
+    var resumed = _controller(created.name, created.path, runner)
+    var ready = await resumed._ensure_runtime()
+    assert_true(bool(ready.get("ok", false)), "Pi session with imported legacy dialogue restarts")
+    var resumed_entries = await resumed.rpc.command({"type": "get_entries"}, 15.0)
+    assert_eq(JSON.stringify(resumed_entries.get("data", {}).get("entries", [])), before_restart_json, "restart does not import readable transcript a second time")
+
+    resumed.restart_runtime()
+    resumed.queue_free()
+    runner.queue_free()
+    await process_frame
+    WorkspaceStoreScript.new().delete_game(created.name)
+
+func _test_legacy_runtime_sources_are_removed() -> void:
+    for path in [
+        "res://src/agent/agent_controller.gd",
+        "res://src/core/conversation_store.gd",
+        "res://src/core/compaction_service.gd",
+        "res://src/providers/provider_factory.gd",
+        "res://src/providers/openai_compatible_provider.gd"
+    ]:
+        assert_true(not FileAccess.file_exists(path), "obsolete homegrown runtime source is deleted: %s" % path)
+    var app_source = FileAccess.get_file_as_string("res://src/ui/app.gd")
+    var runtime_source = FileAccess.get_file_as_string("res://src/pi/pi_runtime_config.gd")
+    assert_true(not "res://src/providers/" in app_source, "production UI no longer preloads legacy provider adapters")
+    assert_true(not "res://src/providers/" in runtime_source, "Pi runtime config no longer preloads legacy provider adapters")
 
 func _fake_records(model: String) -> Array:
     var out: Array = []
