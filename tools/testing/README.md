@@ -6,43 +6,39 @@ Run the whole source verification stack with Godot 4.7.2:
 GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64 tools/testing/run-verification.sh
 ```
 
-It performs, in order:
+The workflow performs, in order:
 
-1. deterministic verification of root `GameSmith.exe`;
+1. deterministic verification of the root Windows folder;
 2. `tools/windows-bootstrap` Go unit tests when Go is available;
-3. the fast headless Godot suite;
+3. the fast headless Godot host/core/UI suite;
 4. the real-window hostile generated-input regression under `xvfb-run` when available;
-5. the fake OpenAI-compatible `/v1/chat/completions` acceptance workflow;
-6. a real process-level migration check from the old `GameSmith Host` writable directory to `GameSmithHost`.
+5. real globally installed Pi **Part 1** normal-agent acceptance;
+6. real Pi **Part 2** native-compaction acceptance;
+7. real Pi **Part 3** legacy-import/runtime-removal acceptance;
+8. a process-level migration check from the old `GameSmith Host` writable directory to `GameSmithHost`.
 
-## Fake `/v1` acceptance workflow
+## Real Pi acceptance
 
-`run-fake-v1-e2e.sh` starts `../fake-openai-endpoint/gamesmith-server.mjs` and drives the **production Custom-provider HTTP adapter** rather than injecting an in-memory provider.
+`run-pi-e2e.sh` starts `../fake-openai-endpoint/pi-server.mjs` and drives the actual globally installed `pi` executable over GameSmith's production JSONL RPC path. The deterministic server speaks streaming OpenAI-compatible `/v1/chat/completions` and requires only Node's standard library.
 
-The scripted server exercises:
+CI pins `@earendil-works/pi-coding-agent@0.99.2`. For local runs you may point GameSmith at another explicit Pi executable with `GAMESMITH_PI_BIN`.
 
-- a false text-only `Done.` before any game files exist;
-- real OpenAI-format file/Git/reload tool calls;
-- initial 3D game generation and actual frame processing;
-- a later patch/reload request;
-- failed generated code followed by repair;
-- malformed tool arguments;
-- HTTP 500 and invalid JSON provider failures;
-- a deliberately small configured action-limit failure over real HTTP;
-- `reasoning_effort` and GameSmith tool-schema transport;
-- a two-process restart where process #2 is rejected unless process #1's prior conversation is replayed.
+The phased runner can be invoked directly:
 
-The production **default** agent action limit is 150 and is tested in the fast/UI suite. The real-HTTP runaway fixture temporarily sets a small limit so CI does not waste 150 round trips proving the same termination branch.
+```bash
+GAMESMITH_PI_TEST_PART=1 GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
+GAMESMITH_PI_TEST_PART=2 GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
+GAMESMITH_PI_TEST_PART=3 GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
+```
 
-The GameSmith-specific scripted server needs Node but no `npm install`. The rest of `tools/fake-openai-endpoint/` is the user-supplied fake OpenAI endpoint repository retained as protocol/testing reference material.
+Part 1 covers production controller selection, missing-Pi diagnostics, generation/edit/reload/Git behavior, streaming assistant/thinking events, false-completion recovery, native retry behavior, action limits, provider-call pacing, and Pi session restart/resume.
+
+Part 2 covers manual and threshold-triggered Pi-native compaction, `keepRecentTokens`, persisted native compaction entries, checkpoint delivery to the next provider request, normal no-op classification, and byte-stable session entries across GameSmith restart.
+
+Part 3 seeds a pre-Pi readable transcript and proves that it is imported into an empty Pi session exactly once, that the current request is not duplicated into the imported legacy block, that restart does not re-import it, and that production no longer contains the deleted homegrown agent/provider/compaction sources.
+
+The production default Pi turn limit is 150. Runaway fixtures use a deliberately small test limit so acceptance does not waste provider round trips proving the same host-policy branch.
 
 ## Expected parse errors
 
-Some verification cases deliberately write invalid generated GDScript. Godot will print parse errors for those candidates. The tests only pass when the host rejects the candidate, keeps/recovers the working game as expected, and continues the agent flow correctly.
-
-
-### Provider transport/recovery regression coverage
-
-The real HTTP suite also delays one fake `/v1/chat/completions` response past a deliberately tiny test timeout. It asserts that GameSmith reports a **transport timeout** with elapsed/endpoint diagnostics rather than the ambiguous `Provider HTTP 0` message.
-
-The same workflow seeds a legacy conversation containing a persisted rejected `Done.` plus GameSmith verifier correction, verifies those internal messages are filtered from provider replay, and requires an interrupted-turn recovery marker before the next real HTTP call.
+Some host/runtime tests deliberately write invalid generated GDScript. Godot will print parse errors for those candidates. The tests only pass when GameSmith rejects the bad candidate, preserves or recovers the previous working game, and continues correctly.
