@@ -6,6 +6,7 @@ const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const AgentControllerScript = preload("res://src/agent/agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
+const ConversationStoreScript = preload("res://src/core/conversation_store.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 
 var failures = 0
@@ -35,6 +36,8 @@ func run() -> void:
     await _test_real_http_ui_send_flow()
     await _test_real_http_create_edit_and_repair()
     await _test_real_http_malformed_and_provider_failures()
+    await _test_real_http_transport_timeout_diagnostics()
+    await _test_legacy_verifier_history_cleanup()
     print("HTTP TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
 
@@ -88,6 +91,12 @@ func _test_real_http_ui_send_flow() -> void:
     assert_true("Built and loaded the 3D falling-block game." in ui_text, "real UI transcript renders verified completion")
     var entries = TranscriptStoreScript.new().read_all(name)
     assert_eq(entries.size(), 2, "real UI transcript does not persist premature Done as success")
+    var provider_history = ConversationStoreScript.new().read_all(name)
+    var verifier_pollution = false
+    for message in provider_history:
+        if str(message.get("role", "")) == "system" and str(message.get("content", "")).begins_with("GameSmith verification rejected that completion:"):
+            verifier_pollution = true
+    assert_true(not verifier_pollution, "rejected verifier nudges stay ephemeral instead of polluting durable provider history")
     var debug_log = FileAccess.get_file_as_string(AppLoggerScript.game_log_path(name))
     assert_true("agent.request" in debug_log and "agent.tool" in debug_log and "agent.finished" in debug_log, "real HTTP UI flow writes actionable per-game debug lifecycle")
     app.queue_free(); paused = false; await process_frame
@@ -132,6 +141,43 @@ func _test_real_http_create_edit_and_repair() -> void:
     if runner.has_active_game(): assert_eq(runner.active_game.fall_speed, 4.0, "repaired HTTP candidate is the running version")
 
     runner.queue_free(); await process_frame
+    store.delete_game(name)
+
+
+func _test_real_http_transport_timeout_diagnostics() -> void:
+    var provider = OpenAICompatibleProvider.new(root, base_url + "/chat/completions", "", "gamesmith-timeout", PackedStringArray(), "", false)
+    provider.request_timeout_sec = 0.05
+    var result: Dictionary = await provider.complete([{"role": "user", "content": "hello"}], [])
+    assert_true(not bool(result.get("ok", true)), "real HTTP delayed provider hits transport timeout")
+    assert_true("timed out" in str(result.get("error", "")).to_lower(), "transport timeout is named instead of reported as HTTP 0")
+    var diagnostics: Dictionary = result.get("diagnostics", {})
+    assert_eq(str(diagnostics.get("transport", "")), "timeout", "transport diagnostics identify timeout")
+    assert_eq(int(diagnostics.get("http_status", -1)), 0, "transport diagnostics retain HTTP 0 only as secondary status")
+    assert_true(int(diagnostics.get("elapsed_ms", 0)) > 0, "transport diagnostics include elapsed time")
+    assert_true(str(diagnostics.get("endpoint", "")).ends_with("/v1/chat/completions"), "transport diagnostics include sanitized endpoint")
+
+func _test_legacy_verifier_history_cleanup() -> void:
+    var store = WorkspaceStoreScript.new(); store.ensure()
+    var name = "HTTP Legacy History Cleanup"
+    if name in store.list_games(): store.delete_game(name)
+    var created = store.create_game(name)
+    assert_true(bool(created.get("ok", false)), "creates legacy verifier-history workspace")
+    if not created.get("ok", false): return
+    var conversation = ConversationStoreScript.new()
+    conversation.append(name, {"role": "user", "content": "make it better"})
+    conversation.append(name, {"role": "assistant", "content": "Done."})
+    conversation.append(name, {"role": "system", "content": "GameSmith verification rejected that completion: simulated old persisted verifier message"})
+    var cleaned = conversation.read_for_provider(name)
+    assert_true(cleaned.size() == 1 and str(cleaned[0].get("role", "")) == "user", "legacy verifier correction and rejected assistant response are filtered from provider replay")
+    assert_true(conversation.needs_recovery_marker(cleaned), "unfinished cleaned history is detected for recovery")
+    _settings("gamesmith-history-cleanup")
+    var runner = GameRunnerScript.new(); root.add_child(runner)
+    var agent = AgentControllerScript.new(); root.add_child(agent)
+    agent.configure(name, GameToolsScript.new(created.path, runner))
+    agent.send_player_request("continue")
+    var ok = await agent.finished
+    assert_true(bool(ok), "real HTTP provider accepts cleaned history plus recovery marker")
+    agent.queue_free(); runner.queue_free(); await process_frame
     store.delete_game(name)
 
 func _test_real_http_malformed_and_provider_failures() -> void:

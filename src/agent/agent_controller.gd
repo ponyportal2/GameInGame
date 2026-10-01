@@ -11,6 +11,7 @@ signal finished(ok: bool)
 const DEFAULT_MAX_STEPS = 150
 const MIN_AGENT_STEPS = 1
 const MAX_AGENT_STEPS = 500
+const MAX_CONSECUTIVE_VERIFICATION_REJECTIONS = 3
 var game_name = ""
 var tools: GameTools
 var metadata = MetadataStore.new()
@@ -30,9 +31,15 @@ func configure(p_game_name: String, p_tools: GameTools) -> void:
 func send_player_request(text: String) -> void:
     if busy: return
     busy = true
-    var prior_history: Array = conversation.read_all(game_name)
-    if prior_history.is_empty() and not conversation.exists(game_name):
+    var had_conversation = conversation.exists(game_name)
+    var prior_history: Array = conversation.read_for_provider(game_name)
+    if prior_history.is_empty() and not had_conversation:
         prior_history = conversation.import_legacy_transcript(game_name, transcript.read_all(game_name, 1000000))
+    if conversation.needs_recovery_marker(prior_history):
+        var recovery = conversation.recovery_marker()
+        conversation.append(game_name, recovery)
+        prior_history.append(recovery)
+        AppLoggerScript.game_event(game_name, "conversation.recovery", "session=%s closed an unfinished prior turn before the new request" % session_id, "WARN")
     var user_message = {"role": "user", "content": text}
     transcript.append(game_name, "user", text)
     conversation.append(game_name, user_message)
@@ -58,30 +65,42 @@ func send_player_request(text: String) -> void:
     var turn_had_workspace_mutation = false
     var pending_code_changes = false
     var had_successful_reload = false
+    var consecutive_verification_rejections = 0
+    var tool_schema = _tool_schema()
     for step in max_steps:
         status_changed.emit("Agent step %d/%d…" % [step + 1, max_steps])
-        var result: Dictionary = await provider.complete(messages, _tool_schema())
+        var provider_summary = ""
+        if provider.has_method("diagnostic_summary"):
+            provider_summary = str(provider.diagnostic_summary(messages, tool_schema))
+        AppLoggerScript.game_event(game_name, "provider.request", "session=%s step=%d %s" % [session_id, step + 1, provider_summary])
+        var result: Dictionary = await provider.complete(messages, tool_schema)
+        var diagnostics = result.get("diagnostics", {})
+        AppLoggerScript.game_event(game_name, "provider.response", "session=%s step=%d ok=%s diagnostics=%s" % [session_id, step + 1, str(result.get("ok", false)), JSON.stringify(diagnostics)], "INFO" if bool(result.get("ok", false)) else "ERROR")
         if not result.ok:
             AppLoggerScript.game_event(game_name, "provider.error", "session=%s step=%d error=%s" % [session_id, step + 1, str(result.error)], "ERROR")
             _fail(str(result.error))
             return
         var message: Dictionary = result.message.duplicate(true)
         messages.append(message)
-        conversation.append(game_name, message)
         var calls: Array = message.get("tool_calls", [])
         if calls.is_empty():
             var content = str(message.get("content", "Done."))
             if content.strip_edges() == "": content = "Done."
             var guard_reason = _completion_guard(started_without_main, request_requires_change, turn_had_workspace_mutation, pending_code_changes, had_successful_reload)
             if guard_reason != "":
+                consecutive_verification_rejections += 1
+                AppLoggerScript.game_event(game_name, "agent.verification", "session=%s step=%d rejected=%s content=%s" % [session_id, step + 1, guard_reason, content.left(500)], "WARN")
+                if consecutive_verification_rejections >= MAX_CONSECUTIVE_VERIFICATION_REJECTIONS:
+                    _fail("The model repeatedly finished without completing the requested game change (%d attempts). No further provider calls were made. Try the request again or use a different model/provider." % MAX_CONSECUTIVE_VERIFICATION_REJECTIONS)
+                    return
                 var correction = {
-                    "role": "system",
-                    "content": "GameSmith verification rejected that completion: %s Continue the same player request using the available tools. Do not claim completion again until the condition is actually satisfied." % guard_reason
+                    "role": "user",
+                    "content": "[GameSmith verifier] Your previous response did not complete the request: %s Continue the same request with tool calls now. Do not send another progress-only or completion message until the condition is actually satisfied." % guard_reason
                 }
-                AppLoggerScript.game_event(game_name, "agent.verification", "session=%s step=%d rejected=%s" % [session_id, step + 1, guard_reason], "WARN")
                 messages.append(correction)
-                conversation.append(game_name, correction)
                 continue
+            message["content"] = content
+            conversation.append(game_name, message)
             transcript.append(game_name, "assistant", content)
             assistant_message.emit(content)
             AppLoggerScript.game_event(game_name, "agent.finished", "session=%s step=%d ok=true" % [session_id, step + 1])
@@ -89,6 +108,8 @@ func send_player_request(text: String) -> void:
             busy = false
             finished.emit(true)
             return
+        consecutive_verification_rejections = 0
+        conversation.append(game_name, message)
         for call in calls:
             if typeof(call) != TYPE_DICTIONARY:
                 var malformed_message = {"role": "tool", "tool_call_id": "", "content": JSON.stringify({"ok": false, "error": "Malformed tool call: expected an object."})}
@@ -163,6 +184,7 @@ func _request_requires_workspace_change(text: String) -> bool:
 
 func _fail(message: String) -> void:
     AppLoggerScript.game_event(game_name, "agent.failed", "session=%s error=%s" % [session_id, message], "ERROR")
+    conversation.append(game_name, {"role": "assistant", "content": "GameSmith stopped this turn with an error: " + message})
     transcript.append(game_name, "assistant", "Error: " + message)
     assistant_message.emit("Error: " + message)
     status_changed.emit("Ready")
@@ -188,6 +210,7 @@ Rules:
 - The game is paused while chat is open and starts fresh after a successful reload.
 - Avoid dangerous global engine mutations. Do not quit the host tree, change the host window mode, or write outside the workspace.
 - For input, create InputEventKey/Mouse checks directly in _input/_unhandled_input rather than modifying ProjectSettings input maps.
+- For a request that changes the game, start with tool calls. Do not send progress-only text before inspecting/editing with tools.
 - A plain-text claim such as "Done" is not proof of completion. GameSmith verifies that new games were actually created/reloaded and that code edits were reloaded. If verification rejects a completion, continue using tools.
 - Finish with a concise player-facing summary after tool work.
 """

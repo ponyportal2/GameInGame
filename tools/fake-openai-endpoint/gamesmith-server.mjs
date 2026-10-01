@@ -111,6 +111,18 @@ function scriptedReply(body) {
     return { status: 200, raw: '{not valid json' };
   }
 
+  if (model === 'gamesmith-timeout') {
+    return { status: 200, delayMs: 250, body: responseMessage(model, { role: 'assistant', content: 'late' }).body };
+  }
+
+  if (model === 'gamesmith-history-cleanup') {
+    const polluted = messages.some((m) => m?.role === 'system' && String(m?.content || '').startsWith('GameSmith verification rejected that completion:'));
+    const rejectedDone = messages.some((m) => m?.role === 'assistant' && m?.content === 'Done.');
+    const recovery = messages.some((m) => m?.role === 'assistant' && String(m?.content || '').startsWith('The previous GameSmith turn ended before a final response.'));
+    if (polluted || rejectedDone || !recovery) return { status: 409, body: { error: { message: 'provider replay still contains verifier pollution or lacks recovery marker' } } };
+    return responseMessage(model, { role: 'assistant', content: 'History cleaned.' });
+  }
+
   if (model === 'gamesmith-http-500') {
     return { status: 500, body: { error: { message: 'simulated HTTP 500' } } };
   }
@@ -148,8 +160,11 @@ const server = http.createServer((req, res) => {
       const body = JSON.parse(raw);
       appendLog({ at: Date.now(), headers: req.headers, body });
       const reply = scriptedReply(body);
-      res.writeHead(reply.status, { 'content-type': 'application/json' });
-      res.end(reply.raw ?? JSON.stringify(reply.body));
+      const send = () => {
+        res.writeHead(reply.status, { 'content-type': 'application/json' });
+        res.end(reply.raw ?? JSON.stringify(reply.body));
+      };
+      if (reply.delayMs) setTimeout(send, reply.delayMs); else send();
     } catch (err) {
       res.writeHead(400, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: String(err) } }));
