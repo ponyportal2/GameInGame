@@ -98,7 +98,7 @@ Part 2 completion:
 - Cache behavior: GameSmith never reconstructs or continuously compacts Pi history. Native Pi owns the append-only session and checkpoint entry; after compaction, restart preserves those entries byte-for-byte until Pi appends new work.
 
 
-## Part 3 — migration and deletion of duplicate agent code
+## Part 3 — migration and deletion of duplicate agent code — COMPLETE
 
 Scope:
 
@@ -110,6 +110,31 @@ Scope:
 - update docs and third-party notices.
 
 Acceptance boundary: migration/restart tests plus source-level checks that production no longer references the deleted runtime.
+
+Part 3 completion:
+
+- Added a dedicated `GAMESMITH_PI_TEST_PART=3` gate covering migration, restart stability, readable-transcript ownership, and source-level legacy-runtime removal.
+- Fixed first-turn ordering so GameSmith starts/resumes Pi before appending the current user request to the readable transcript. A current request therefore cannot be accidentally imported as pre-Pi history and then sent again.
+- Corrected the definition of an "empty" Pi session for migration: Pi bootstrap entries such as `model_change`, `thinking_level_change`, and `session_info` do not count as conversational history. Existing message/custom/compaction history still prevents re-import.
+- Pre-Pi readable user/assistant dialogue is injected into a genuinely empty Pi session once as hidden `gamesmith-legacy-dialogue` context. Restarting the same Pi session does not import it again.
+- The human-readable `transcript.jsonl` remains a GameSmith UI/log artifact containing user and final assistant turns; it is no longer the provider-history store.
+- Added `src/pi/pi_provider_catalog.gd` and moved provider display/default/base/auth mapping out of the deleted provider factory.
+- Deleted the obsolete homegrown `AgentController`, `ConversationStore`, `CompactionService`, direct OpenAI-compatible provider/factory, their runtime-specific tests, and the superseded fake-v1 acceptance server.
+- Removed the dead `conversation.jsonl` metadata accessor.
+- Settings now consistently describes Pi provider/model/turn/pacing/compaction behavior.
+- README, verification docs, fake-endpoint notes, and third-party notices now describe the Pi-native runtime rather than the deleted direct-provider loop.
+- RED gate: commit `970a4f6`. The first migrated-code CI run exposed the Pi-bootstrap-metadata edge case with Part 3 at **20 passed / 2 failed**.
+- GREEN fix: commit `8f52665`.
+- Verified on GitHub Actions run `36928625392`:
+  - fast host/core/UI: **125 passed / 0 failed**;
+  - windowed UI/input: **20 passed / 0 failed**;
+  - real globally-installed Pi Part 1: **40 passed / 0 failed**;
+  - Pi Part 2 compaction: **20 passed / 0 failed**;
+  - Pi Part 3 migration/deletion: **22 passed / 0 failed**;
+  - legacy app-data migration: pass;
+  - source verification: pass;
+  - Windows folder build/refresh: pass.
+- Windows refresh commit: `7815186`.
 
 ## Part 4 — packaging and release gate
 
@@ -126,4 +151,4 @@ Acceptance boundary: complete CI green with no allowed/red migration tests.
 
 ## Stop rule
 
-For this execution, Part 2 is complete. Stop before **Part 3**: do not delete the old agent/provider stack or change legacy-import semantics in the same slice.
+For this execution, Part 3 is complete. Stop before **Part 4**: do not change Windows/Pi installation packaging or the final all-phases release-gate shape in this slice.

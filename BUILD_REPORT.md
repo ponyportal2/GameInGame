@@ -1,69 +1,82 @@
 # GameSmith verification report
 
-## Current product behavior
+## Current production architecture
 
-- **Manual compaction UX:** Compact now returns from Settings to chat, shows HOST progress/result lines, and disables composer/Send/Library for the operation. Success, no-op, and provider failure are distinguishable without polluting durable transcript/model context.
+GameSmith's production agent runtime is now Pi-native.
 
-- **Pi-style checkpoint compaction:** backwards token-budget cut points, no cuts on tool results, split-turn prefix summaries, exact structured checkpoint/update prompts, 2,000-character tool-result serialization cap for summary requests, iterative previous-summary updates, and carried read/modified file lists.
-- **Compaction controls:** automatic estimated-token threshold defaults to 100,000 (0 disables), retained recent context defaults to 20,000, and open games expose manual **Compact now**.
-- **Cache behavior:** context stays append-only and byte-stable between compactions; a checkpoint intentionally changes the prefix only when compaction occurs, after which the new checkpoint + retained tail become the stable prefix.
-- **Settings freeze fix:** general Settings is now an in-canvas host overlay inside the reserved top CanvasLayer, not a modal subwindow hidden behind host UI.
+- GameSmith launches a globally installed `pi` process over JSONL RPC.
+- Pi owns provider calls, model history, streaming assistant/thinking output, retries, generic coding tools, durable sessions, and native compaction.
+- GameSmith owns the library/chat UI, generated-game workspace boundary, Git milestones, Godot reload/verification, last-working snapshot, readable transcript, logs, and product policy controls.
+- The pinned verification target is `@earendil-works/pi-coding-agent@0.99.2`.
+- No shell/bash/PowerShell tool is exposed to the model.
 
-- **Lossless large-file edits:** `read_file` is a line-windowed preview with continuation metadata; `patch_file` operates on the complete file and reports full before/after byte sizes. This fixes the production truncation bug where a >30 KB file was rewritten from the old capped preview.
-- **Live intermediate activity:** AGENT/TOOL/THINK snippets remain ephemeral. THINK is emitted only for provider-exposed plain-string reasoning; unknown structured reasoning is ignored. Chat text is BBCode-escaped before rendering.
+The previous homegrown `AgentController`, direct OpenAI-compatible provider/factory, `ConversationStore`, and `CompactionService` have been removed from the repository.
 
-- **Provider transport diagnostics:** OpenAI-compatible requests now use a 300s default timeout and distinguish Godot HTTP transport results (timeout/DNS/connect/TLS/no-response/etc.) from actual HTTP response codes.
-- Provider request/response log entries include sanitized endpoint/model/context sizing, elapsed time, transport/HTTP result, response bytes, selected safe response headers and finish/token metadata when available.
-- Completion verification is bounded to 3 consecutive no-op rejections; verifier prompts are ephemeral instead of permanently polluting provider history, and old persisted verifier pollution is filtered on replay.
-- Interrupted prior turns are explicitly closed with a recovery marker before a later user request, avoiding ambiguous consecutive dangling user/tool history.
+## Provider and Settings behavior
 
-- Game library with New Game, Open, Rename, Delete, Folder, global Logs, and global Settings.
-- Per-game Git repository with an immediate `Initialize game` baseline commit.
-- GDScript-only runtime games mounted directly in the persistent host process; both 2D and 3D are supported.
-- Runtime-loaded multi-file games, failed-candidate preservation, last-working snapshots, and explicit agent-controlled reloads.
-- Durable full raw conversation/reasoning/tool trace stays append-only on disk. Pi-style compaction is checkpoint-based: only threshold/manual compaction replaces older provider context with a structured summary plus an untouched recent tail; no continuous per-turn rewrite.
-- OpenRouter, OpenCode Go, Command Code, and Custom OpenAI-compatible `/v1` providers; optional Custom API key and configurable `reasoning_effort`.
-- Completion guards reject text-only `Done` when required workspace work/reload has not actually happened.
-- Host chat owns input while open, including against hostile generated full-screen Controls/mouse capture.
-- Enter sends; Shift+Enter inserts a newline.
-- Return to Library is disabled and guarded in code while the agent is busy.
-- Agent action limit is persisted in Settings; default 150, allowed range 1–500.
-- Writable app-data identity is `GameSmithHost` (no space), with safe copy-forward migration from the old `GameSmith Host` sibling directory.
-- Bounded global `user://logs/gamesmith-app.log` plus bounded per-game `user://host/games/<game>/gamesmith.log`, with API-key/Authorization redaction.
-- Compact library/chat action controls and Settings access from both library and game chat.
+Provider metadata now lives under `src/pi/pi_provider_catalog.gd`. GameSmith maps OpenRouter, OpenCode Go, Command Code, Custom OpenAI-compatible, and OpenAI-subscription/global-auth choices into Pi configuration.
 
-## Windows release folder
+Settings exposes:
 
-The repository root contains a directly usable `GameSmith-Windows/` folder with `GameSmith.exe`, `GameSmith.pck`, `README.txt`, third-party notices, and the supplied Godot 4.7.2 Windows x64 runtime under `runtime/`.
+- global and per-game Pi provider/model selection;
+- Custom `/v1` base URL;
+- provider credential storage outside game workspaces;
+- Pi reasoning/thinking level;
+- Pi turn limit, default 150;
+- provider-call delay, default 6 seconds;
+- automatic Pi compaction threshold, default 100,000 current-context tokens;
+- Pi `keepRecentTokens`, default 20,000;
+- manual **Compact now**.
 
-Normal Windows startup is fully local and does not download Godot. The launcher retains its checksum-verified missing-runtime fallback, but the bundled executable satisfies the existing-runtime/no-network path.
+## Session persistence and migration
 
-The Godot runtime exceeds GitHub's normal 100 MB Git-object limit, so that one executable is stored with Git LFS. Package verification checks the unpacked folder directly and requires the launcher, PCK, runtime, README, and notices to be present.
+Existing Pi sessions are resumed directly; GameSmith does not reconstruct provider history from its readable transcript.
 
-`tools/windows-bootstrap/` contains the release launcher and unit tests for existing-runtime/no-network, missing-runtime download/cache, checksum rejection, invalid existing paths, and ZIP traversal rejection.
+For a game that predates Pi and has readable user/assistant dialogue but no meaningful Pi history:
+
+1. GameSmith starts/resumes Pi before writing the current request to `transcript.jsonl`.
+2. Pi's `session_start` hook ignores bootstrap-only metadata entries and imports the pre-existing readable dialogue once as hidden `gamesmith-legacy-dialogue` context.
+3. The current request is then appended to the readable transcript and sent normally.
+4. On restart, the existing Pi session prevents a second import.
+
+The Part 3 acceptance test proves that the legacy dialogue reaches the first provider request, the current request appears exactly once, the human-readable transcript remains unchanged except for the new turn, and Pi entries remain byte-stable across restart.
+
+## Pi-native compaction and cache behavior
+
+Manual and threshold-triggered compaction use Pi's native `compact` RPC. GameSmith writes the configured recent-token budget into Pi's own `compaction.keepRecentTokens` setting and reads Pi's canonical current-context usage to decide when to trigger the product-level threshold.
+
+Between compactions, GameSmith leaves Pi history append-only. A compaction intentionally adds Pi's native checkpoint and changes the prompt prefix once; restarting GameSmith resumes the same Pi entries byte-for-byte before later work is appended. A normal "nothing to compact/session too small" result is surfaced as **Compaction skipped** rather than as a provider failure.
+
+## Host/game behavior retained
+
+- New/Open/Rename/Delete game library plus Folder, Logs, and Settings actions.
+- Per-game Git repositories with baseline commits and agent-controlled milestones.
+- 2D/3D GDScript runtime games loaded in the persistent Godot host.
+- Failed generated candidates do not replace the last working game.
+- Game-changing completion claims are verified at Pi settlement and can be rejected when workspace/reload evidence is missing.
+- Chat owns input while open; hostile generated Controls/mouse capture cannot steal host interaction.
+- Enter sends, Shift+Enter inserts a newline, Escape closes chat.
+- Library navigation is blocked while Pi is busy.
+- Global and per-game logs redact Authorization/API-key-like values.
+- Writable app-data identity is `GameSmithHost`, with copy-forward migration from the old `GameSmith Host` directory.
 
 ## Verification
 
-Final source verification on Godot 4.7.2:
+GitHub Actions run `36928625392` is the Part 3 green release check:
 
-- self-contained root Windows folder verification: **pass**;
-- Go Windows bootstrap tests: **pass**;
-- fast Godot suite: **228/228**;
+- fast host/core/UI suite: **125/125**;
 - real windowed hostile-input suite: **20/20**;
-- real HTTP fake-`/v1/chat/completions` suite: **67/67**;
-- two-process provider-visible conversation replay: **pass**;
-- process-level old `GameSmith Host` → `GameSmithHost` migration: **pass**;
-- fake-v1 acceptance workflow: **24 real HTTP requests** after keeping the runaway-limit HTTP fixture intentionally small (the separate fast/UI tests verify the production default of 150).
+- real globally installed Pi Part 1: **40/40**;
+- Pi Part 2 native-compaction suite: **20/20**;
+- Pi Part 3 migration/runtime-removal suite: **22/22**;
+- process-level `GameSmith Host` → `GameSmithHost` migration: **pass**;
+- complete source verification: **pass**;
+- Windows folder build and refresh: **pass**.
 
-Coverage includes workspace traversal isolation, Git initialization/history, candidate compilation, sibling-script loading, preservation of a working game after broken candidates, generated-game frame processing, input ownership, Enter/Shift+Enter, busy navigation blocking, in-canvas Settings interaction while paused, Settings persistence, default/custom action limits, automatic/manual compaction controls, Pi-style checkpoint cut/replay/update semantics, tool-free real HTTP summarization, cache-stable conversation replay, app-data migration, global/per-game debug logs and secret redaction, simulated first generation + second edit, false-completion recovery, required post-edit reload, provider failures, malformed tool arguments, custom `/v1` address normalization, exact `reasoning_effort` payload behavior, real UI keyboard-to-HTTP-provider flow, HTTP 500/invalid JSON, failed-reload repair, and restart persistence.
+The Windows refresh produced commit `7815186`.
 
-The deliberate broken-candidate tests emit GDScript parse errors into test output; those errors are expected evidence that the previous game survives bad generated code.
+The deliberate broken-candidate regression still emits GDScript parse errors in logs; those are expected evidence that invalid generated code is rejected while the previous working game survives.
 
-## Deliberate v1 limitations
+## Remaining phased work
 
-- No screenshot/vision tool or autonomous gameplay input.
-- No state-preserving reload.
-- No separate-process sandbox for generated GDScript.
-- No binary asset pipeline.
-- No automatic provider call merely because a runtime error occurred.
-- OpenAI ChatGPT subscription login is not scraped/faked; it remains behind the provider seam until an appropriate embeddable authentication path is used.
+Part 4 of `.plan/pi-feature-parity-phased.md` remains intentionally unimplemented in this slice. It covers Windows-specific Pi installation/discovery guidance, explicit packaging behavior when Pi is missing, final global-install/`GAMESMITH_PI_BIN` checks, and the final release-gate presentation.
