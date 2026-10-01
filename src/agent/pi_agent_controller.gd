@@ -53,11 +53,14 @@ func send_player_request(text: String) -> void:
     turn_count = 0
     limit_abort_sent = false
     streamed_text = false
-    transcript.append(game_name, "user", text)
     AppLoggerScript.game_event(game_name, "pi.request", "request=%s" % text.left(500))
     status_changed.emit("Starting Pi…")
 
+    # Start/resume Pi before writing the current request to the human transcript.
+    # On a brand-new session, Pi may import pre-existing readable dialogue once;
+    # the current request must not be mistaken for legacy history.
     var ready = await _ensure_runtime()
+    transcript.append(game_name, "user", text)
     if not bool(ready.get("ok", false)):
         _fail(str(ready.get("error", "Pi is unavailable.")))
         return
