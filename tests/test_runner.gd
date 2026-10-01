@@ -54,6 +54,7 @@ func run() -> void:
     await _test_workspace_and_git()
     await _test_rename_metadata_and_snapshot()
     await _test_tool_boundary()
+    await _test_large_file_read_and_patch_integrity()
     await _test_runner_multifile_and_failed_candidate()
     await _test_app_identity_settings_and_compact_ui()
     _set_test_llm_call_delay(0.0)
@@ -61,6 +62,7 @@ func run() -> void:
     await _test_chat_owns_mouse_mode_across_generated_reload()
     await _test_enter_sends_chat_message()
     await _test_llm_snippets_reach_chat()
+    await _test_chat_escapes_bbcode()
     await _test_library_is_blocked_while_agent_works()
     await _test_legacy_user_data_migration()
     await _test_debug_logs_and_redaction()
@@ -127,6 +129,44 @@ func _test_tool_boundary() -> void:
     assert_true(not tools.read_file("../host/credentials.json").ok, "tool cannot escape workspace")
     assert_true(tools.write_file("main.gd", "extends Node\n").ok, "tool writes inside workspace")
     var meta = MetadataStoreScript.new(); meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+
+func _test_large_file_read_and_patch_integrity() -> void:
+    var root_dir = "user://games/large-file-tool-test"
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root_dir))
+    var tools = GameToolsScript.new(root_dir)
+    var large = ""
+    for i in 800:
+        if i == 10:
+            large += "var TARGET_TOKEN = 1\n"
+        else:
+            large += "line_%04d = \"%s\"\n" % [i, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+    large += "TAIL_SENTINEL\n"
+    _write(root_dir.path_join("large.gd"), large)
+    assert_true(large.to_utf8_buffer().size() > 30000, "large-file regression fixture exceeds old 30 KB read cap")
+
+    var head = tools.execute("read_file", {"path": "large.gd", "offset": 1, "limit": 25})
+    assert_true(bool(head.get("ok", false)), "chunked read succeeds")
+    assert_true(bool(head.get("truncated", false)), "chunked read explicitly reports that more file content exists")
+    assert_eq(int(head.get("line_start", 0)), 1, "chunked read reports first returned line")
+    assert_eq(int(head.get("line_end", 0)), 25, "chunked read respects requested line limit")
+    assert_eq(int(head.get("next_offset", 0)), 26, "chunked read exposes continuation offset")
+
+    var tail = tools.execute("read_file", {"path": "large.gd", "offset": 790, "limit": 30})
+    assert_true("TAIL_SENTINEL" in str(tail.get("content", "")), "chunked read can retrieve the tail of a large file")
+
+    var before = FileAccess.get_file_as_string(root_dir.path_join("large.gd"))
+    var patched = tools.patch_file("large.gd", "var TARGET_TOKEN = 1", "var TARGET_TOKEN = 2")
+    var after = FileAccess.get_file_as_string(root_dir.path_join("large.gd"))
+    assert_true(bool(patched.get("ok", false)), "patch_file accepts an exact unique edit in a large file")
+    assert_true("var TARGET_TOKEN = 2" in after, "patch_file applies requested edit")
+    assert_true("TAIL_SENTINEL" in after, "patch_file preserves content beyond the read preview window")
+    assert_eq(after.length(), before.length(), "equal-length patch preserves the complete file length")
+    assert_eq(int(patched.get("bytes_before", -1)), before.to_utf8_buffer().size(), "patch result reports original full-file size")
+    assert_eq(int(patched.get("bytes_after", -1)), after.to_utf8_buffer().size(), "patch result reports resulting full-file size")
+
+    var meta = MetadataStoreScript.new()
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root_dir))
+
 
 func _test_runner_multifile_and_failed_candidate() -> void:
     var dir = "user://games/runtime-test"
@@ -267,7 +307,7 @@ func _test_llm_snippets_reach_chat() -> void:
     var query_raw = "find the player speed constant inside all workspace scripts"
     var tool_raw = "search_text " + JSON.stringify({"query": query_raw})
     var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": assistant_raw, "reasoning_content": thinking_raw, "tool_calls": [_tool_call("search-1", "search_text", {"query": query_raw})]}})
+    fake.push({"ok": true, "message": {"role": "assistant", "content": assistant_raw, "reasoning_content": null, "reasoning": thinking_raw, "tool_calls": [_tool_call("search-1", "search_text", {"query": query_raw})]}})
     fake.push({"ok": true, "message": {"role": "assistant", "content": "All done."}})
     app.agent.provider_override = fake
     app.chat_input.text = "what is the status"
@@ -292,6 +332,19 @@ func _test_llm_snippets_reach_chat() -> void:
     paused = false
     await process_frame
     store.delete_game(name)
+
+
+func _test_chat_escapes_bbcode() -> void:
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    var literal = "read_file [color=red]literal[/color] [b]markup[/b]"
+    app._append_chat("tool", literal)
+    await process_frame
+    var ui_text: String = app.transcript_view.get_parsed_text()
+    assert_true(literal in ui_text, "chat renders tool/user/model text as literal text instead of parsing BBCode")
+    app.queue_free()
+    await process_frame
 
 
 func _test_library_is_blocked_while_agent_works() -> void:
