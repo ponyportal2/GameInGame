@@ -279,9 +279,14 @@ func _send_chat() -> void:
 func _append_chat(role: String, text: String) -> void:
     var label = {"user": "YOU", "assistant": "AGENT", "thinking": "THINK", "tool": "TOOL"}.get(role, "HOST")
     var color = {"user": "9bb7ff", "assistant": "c2f0cb", "thinking": "6f7ea3", "tool": "e5b978"}.get(role, "8393b2")
-    transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n%s\n\n" % [color, label, text])
+    transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n%s\n\n" % [color, label, _escape_bbcode(text)])
     await get_tree().process_frame
     transcript_view.scroll_to_line(maxi(0, transcript_view.get_line_count() - 1))
+
+func _escape_bbcode(text: String) -> String:
+    # Godot's documented RichTextLabel escaping pattern: blocking opening
+    # brackets is enough to prevent user/model/tool text from becoming tags.
+    return text.replace("[", "[lb]")
 
 func _load_transcript() -> void:
     transcript_view.clear()

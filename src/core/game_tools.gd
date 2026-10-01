@@ -1,6 +1,9 @@
 class_name GameTools
 extends RefCounted
 
+const DEFAULT_READ_LINES = 300
+const MAX_READ_LINES = 1000
+
 var workspace = ""
 var git = GitService.new()
 var runner: GameRunner
@@ -20,12 +23,38 @@ func list_files(relative_dir: String = "") -> Dictionary:
     _walk(base, workspace, result)
     return {"ok": true, "files": result}
 
-func read_file(relative_path: String) -> Dictionary:
+func read_file(relative_path: String, offset: int = 1, limit: int = DEFAULT_READ_LINES) -> Dictionary:
     var path = _path(relative_path)
     if path == "": return _unsafe()
     if not FileAccess.file_exists(path):
         return {"ok": false, "error": "File not found."}
-    return {"ok": true, "content": FileAccess.get_file_as_string(path).left(30000)}
+    var full = FileAccess.get_file_as_string(path)
+    var lines = full.split("\n", true)
+    var start_line = maxi(1, offset)
+    var bounded_limit = clampi(limit, 1, MAX_READ_LINES)
+    var start_index = start_line - 1
+    if start_index >= lines.size():
+        return {
+            "ok": false,
+            "error": "Offset %d is beyond end of file (%d lines)." % [start_line, lines.size()],
+            "total_lines": lines.size(),
+            "bytes_total": full.to_utf8_buffer().size()
+        }
+    var end_index = mini(start_index + bounded_limit, lines.size())
+    var selected = PackedStringArray()
+    for i in range(start_index, end_index):
+        selected.append(lines[i])
+    var truncated = end_index < lines.size()
+    return {
+        "ok": true,
+        "content": "\n".join(selected),
+        "line_start": start_line,
+        "line_end": end_index,
+        "total_lines": lines.size(),
+        "truncated": truncated,
+        "next_offset": end_index + 1 if truncated else 0,
+        "bytes_total": full.to_utf8_buffer().size()
+    }
 
 func search_text(query: String) -> Dictionary:
     if query == "": return {"ok": false, "error": "Query is empty."}
@@ -55,13 +84,25 @@ func write_file(relative_path: String, content: String) -> Dictionary:
     return {"ok": true, "bytes": content.to_utf8_buffer().size()}
 
 func patch_file(relative_path: String, old_text: String, new_text: String) -> Dictionary:
-    var read = read_file(relative_path)
-    if not read.ok: return read
-    if old_text == "": return {"ok": false, "error": "old_text cannot be empty."}
-    var count = read.content.count(old_text)
+    var path = _path(relative_path)
+    if path == "": return _unsafe()
+    if not FileAccess.file_exists(path):
+        return {"ok": false, "error": "File not found."}
+    if old_text == "":
+        return {"ok": false, "error": "old_text cannot be empty."}
+    # Never patch a read preview. Read the complete current file so untouched tail
+    # content cannot be lost when a model edits a file larger than the read window.
+    var full = FileAccess.get_file_as_string(path)
+    var count = full.count(old_text)
     if count != 1:
-        return {"ok": false, "error": "Patch requires exactly one match; found %d." % count}
-    return write_file(relative_path, read.content.replace(old_text, new_text))
+        return {"ok": false, "error": "Patch requires exactly one match in the complete file; found %d." % count}
+    var updated = full.replace(old_text, new_text)
+    var result = write_file(relative_path, updated)
+    if bool(result.get("ok", false)):
+        result["bytes_before"] = full.to_utf8_buffer().size()
+        result["bytes_after"] = updated.to_utf8_buffer().size()
+        result["replacements"] = 1
+    return result
 
 func move_path(from_relative: String, to_relative: String) -> Dictionary:
     var from = _path(from_relative)
@@ -99,7 +140,7 @@ func read_runtime_log() -> Dictionary:
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
         "list_files": return list_files(str(args.get("path", "")))
-        "read_file": return read_file(str(args.get("path", "")))
+        "read_file": return read_file(str(args.get("path", "")), int(args.get("offset", 1)), int(args.get("limit", DEFAULT_READ_LINES)))
         "search_text": return search_text(str(args.get("query", "")))
         "write_file": return write_file(str(args.get("path", "")), str(args.get("content", "")))
         "patch_file": return patch_file(str(args.get("path", "")), str(args.get("old_text", "")), str(args.get("new_text", "")))

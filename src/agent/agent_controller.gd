@@ -93,7 +93,7 @@ func send_player_request(text: String) -> void:
         var message: Dictionary = result.message.duplicate(true)
         messages.append(message)
         var calls: Array = message.get("tool_calls", [])
-        var thinking_snippet = _snippet(message.get("reasoning_content", message.get("reasoning", "")))
+        var thinking_snippet = _snippet(_thinking_text(message))
         if thinking_snippet != "":
             llm_snippet.emit("thinking", thinking_snippet)
         if not calls.is_empty():
@@ -173,8 +173,19 @@ func send_player_request(text: String) -> void:
     _fail("The agent reached the per-request step limit (%d). Your files were left as-is; continue with another message if needed." % max_steps)
 
 
+func _thinking_text(message: Dictionary) -> String:
+    # Keep THINK blocks when a provider explicitly exposes plain text reasoning.
+    # Unknown/structured reasoning payloads are provider internals, not chat text.
+    for key in ["reasoning_content", "reasoning"]:
+        var value = message.get(key, null)
+        if typeof(value) == TYPE_STRING:
+            var text = str(value).strip_edges()
+            if text != "":
+                return text
+    return ""
+
 func _snippet(value: Variant) -> String:
-    if value == null:
+    if typeof(value) != TYPE_STRING:
         return ""
     var flat = str(value).replace("\r", " ").replace("\n", " ").strip_edges()
     if flat == "":
@@ -246,6 +257,8 @@ Rules:
 - The current workspace is the entire generated game. Never ask for or reference host files, credentials, or other games.
 - You receive durable prior player/assistant conversation after GameSmith restarts. Completed historical tool-call/result chatter may be compacted to keep context efficient; the full raw trace stays on disk for debugging. Treat the workspace and Git as the technical source of truth if old conversation details and current files ever differ.
 - Before changing an existing game, inspect the relevant current files unless their exact current contents are already present in recent tool results. Do not guess file contents from conversation alone.
+- read_file returns a bounded line window. If it reports truncated=true, use next_offset/offset+limit or search_text to inspect the omitted range. A truncated read is only a preview; it does NOT mean the file itself is truncated.
+- patch_file matches against the complete current file, not the read preview, and refuses ambiguous matches. Prefer patch_file for surgical changes to existing large files. write_file replaces the entire file and should be used only when creating a file or intentionally rewriting it in full.
 - v1 generated games are GDScript-only. main.gd at workspace root is the entry point and must extend a Node type.
 - Build the scene tree from code. Do not create .tscn files or depend on imported images, models, sounds, or fonts.
 - 2D and 3D are both allowed. Prefer engine primitives, procedural geometry, built-in drawing, and text-created shaders/materials.
@@ -265,10 +278,10 @@ Rules:
 func _tool_schema() -> Array:
     return [
         _tool("list_files", "List files recursively within the current game workspace.", {"path": _str("Optional relative directory")}, []),
-        _tool("read_file", "Read a UTF-8 text file in the current game workspace.", {"path": _str("Relative path")}, ["path"]),
-        _tool("search_text", "Search readable workspace files for text.", {"query": _str("Text to find")}, ["query"]),
-        _tool("write_file", "Create or fully replace a UTF-8 text file.", {"path": _str("Relative path"), "content": _str("Complete file content")}, ["path", "content"]),
-        _tool("patch_file", "Replace one exact unique text fragment in a file.", {"path": _str("Relative path"), "old_text": _str("Exact unique old text"), "new_text": _str("Replacement text")}, ["path", "old_text", "new_text"]),
+        _tool("read_file", "Read a bounded line window from a UTF-8 workspace file. The result reports line_start/line_end/total_lines/truncated/next_offset; continue with next_offset when truncated.", {"path": _str("Relative path"), "offset": {"type": "integer", "minimum": 1, "description": "1-based starting line; default 1"}, "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "description": "Maximum lines to return; default 300"}}, ["path"]),
+        _tool("search_text", "Search readable workspace files for text and return matching file/line locations.", {"query": _str("Text to find")}, ["query"]),
+        _tool("write_file", "Create or intentionally overwrite an entire UTF-8 text file. For surgical edits to an existing file, prefer patch_file.", {"path": _str("Relative path"), "content": _str("Complete file content")}, ["path", "content"]),
+        _tool("patch_file", "Safely replace one exact unique text fragment in the complete current file. This operates on the full file even if read_file returned only a truncated preview.", {"path": _str("Relative path"), "old_text": _str("Exact unique old text; include enough context to match once"), "new_text": _str("Replacement text")}, ["path", "old_text", "new_text"]),
         _tool("move_path", "Move or rename a file/directory within the workspace.", {"from": _str("Existing relative path"), "to": _str("Destination relative path")}, ["from", "to"]),
         _tool("delete_path", "Delete a file or directory within the workspace.", {"path": _str("Relative path")}, ["path"]),
         _tool("git_status", "Show Git branch and working tree status.", {}, []),
