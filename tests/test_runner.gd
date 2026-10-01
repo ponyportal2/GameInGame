@@ -5,40 +5,14 @@ const WorkspaceStoreScript = preload("res://src/core/workspace_store.gd")
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
-const AgentControllerScript = preload("res://src/agent/agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
-const ConversationStoreScript = preload("res://src/core/conversation_store.gd")
-const CompactionServiceScript = preload("res://src/core/compaction_service.gd")
-const ProviderFactoryScript = preload("res://src/providers/provider_factory.gd")
+const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd")
 
 var failures = 0
 var passed = 0
-
-class FakeProvider:
-    extends RefCounted
-    var tree: SceneTree
-    var responses: Array = []
-    var seen_messages: Array = []
-    var seen_tools: Array = []
-    var call_count = 0
-
-    func _init(p_tree: SceneTree):
-        tree = p_tree
-
-    func push(response: Dictionary) -> void:
-        responses.append(response)
-
-    func complete(messages: Array, _tools: Array) -> Dictionary:
-        call_count += 1
-        seen_messages.append(messages.duplicate(true))
-        seen_tools.append(_tools.duplicate(true))
-        await tree.process_frame
-        if responses.is_empty():
-            return {"ok": false, "error": "Fake provider exhausted."}
-        return responses.pop_front()
 
 class FakeUiAgent:
     extends Node
@@ -133,20 +107,7 @@ func run() -> void:
     await _test_manual_compaction_chat_feedback_and_send_guard()
     await _test_legacy_user_data_migration()
     await _test_debug_logs_and_redaction()
-    await _test_agent_generation_and_second_edit()
-    await _test_agent_rejects_false_done_on_empty_workspace()
-    await _test_agent_requires_reload_after_code_change()
-    await _test_agent_recovers_from_failed_reload_before_completion()
-    await _test_agent_history_survives_restart_and_keeps_stable_prefix()
-    await _test_pi_style_compaction_contract()
-    await _test_legacy_transcript_is_imported_into_agent_history()
     await _test_provider_settings_surface()
-    await _test_custom_provider_and_reasoning_payload()
-    await _test_agent_llm_call_delay()
-    await _test_agent_auto_compaction_threshold()
-    await _test_agent_malformed_tool_arguments()
-    await _test_agent_provider_failure()
-    await _test_agent_step_limit()
     print("TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
 
@@ -476,11 +437,6 @@ func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
         return
     _write(created.path.path_join("main.gd"), "extends Node\n")
 
-    var conv = ConversationStoreScript.new()
-    for i in 8:
-        conv.append(name, {"role": "user", "content": "old-%d %s" % [i, "u".repeat(1000)]})
-        conv.append(name, {"role": "assistant", "content": "answer-%d" % i})
-
     var app = load("res://main.tscn").instantiate()
     root.add_child(app)
     await process_frame
@@ -494,7 +450,8 @@ func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
     fake.compact_frames = 3
     _replace_app_agent(app, fake)
 
-    var message_count_before = conv.read_all(name).size()
+    var readable = TranscriptStoreScript.new()
+    var message_count_before = readable.read_all(name).size()
     app._compact_now_from_settings()
     assert_true(app.agent.busy, "manual compaction marks agent busy immediately")
     assert_true(not app.settings_dialog.visible, "manual compaction returns from Settings to chat so progress is visible")
@@ -506,7 +463,7 @@ func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
 
     app.chat_input.text = "this must not send"
     app._send_chat()
-    assert_eq(conv.read_all(name).size(), message_count_before, "new chat messages cannot enter durable history while manual compaction is running")
+    assert_eq(readable.read_all(name).size(), message_count_before, "new chat messages cannot enter readable transcript while manual compaction is running")
 
     for _i in 120:
         if not app.agent.busy: break
@@ -518,13 +475,10 @@ func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
     assert_true(app.chat_input.editable, "chat composer is re-enabled after manual compaction")
     assert_true(app.get("send_button") != null and not app.send_button.disabled, "Send button is re-enabled after manual compaction")
     assert_true(not app.library_button.disabled, "Library navigation is re-enabled after manual compaction")
-    assert_eq(TranscriptStoreScript.new().read_all(name).size(), 0, "manual compaction status messages stay ephemeral and do not pollute readable transcript")
+    assert_eq(readable.read_all(name).size(), message_count_before, "manual compaction status messages stay ephemeral and do not pollute readable transcript")
 
-    for i in range(8, 14):
-        conv.append(name, {"role": "user", "content": "more-%d %s" % [i, "z".repeat(1000)]})
-        conv.append(name, {"role": "assistant", "content": "more-answer-%d" % i})
     var failing = FakeUiAgent.new(self)
-    failing.compact_result = {"ok": false, "error": "simulated summary failure"}
+    failing.compact_result = {"ok": false, "error": "simulated Pi compaction failure"}
     _replace_app_agent(app, failing)
     app._open_settings()
     app._compact_now_from_settings()
@@ -533,16 +487,14 @@ func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
         await process_frame
     await process_frame
     var failed_text: String = app.transcript_view.get_parsed_text()
-    assert_true("Compaction failed" in failed_text and "simulated summary failure" in failed_text, "failed manual compaction posts an explicit failure message in chat")
+    assert_true("Compaction failed" in failed_text and "simulated Pi compaction failure" in failed_text, "failed native Pi compaction posts an explicit failure message in chat")
     assert_true(app.chat_input.editable and not app.send_button.disabled, "composer is restored after failed manual compaction")
 
     app.queue_free()
-    paused = false
     await process_frame
+    paused = false
     store.delete_game(name)
     metadata.save_global_settings(original_settings)
-
-
 func _test_app_identity_settings_and_compact_ui() -> void:
     assert_eq(str(ProjectSettings.get_setting("application/config/name", "")), "GameSmithHost", "Godot application data identity has no space")
     var metadata = MetadataStoreScript.new()
@@ -641,479 +593,17 @@ func _write_abs(path: String, content: String) -> void:
     DirAccess.make_dir_recursive_absolute(path.get_base_dir())
     var f = FileAccess.open(path, FileAccess.WRITE); f.store_string(content); f.close()
 
-func _test_agent_generation_and_second_edit() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Agent E2E %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates agent end-to-end workspace")
-    if not created.get("ok", false): return
-
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var tools = GameToolsScript.new(created.path, runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [
-        _tool_call("write-1", "write_file", {"path": "main.gd", "content": "extends Node2D\nvar speed = 100.0\nfunc _process(delta):\n    position.x += speed * delta\n"}),
-        _tool_call("commit-1", "git_commit", {"message": "Create moving game"}),
-        _tool_call("reload-1", "reload_game", {})
-    ]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Built a moving game."}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [
-        _tool_call("patch-1", "patch_file", {"path": "main.gd", "old_text": "var speed = 100.0", "new_text": "var speed = 240.0"}),
-        _tool_call("commit-2", "git_commit", {"message": "Increase player speed"}),
-        _tool_call("reload-2", "reload_game", {})
-    ]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Player speed increased."}})
-
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, tools)
-    agent.provider_override = fake
-
-    agent.send_player_request("Make a tiny moving game")
-    var first_ok = await agent.finished
-    assert_true(first_ok, "simulated LLM generation request finishes successfully")
-    assert_true(runner.has_active_game(), "simulated LLM reload produces a running game")
-    assert_true(runner.active_game is Node2D, "generated game is an instantiated playable Node2D")
-    assert_eq(runner.active_game.speed, 100.0, "first generated game uses requested initial speed")
-    var x_before = runner.active_game.position.x
-    await process_frame; await process_frame
-    assert_true(runner.active_game.position.x > x_before, "generated game actually processes after reload")
-
-    var transcript_store = TranscriptStoreScript.new()
-    var first_transcript = transcript_store.read_all(name)
-    assert_eq(first_transcript.size(), 2, "first request persists user and assistant transcript entries")
-    assert_eq(str(first_transcript[0].content), "Make a tiny moving game", "transcript persists first player request")
-    assert_eq(str(first_transcript[1].content), "Built a moving game.", "transcript persists first assistant response")
-
-    agent.send_player_request("Make the player faster")
-    var second_ok = await agent.finished
-    assert_true(second_ok, "simulated second LLM request finishes successfully")
-    assert_eq(runner.active_game.speed, 240.0, "second request patches and reloads the running game")
-    var final_source = FileAccess.get_file_as_string(created.path.path_join("main.gd"))
-    assert_true("var speed = 240.0" in final_source, "second request persists the modified source")
-    var git_log: Dictionary = store.git.log(created.path, 5)
-    assert_true("Increase player speed" in str(git_log.get("output", "")) and "Create moving game" in str(git_log.get("output", "")), "simulated LLM creates coherent Git milestones")
-    var final_transcript = transcript_store.read_all(name)
-    assert_eq(final_transcript.size(), 4, "second request appends to persistent transcript")
-    assert_eq(str(final_transcript[3].content), "Player speed increased.", "transcript persists second assistant response")
-    var debug_log = FileAccess.get_file_as_string(AppLoggerScript.game_log_path(name))
-    assert_true("agent.request" in debug_log and "agent.tool" in debug_log and "agent.finished" in debug_log, "simulated agent lifecycle is available in the per-game debug log")
-
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
-func _test_agent_rejects_false_done_on_empty_workspace() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "False Done %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates false-done workspace")
-    if not created.get("ok", false): return
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Done."}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [
-        _tool_call("write-main", "write_file", {"path": "main.gd", "content": "extends Node2D\nvar ticks = 0\nfunc _process(_delta): ticks += 1\n"}),
-        _tool_call("reload-main", "reload_game", {})
-    ]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Built and loaded the game."}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    agent.send_player_request("create a simple tetris 3d game")
-    var ok = await agent.finished
-    assert_true(ok, "false Done response is recovered within the same player request")
-    assert_eq(fake.call_count, 3, "empty-workspace completion claim cannot terminate before tool work")
-    assert_true(FileAccess.file_exists(created.path.path_join("main.gd")), "recovered request actually writes main.gd")
-    assert_true(runner.has_active_game(), "recovered request actually reloads a generated game")
-    var visible = TranscriptStoreScript.new().read_all(name)
-    assert_eq(str(visible[-1].content), "Built and loaded the game.", "premature Done is hidden from readable transcript")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
-func _test_agent_requires_reload_after_code_change() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Reload Guard %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates reload-guard workspace")
-    if not created.get("ok", false): return
-    _write(created.path.path_join("main.gd"), "extends Node2D\nvar speed = 10.0\n")
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    assert_true(runner.load_game(created.path).ok, "reload-guard baseline game loads")
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [
-        _tool_call("patch-speed", "patch_file", {"path": "main.gd", "old_text": "var speed = 10.0", "new_text": "var speed = 20.0"})
-    ]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Done."}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [_tool_call("reload-speed", "reload_game", {})]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Speed changed and loaded."}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    agent.send_player_request("make it faster")
-    var ok = await agent.finished
-    assert_true(ok, "code mutation cannot finish until its new code is reloaded")
-    assert_eq(fake.call_count, 4, "premature post-edit Done triggers another agent step")
-    assert_eq(runner.active_game.speed, 20.0, "required reload activates edited code")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
-func _test_agent_recovers_from_failed_reload_before_completion() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Failed Reload Guard %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates failed-reload workspace")
-    if not created.get("ok", false): return
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [
-        _tool_call("write-broken", "write_file", {"path": "main.gd", "content": "extends Node2D\nfunc broken(:\n"}),
-        _tool_call("reload-broken", "reload_game", {})
-    ]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Done."}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [
-        _tool_call("fix-broken", "write_file", {"path": "main.gd", "content": "extends Node2D\nvar repaired = true\n"}),
-        _tool_call("reload-fixed", "reload_game", {})
-    ]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Fixed and loaded."}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    agent.send_player_request("build a game")
-    var ok = await agent.finished
-    assert_true(ok, "failed reload cannot be followed by a false successful completion")
-    assert_eq(fake.call_count, 4, "failed reload plus Done is forced back into repair loop")
-    assert_true(runner.has_active_game() and runner.active_game.repaired, "repair loop ends with a working generated game")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
-func _test_agent_history_survives_restart_and_keeps_stable_prefix() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Agent History %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates persistent-history workspace")
-    if not created.get("ok", false): return
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var tools = GameToolsScript.new(created.path, runner)
-
-    var first = FakeProvider.new(self)
-    first.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [_tool_call("history-status", "git_status", {})]}})
-    first.push({"ok": true, "message": {"role": "assistant", "content": "Blue remembered."}})
-    var agent1 = AgentControllerScript.new(); root.add_child(agent1)
-    agent1.configure(name, tools); agent1.provider_override = first
-    agent1.send_player_request("Remember blue")
-    assert_true(await agent1.finished, "first persistent-history request succeeds")
-    agent1.queue_free(); await process_frame
-
-    var second = FakeProvider.new(self)
-    second.push({"ok": true, "message": {"role": "assistant", "content": "You said blue."}})
-    var agent2 = AgentControllerScript.new(); root.add_child(agent2)
-    agent2.configure(name, tools); agent2.provider_override = second
-    agent2.send_player_request("What did I say?")
-    assert_true(await agent2.finished, "request after agent restart succeeds")
-    var raw_history = ConversationStoreScript.new().read_all(name)
-    assert_true(raw_history.size() >= 4, "full raw agent trace remains durable on disk")
-    if raw_history.size() >= 4:
-        assert_true(not (raw_history[1].get("tool_calls", []) as Array).is_empty(), "raw history retains assistant tool calls for debugging")
-        assert_eq(str(raw_history[2].get("role", "")), "tool", "raw history retains tool results for debugging")
-    var resumed: Array = second.seen_messages[0]
-    assert_eq(resumed.size(), 6, "before an explicit checkpoint, restarted agent replays full prior Pi-style history plus new user message")
-    if resumed.size() >= 6:
-        assert_eq(str(resumed[1].get("content", "")), "Remember blue", "full history includes previous user message")
-        assert_true(not (resumed[2].get("tool_calls", []) as Array).is_empty(), "full history retains assistant tool call until compaction")
-        assert_eq(str(resumed[3].get("role", "")), "tool", "full history retains tool result until compaction")
-        assert_eq(str(resumed[4].get("content", "")), "Blue remembered.", "full history includes previous final assistant response")
-        assert_eq(str(resumed[5].get("content", "")), "What did I say?", "new user message follows stable history")
-    var stable_prefix_json = JSON.stringify(resumed.slice(0, maxi(0, resumed.size() - 1)))
-    agent2.queue_free(); await process_frame
-
-    var third = FakeProvider.new(self)
-    third.push({"ok": true, "message": {"role": "assistant", "content": "Still blue."}})
-    var agent3 = AgentControllerScript.new(); root.add_child(agent3)
-    agent3.configure(name, tools); agent3.provider_override = third
-    agent3.send_player_request("And now?")
-    assert_true(await agent3.finished, "second request after restart succeeds")
-    var third_messages: Array = third.seen_messages[0]
-    if resumed.size() >= 1 and third_messages.size() >= resumed.size() + 1:
-        assert_eq(JSON.stringify(third_messages.slice(0, resumed.size() - 1)), stable_prefix_json, "unchanged conversation prefix is byte-stable for provider prompt caching")
-    else:
-        assert_true(false, "third request retains the previous stable conversation prefix")
-
-    agent3.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
-
-func _test_pi_style_compaction_contract() -> void:
-    var name = "Compaction Contract %d" % Time.get_ticks_msec()
-    var store = ConversationStoreScript.new()
-    for i in 8:
-        store.append(name, {"role": "user", "content": "request-%d %s" % [i, "u".repeat(700)]})
-        store.append(name, {"role": "assistant", "content": "", "tool_calls": [_tool_call("read-%d" % i, "read_file", {"path": "main.gd"})]})
-        store.append(name, {"role": "tool", "tool_call_id": "read-%d" % i, "content": JSON.stringify({"ok": true, "content": "x".repeat(5000)})})
-        store.append(name, {"role": "assistant", "content": "done-%d" % i, "reasoning_content": "reason-%d" % i})
-
-    var before = store.read_for_provider(name)
-    assert_true(before.size() >= 32, "before explicit compaction, full tool/reasoning history remains provider-visible like Pi")
-    assert_true(int(store.estimate_provider_tokens(name)) > 1000, "token estimator sees long provider context")
-    var prep: Dictionary = store.prepare_compaction(name, 700)
-    assert_true(bool(prep.get("ok", false)), "Pi-style compaction finds a valid cut point")
-    assert_true(int(prep.get("first_kept_message_index", -1)) > 0, "compaction keeps a recent tail rather than replacing the entire conversation")
-    assert_true((prep.get("messages_to_summarize", []) as Array).size() > 0 or (prep.get("turn_prefix_messages", []) as Array).size() > 0, "compaction selects older context for summarization")
-    var kept: Array = prep.get("kept_messages", [])
-    assert_true(not kept.is_empty(), "compaction leaves recent messages verbatim")
-    if not kept.is_empty():
-        assert_true(str(kept[-1].get("content", "")) == "done-7", "newest completed turn is kept verbatim")
-
-    var fake = FakeProvider.new(self)
-    var summary = "## Goal\nKeep building.\n\n## Constraints & Preferences\n- preserve behavior\n\n## Progress\n### Done\n- [x] Old work\n\n### In Progress\n- [ ] Continue\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Edit safely**: use exact patches\n\n## Next Steps\n1. Continue\n\n## Critical Context\n- main.gd"
-    fake.push({"ok": true, "message": {"role": "assistant", "content": summary}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "## Original Request\nContinue\n\n## Progress So Far\n- Work\n\n## Context Needed to Continue\n- main.gd"}})
-    var compacted_result: Dictionary = await CompactionServiceScript.new().compact_game(name, fake, 700)
-    assert_true(bool(compacted_result.get("ok", false)), "Pi-style compaction generates and persists a checkpoint through the provider")
-    assert_true(fake.call_count >= 1, "compaction uses an LLM summarization call")
-    for tool_list in fake.seen_tools:
-        assert_true((tool_list as Array).is_empty(), "compaction summarization call exposes no coding tools")
-    if not fake.seen_messages.is_empty():
-        var summary_messages: Array = fake.seen_messages[0]
-        assert_true(str(summary_messages[0].get("content", "")).begins_with("You are a context summarization assistant."), "compaction uses Pi summarization system instruction")
-        assert_true("<conversation>" in str(summary_messages[1].get("content", "")), "compaction serializes history inside conversation tags")
-        assert_true("[... " in str(summary_messages[1].get("content", "")), "tool results are truncated only in the summarization request")
-
-    var compacted = store.read_for_provider(name)
-    assert_true(str(compacted[0].get("role", "")) == "user", "Pi compaction summary re-enters provider context as a user message")
-    assert_true("The conversation history before this point was compacted into the following summary:" in str(compacted[0].get("content", "")), "provider replay uses Pi compaction-summary wrapper")
-    assert_true(compacted.size() < before.size(), "compaction replaces old provider context with summary plus recent tail")
-    assert_eq((store.read_all(name) as Array).size(), 32, "raw append-only message history remains intact after compaction")
-
-    for i in range(8, 12):
-        store.append(name, {"role": "user", "content": "request-%d %s" % [i, "z".repeat(700)]})
-        store.append(name, {"role": "assistant", "content": "done-%d" % i})
-    var fake_update = FakeProvider.new(self)
-    fake_update.push({"ok": true, "message": {"role": "assistant", "content": summary + "\n- updated"}})
-    fake_update.push({"ok": true, "message": {"role": "assistant", "content": "## Original Request\nContinue\n\n## Progress So Far\n- Updated\n\n## Context Needed to Continue\n- main.gd"}})
-    var updated_result: Dictionary = await CompactionServiceScript.new().compact_game(name, fake_update, 400)
-    assert_true(bool(updated_result.get("ok", false)), "later compaction updates the existing checkpoint")
-    var saw_previous_summary = false
-    for request in fake_update.seen_messages:
-        if (request as Array).size() > 1 and "<previous-summary>" in str(request[1].get("content", "")):
-            saw_previous_summary = true
-    assert_true(saw_previous_summary, "iterative compaction passes the previous checkpoint into Pi update prompt")
-
-    MetadataStoreScript.new().delete_game(name)
-
-
-func _test_legacy_transcript_is_imported_into_agent_history() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Legacy History %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates legacy-history workspace")
-    if not created.get("ok", false): return
-    var legacy = TranscriptStoreScript.new()
-    legacy.append(name, "user", "Build a blue square")
-    legacy.append(name, "assistant", "Built the blue square.")
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "You built a blue square."}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    agent.send_player_request("What did we build?")
-    assert_true(await agent.finished, "legacy transcript migration request succeeds")
-    var messages: Array = fake.seen_messages[0]
-    assert_eq(messages.size(), 4, "legacy readable transcript becomes provider-visible history on first upgraded request")
-    if messages.size() >= 4:
-        assert_eq(str(messages[1].get("content", "")), "Build a blue square", "legacy user message is imported")
-        assert_eq(str(messages[2].get("content", "")), "Built the blue square.", "legacy assistant message is imported")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
 func _test_provider_settings_surface() -> void:
-    var names = ProviderFactoryScript.display_names()
-    assert_true(names.has("custom"), "provider list exposes a custom OpenAI-compatible provider")
+    var names = PiProviderCatalogScript.display_names()
+    assert_true(names.has("custom"), "Pi provider list exposes a custom OpenAI-compatible provider")
+    assert_true(names.has("openai_subscription"), "Pi provider list exposes global OpenAI subscription auth")
+    var defaults = PiProviderCatalogScript.defaults()
+    assert_eq(str(defaults.get("openrouter", "")), "openai/gpt-5.6", "Pi provider catalog retains the OpenRouter default model")
+    assert_eq(PiProviderCatalogScript.custom_base_url("http://127.0.0.1:1234/v1/chat/completions"), "http://127.0.0.1:1234/v1", "custom Pi base URL strips a chat-completions suffix")
+    assert_true(PiProviderCatalogScript.uses_global_auth("openai_subscription"), "OpenAI subscription delegates auth to Pi")
     var settings = MetadataStoreScript.new().global_settings()
     assert_true(settings.has("custom_base_url"), "global settings include custom /v1 base address")
-    assert_true(settings.has("reasoning_effort"), "global settings include reasoning_effort")
-    assert_true(settings.has("llm_call_delay_sec"), "global settings include configurable delay between LLM calls")
-
-
-func _test_custom_provider_and_reasoning_payload() -> void:
-    var owner = Node.new(); root.add_child(owner)
-    var provider = ProviderFactoryScript.make(owner, "custom", "local-model", {"custom": ""}, "session", {"custom_base_url": "http://127.0.0.1:1234/v1/", "reasoning_effort": "high"})
-    assert_true(provider != null, "custom provider can be created without an API key")
-    if provider != null:
-        assert_eq(provider.endpoint, "http://127.0.0.1:1234/v1/chat/completions", "custom /v1 base address normalizes to chat completions endpoint")
-        var payload: Dictionary = provider.build_payload([{"role": "user", "content": "hello"}], [])
-        assert_eq(str(payload.get("reasoning_effort", "")), "high", "provider sends reasoning_effort exactly in OpenAI-compatible request payload")
-        assert_true(not payload.has("temperature"), "reasoning payload omits incompatible temperature when effort is enabled")
-        var summary_payload: Dictionary = provider.build_payload([{"role": "user", "content": "summarize"}], [])
-        assert_true(not summary_payload.has("tools") and not summary_payload.has("tool_choice"), "tool-free compaction requests omit OpenAI tool fields")
-    var no_reasoning = ProviderFactoryScript.make(owner, "custom", "local-model", {}, "session", {"custom_base_url": "http://127.0.0.1:1234", "reasoning_effort": ""})
-    assert_eq(no_reasoning.endpoint, "http://127.0.0.1:1234/v1/chat/completions", "custom address without /v1 receives the v1 suffix")
-    var default_payload: Dictionary = no_reasoning.build_payload([], [])
-    assert_true(not default_payload.has("reasoning_effort"), "provider-default reasoning omits reasoning_effort from request")
-    owner.queue_free(); await process_frame
-
-func _test_agent_llm_call_delay() -> void:
-    var metadata = MetadataStoreScript.new()
-    var original_settings = metadata.global_settings().duplicate(true)
-    var settings = original_settings.duplicate(true)
-    settings.provider = "custom"
-    settings.model = "delay-test-%d" % Time.get_ticks_msec()
-    settings.llm_call_delay_sec = 0.06
-    metadata.save_global_settings(settings)
-
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "LLM Delay %d" % Time.get_ticks_msec()
-    var created = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates provider-delay workspace")
-    if not created.get("ok", false):
-        metadata.save_global_settings(original_settings)
-        return
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [_tool_call("delay-status", "git_status", {})]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Status checked."}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    var started = Time.get_ticks_msec()
-    agent.send_player_request("check status")
-    assert_true(await agent.finished, "agent succeeds with configured provider pacing")
-    var elapsed = Time.get_ticks_msec() - started
-    assert_true(elapsed >= 45, "configured LLM delay inserts a real quiet period between provider calls")
-    var debug_log = FileAccess.get_file_as_string(AppLoggerScript.game_log_path(name))
-    assert_true("provider.delay" in debug_log, "provider pacing is visible in per-game debug logs")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-    metadata.save_global_settings(original_settings)
-
-func _test_agent_auto_compaction_threshold() -> void:
-    var metadata = MetadataStoreScript.new()
-    var original_settings = metadata.global_settings().duplicate(true)
-    var settings = original_settings.duplicate(true)
-    settings.provider = "custom"
-    settings.model = "auto-compact-test-%d" % Time.get_ticks_msec()
-    settings.llm_call_delay_sec = 0.0
-    settings.compaction_auto_tokens = 5000
-    settings.compaction_keep_recent_tokens = 1000
-    metadata.save_global_settings(settings)
-
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Auto Compaction %d" % Time.get_ticks_msec()
-    var created = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates auto-compaction workspace")
-    if not created.get("ok", false):
-        metadata.save_global_settings(original_settings)
-        return
-
-    var conv = ConversationStoreScript.new()
-    for i in 12:
-        conv.append(name, {"role": "user", "content": "old-request-%d %s" % [i, "q".repeat(1600)]})
-        conv.append(name, {"role": "assistant", "content": "old-answer-%d" % i})
-
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "## Goal\nContinue the game.\n\n## Constraints & Preferences\n- none\n\n## Progress\n### Done\n- [x] Prior turns\n\n### In Progress\n- [ ] Continue\n\n### Blocked\n- none\n\n## Key Decisions\n- **Keep state**: continue\n\n## Next Steps\n1. Continue\n\n## Critical Context\n- existing game"}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Continued after compaction."}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner))
-    agent.provider_override = fake
-    agent.send_player_request("tell me the current status")
-    assert_true(await agent.finished, "agent continues normally after automatic compaction")
-    assert_eq(fake.call_count, 2, "crossing threshold makes one summary call then one normal agent call")
-    if fake.seen_tools.size() >= 2:
-        assert_true((fake.seen_tools[0] as Array).is_empty(), "automatic compaction summary call has no coding tools")
-        assert_true(not (fake.seen_tools[1] as Array).is_empty(), "normal call after compaction receives coding tools")
-    if fake.seen_messages.size() >= 2:
-        var normal_messages: Array = fake.seen_messages[1]
-        assert_true(normal_messages.size() >= 3, "normal call receives system, checkpoint/tail, and new user")
-        assert_true("The conversation history before this point was compacted into the following summary:" in JSON.stringify(normal_messages), "normal call receives persisted Pi compaction checkpoint")
-        assert_true(str(normal_messages[-1].get("content", "")) == "tell me the current status", "new user message follows compacted stable prefix")
-    var entries = conv.read_entries(name)
-    var has_checkpoint = false
-    for entry in entries:
-        if str(entry.get("type", "")) == "compaction":
-            has_checkpoint = true
-    assert_true(has_checkpoint, "automatic compaction persists append-only checkpoint marker")
-
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-    metadata.save_global_settings(original_settings)
-
-
-func _test_agent_malformed_tool_arguments() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Malformed Tool %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates malformed-tool workspace")
-    if not created.get("ok", false): return
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [{"id": "bad-args", "type": "function", "function": {"name": "git_commit", "arguments": "{ definitely not json"}}]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Recovered from malformed arguments."}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    agent.send_player_request("Try a malformed tool call")
-    var ok = await agent.finished
-    assert_true(ok, "malformed tool arguments are recoverable by the model")
-    assert_eq(fake.call_count, 2, "malformed call result is returned to provider for another step")
-    var second_messages: Array = fake.seen_messages[1]
-    var tool_message: Dictionary = second_messages[second_messages.size() - 1]
-    assert_true("Malformed tool arguments" in str(tool_message.get("content", "")), "malformed JSON becomes an explicit tool error instead of executing defaults")
-    var log: Dictionary = store.git.log(created.path, 5)
-    assert_true(not "Update generated game" in str(log.get("output", "")), "malformed git_commit does not create an unintended default commit")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
-func _test_agent_provider_failure() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var name = "Provider Failure %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates provider-failure workspace")
-    if not created.get("ok", false): return
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": false, "error": "simulated provider outage"})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    agent.send_player_request("Build something")
-    var ok = await agent.finished
-    assert_true(not ok, "provider failure marks request unsuccessful")
-    assert_true(not agent.busy, "provider failure clears busy state")
-    var entries = TranscriptStoreScript.new().read_all(name)
-    assert_eq(entries.size(), 2, "provider failure is persisted alongside player request")
-    assert_true("simulated provider outage" in str(entries[-1].content), "provider failure transcript contains provider error")
-    assert_true(not runner.has_active_game(), "provider failure does not mutate or launch the game")
-    var debug_log = FileAccess.get_file_as_string(AppLoggerScript.game_log_path(name))
-    assert_true("provider.error" in debug_log and "agent.failed" in debug_log, "per-game log captures provider and agent failure events")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-
-func _test_agent_step_limit() -> void:
-    var store = WorkspaceStoreScript.new(); store.ensure()
-    var meta = MetadataStoreScript.new()
-    var original_settings = meta.global_settings().duplicate(true)
-    var settings = original_settings.duplicate(true)
-    settings.max_agent_steps = 3
-    meta.save_global_settings(settings)
-    var name = "Step Limit %d" % Time.get_ticks_msec()
-    var created: Dictionary = store.create_game(name)
-    assert_true(bool(created.get("ok", false)), "creates step-limit workspace")
-    if not created.get("ok", false):
-        meta.save_global_settings(original_settings)
-        return
-    var runner = GameRunnerScript.new(); root.add_child(runner)
-    var fake = FakeProvider.new(self)
-    for i in 5:
-        fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [_tool_call("status-%d" % i, "git_status", {})]}})
-    var agent = AgentControllerScript.new(); root.add_child(agent)
-    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
-    agent.send_player_request("Keep checking forever")
-    var ok = await agent.finished
-    assert_true(not ok, "configured step limit terminates runaway agent request")
-    assert_eq(fake.call_count, 3, "agent obeys persisted max_agent_steps setting")
-    assert_true(not agent.busy, "step-limit termination clears busy state")
-    var entries = TranscriptStoreScript.new().read_all(name)
-    assert_true("step limit" in str(entries[-1].content).to_lower(), "step-limit failure is persisted in transcript")
-    agent.queue_free(); runner.queue_free(); await process_frame
-    store.delete_game(name)
-    meta.save_global_settings(original_settings)
-
-func _tool_call(id: String, name: String, args: Dictionary) -> Dictionary:
-    return {"id": id, "type": "function", "function": {"name": name, "arguments": JSON.stringify(args)}}
-
+    assert_true(settings.has("reasoning_effort"), "global settings include Pi reasoning effort")
+    assert_true(settings.has("llm_call_delay_sec"), "global settings include configurable delay between Pi provider calls")
 func _write(path: String, content: String) -> void:
     var f = FileAccess.open(path, FileAccess.WRITE); f.store_string(content); f.close()
