@@ -2,6 +2,7 @@ class_name AgentController
 extends Node
 
 const ConversationStoreScript = preload("res://src/core/conversation_store.gd")
+const CompactionServiceScript = preload("res://src/core/compaction_service.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 
 signal status_changed(text: String)
@@ -23,6 +24,7 @@ var tools: GameTools
 var metadata = MetadataStore.new()
 var transcript = TranscriptStore.new()
 var conversation = ConversationStoreScript.new()
+var compaction = CompactionServiceScript.new()
 var busy = false
 var session_id = ""
 # Narrow injection seam used by deterministic integration tests. Production leaves this null.
@@ -37,26 +39,34 @@ func configure(p_game_name: String, p_tools: GameTools) -> void:
 func send_player_request(text: String) -> void:
     if busy: return
     busy = true
+
+    var settings = metadata.global_settings()
+    var provider_info = _provider_info(settings)
+    var provider_id = str(provider_info.provider_id)
+    var model = str(provider_info.model)
+    var provider = provider_override if provider_override != null else ProviderFactory.make(self, provider_id, model, metadata.credentials(), session_id, settings)
+
     var had_conversation = conversation.exists(game_name)
     var prior_history: Array = conversation.read_for_provider(game_name)
     if prior_history.is_empty() and not had_conversation:
         prior_history = conversation.import_legacy_transcript(game_name, transcript.read_all(game_name, 1000000))
+
+    if provider != null:
+        var maintenance = await _maybe_auto_compact(provider, settings, provider_id, model, "before_request")
+        if bool(maintenance.get("ok", false)) and not bool(maintenance.get("no_op", false)):
+            prior_history = conversation.read_for_provider(game_name)
+
     if conversation.needs_recovery_marker(prior_history):
         var recovery = conversation.recovery_marker()
         conversation.append(game_name, recovery)
         prior_history.append(recovery)
         AppLoggerScript.game_event(game_name, "conversation.recovery", "session=%s closed an unfinished prior turn before the new request" % session_id, "WARN")
+
     var user_message = {"role": "user", "content": text}
     transcript.append(game_name, "user", text)
     conversation.append(game_name, user_message)
     status_changed.emit("Thinking and editing…")
-    var settings = metadata.global_settings()
-    var game_meta = metadata.read_game(game_name)
-    var provider_id = str(game_meta.get("provider_override", ""))
-    var model = str(game_meta.get("model_override", ""))
-    if provider_id == "": provider_id = str(settings.get("provider", "openrouter"))
-    if model == "": model = str(settings.get("model", ProviderFactory.defaults().get(provider_id, "")))
-    var provider = provider_override if provider_override != null else ProviderFactory.make(self, provider_id, model, metadata.credentials(), session_id, settings)
+
     if provider == null:
         _fail(ProviderFactory.unavailable_reason(provider_id))
         return
@@ -121,10 +131,12 @@ func send_player_request(text: String) -> void:
             transcript.append(game_name, "assistant", content)
             assistant_message.emit(content)
             AppLoggerScript.game_event(game_name, "agent.finished", "session=%s step=%d ok=true" % [session_id, step + 1])
+            await _maybe_auto_compact(provider, settings, provider_id, model, "after_turn")
             status_changed.emit("Ready")
             busy = false
             finished.emit(true)
             return
+
         consecutive_verification_rejections = 0
         conversation.append(game_name, message)
         for call in calls:
@@ -171,6 +183,70 @@ func send_player_request(text: String) -> void:
             messages.append(tool_message)
             conversation.append(game_name, tool_message)
     _fail("The agent reached the per-request step limit (%d). Your files were left as-is; continue with another message if needed." % max_steps)
+
+func compact_now() -> Dictionary:
+    if busy:
+        return {"ok": false, "error": "Agent is busy."}
+    busy = true
+    var settings = metadata.global_settings()
+    var provider_info = _provider_info(settings)
+    var provider_id = str(provider_info.provider_id)
+    var model = str(provider_info.model)
+    var provider = provider_override if provider_override != null else ProviderFactory.make(self, provider_id, model, metadata.credentials(), session_id, settings)
+    if provider == null:
+        busy = false
+        status_changed.emit("Ready")
+        return {"ok": false, "error": ProviderFactory.unavailable_reason(provider_id)}
+    status_changed.emit("Compacting conversation…")
+    var result = await _run_compaction(provider, settings, provider_id, model, true, "manual")
+    busy = false
+    status_changed.emit("Ready")
+    return result
+
+func _provider_info(settings: Dictionary) -> Dictionary:
+    var game_meta = metadata.read_game(game_name)
+    var provider_id = str(game_meta.get("provider_override", ""))
+    var model = str(game_meta.get("model_override", ""))
+    if provider_id == "":
+        provider_id = str(settings.get("provider", "openrouter"))
+    if model == "":
+        model = str(settings.get("model", ProviderFactory.defaults().get(provider_id, "")))
+    return {"provider_id": provider_id, "model": model}
+
+func _estimated_full_context_tokens() -> int:
+    var history_tokens = conversation.estimate_provider_tokens(game_name)
+    var static_chars = _system_prompt().length() + JSON.stringify(_tool_schema()).length()
+    return history_tokens + ceili(float(static_chars) / 4.0)
+
+func _maybe_auto_compact(provider: Variant, settings: Dictionary, provider_id: String, model: String, phase: String) -> Dictionary:
+    var threshold = maxi(0, int(settings.get("compaction_auto_tokens", 100000)))
+    if threshold == 0:
+        return {"ok": true, "no_op": true}
+    var estimated = _estimated_full_context_tokens()
+    if estimated <= threshold:
+        return {"ok": true, "no_op": true, "tokens": estimated}
+    return await _run_compaction(provider, settings, provider_id, model, false, phase)
+
+func _run_compaction(provider: Variant, settings: Dictionary, provider_id: String, model: String, force: bool, phase: String) -> Dictionary:
+    var keep_recent = maxi(1, int(settings.get("compaction_keep_recent_tokens", 20000)))
+    var delay = clampf(float(settings.get("llm_call_delay_sec", DEFAULT_LLM_CALL_DELAY_SEC)), MIN_LLM_CALL_DELAY_SEC, MAX_LLM_CALL_DELAY_SEC)
+    var throttle_key = "%s|%s" % [provider_id, model]
+    status_changed.emit("Compacting conversation…")
+    AppLoggerScript.game_event(game_name, "compaction.start", "session=%s phase=%s force=%s estimated_tokens=%d keep_recent=%d" % [session_id, phase, str(force), _estimated_full_context_tokens(), keep_recent])
+    var before = Callable(self, "_before_compaction_call").bind(delay, throttle_key)
+    var after = Callable(self, "_after_compaction_call").bind(throttle_key)
+    var result: Dictionary = await compaction.compact_game(game_name, provider, keep_recent, before, after)
+    if bool(result.get("ok", false)):
+        AppLoggerScript.game_event(game_name, "compaction.finish", "session=%s phase=%s tokens_before=%d tokens_after=%d first_kept=%d" % [session_id, phase, int(result.get("tokens_before", 0)), int(result.get("tokens_after", 0)), int(result.get("first_kept_message_index", 0))])
+    elif not bool(result.get("no_op", false)):
+        AppLoggerScript.game_event(game_name, "compaction.error", "session=%s phase=%s error=%s" % [session_id, phase, str(result.get("error", "Unknown compaction error."))], "WARN")
+    return result
+
+func _before_compaction_call(delay_sec: float, throttle_key: String) -> void:
+    await _wait_for_provider_slot(delay_sec, throttle_key, 0)
+
+func _after_compaction_call(throttle_key: String) -> void:
+    _last_provider_call_finished_msec[throttle_key] = Time.get_ticks_msec()
 
 
 func _thinking_text(message: Dictionary) -> String:
@@ -255,7 +331,7 @@ func _system_prompt() -> String:
 Rules:
 - Work ONLY through the structured tools provided. There is no shell tool.
 - The current workspace is the entire generated game. Never ask for or reference host files, credentials, or other games.
-- You receive durable prior player/assistant conversation after GameSmith restarts. Completed historical tool-call/result chatter may be compacted to keep context efficient; the full raw trace stays on disk for debugging. Treat the workspace and Git as the technical source of truth if old conversation details and current files ever differ.
+- You receive durable prior conversation after GameSmith restarts. GameSmith uses Pi-style checkpoint compaction only when explicitly triggered by the configured token threshold or the player; the raw append-only trace stays on disk. After compaction you receive one structured history summary followed by an untouched recent tail. Treat the workspace and Git as the technical source of truth if summary/history and current files ever differ.
 - Before changing an existing game, inspect the relevant current files unless their exact current contents are already present in recent tool results. Do not guess file contents from conversation alone.
 - read_file returns a bounded line window. If it reports truncated=true, use next_offset/offset+limit or search_text to inspect the omitted range. A truncated read is only a preview; it does NOT mean the file itself is truncated.
 - patch_file matches against the complete current file, not the read preview, and refuses ambiguous matches. Prefer patch_file for surgical changes to existing large files. write_file replaces the entire file and should be used only when creating a file or intentionally rewriting it in full.
