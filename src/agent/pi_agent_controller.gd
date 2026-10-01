@@ -30,6 +30,7 @@ var runtime_config: Dictionary = {}
 var busy := false
 var last_context_tokens := 0
 var last_error := ""
+var pending_provider_error := ""
 var turn_count := 0
 var limit_abort_sent := false
 var streamed_text := false
@@ -48,6 +49,7 @@ func send_player_request(text: String) -> void:
         return
     busy = true
     last_error = ""
+    pending_provider_error = ""
     turn_count = 0
     limit_abort_sent = false
     streamed_text = false
@@ -303,10 +305,17 @@ func _on_pi_record(record: Dictionary) -> void:
                                     llm_stream_delta.emit("thinking", thinking)
                                     llm_stream_end.emit("thinking")
                 if str(message.get("stopReason", "")) == "error":
-                    last_error = str(message.get("errorMessage", "Pi provider request failed."))
+                    pending_provider_error = str(message.get("errorMessage", "Pi provider request failed."))
+                else:
+                    pending_provider_error = ""
         "auto_retry_start":
             status_changed.emit("Pi retry %d/%d…" % [int(record.get("attempt", 1)), int(record.get("maxAttempts", 3))])
             AppLoggerScript.game_event(game_name, "pi.retry", JSON.stringify(record), "WARN")
+        "auto_retry_end":
+            if bool(record.get("success", false)):
+                pending_provider_error = ""
+            else:
+                last_error = str(record.get("finalError", pending_provider_error if pending_provider_error != "" else "Pi provider request failed after retries."))
         "compaction_start":
             status_changed.emit("Pi is compacting context…")
             AppLoggerScript.game_event(game_name, "pi.compaction.start", JSON.stringify(record))
@@ -317,6 +326,8 @@ func _on_pi_record(record: Dictionary) -> void:
             if str(entry.get("customType", "")) == "gamesmith-verifier-failed":
                 last_error = "The model repeatedly tried to finish without satisfying GameSmith's build/reload verification."
         "agent_settled":
+            if last_error == "" and pending_provider_error != "":
+                last_error = pending_provider_error
             set_meta("_pi_settled", true)
         _:
             pass
