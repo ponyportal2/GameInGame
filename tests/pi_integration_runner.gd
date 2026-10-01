@@ -260,19 +260,36 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     agent.send_player_request("remember this long context " + "x".repeat(6000))
     var ok = await agent.finished
     assert_true(bool(ok), "real Pi stores long context before manual compaction")
-    agent.send_player_request("remember this second context span too " + "z".repeat(6000))
+    agent.send_player_request("remember this second long context too " + "z".repeat(6000))
     ok = await agent.finished
-    assert_true(bool(ok), "real Pi stores a second user span so manual compaction has an older span to summarize")
-    var manual_stats = await agent.rpc.command({"type": "get_session_stats"}, 15.0)
-    var manual_entries_before = await agent.rpc.command({"type": "get_entries"}, 15.0)
-    print("PI MANUAL COMPACTION DEBUG stats=", JSON.stringify(manual_stats), " entries=", JSON.stringify(manual_entries_before))
+    assert_true(bool(ok), "real Pi stores a second compactable user span")
+
+    var pi_settings = JSON.parse_string(FileAccess.get_file_as_string(str(agent.runtime_config.agent_dir).path_join("settings.json")))
+    assert_true(typeof(pi_settings) == TYPE_DICTIONARY and int(pi_settings.get("compaction", {}).get("keepRecentTokens", 0)) == 1000, "GameSmith keep-recent setting is passed to Pi unchanged")
+
     var compacted = await agent.compact_now()
     assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction: %s" % str(compacted.get("error", "")))
     assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary: %s" % JSON.stringify(compacted))
     var entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
-    assert_true("compaction" in JSON.stringify(entries.get("data", {}).get("entries", [])), "Pi session persists a native compaction entry")
+    var manual_entries: Array = entries.get("data", {}).get("entries", [])
+    assert_true(manual_entries.any(func(entry): return typeof(entry) == TYPE_DICTIONARY and str(entry.get("type", "")) == "compaction"), "Pi session persists a native compaction entry")
+
+    var manual_entries_json = JSON.stringify(manual_entries)
     agent.restart_runtime()
     agent.queue_free()
+    await process_frame
+    var resumed = _controller(created.name, created.path, runner)
+    var ready = await resumed._ensure_runtime()
+    assert_true(bool(ready.get("ok", false)), "Pi session restarts after native compaction")
+    var resumed_entries = await resumed.rpc.command({"type": "get_entries"}, 15.0)
+    assert_eq(JSON.stringify(resumed_entries.get("data", {}).get("entries", [])), manual_entries_json, "compacted Pi session is byte-stable across GameSmith process restart")
+    resumed.send_player_request("continue after manual compaction")
+    ok = await resumed.finished
+    assert_true(bool(ok), "resumed Pi session continues after manual compaction")
+    var manual_transcript = FileAccess.get_file_as_string(MetadataStoreScript.new().transcript_path(created.name))
+    assert_true("Continued from Pi's compacted session" in manual_transcript and not "COMPACTION_SUMMARY_MISSING" in manual_transcript, "provider receives native Pi checkpoint after manual compaction and restart")
+    resumed.restart_runtime()
+    resumed.queue_free()
     runner.queue_free()
     await process_frame
     WorkspaceStoreScript.new().delete_game(created.name)
@@ -286,11 +303,17 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     runner = GameRunnerScript.new()
     root.add_child(runner)
     agent = _controller(created.name, created.path, runner)
-    agent.send_player_request("store context before automatic compaction " + "y".repeat(5000))
+    agent.send_player_request("remember automatic context one " + "y".repeat(6000))
     ok = await agent.finished
-    assert_true(bool(ok), "normal Pi request succeeds before automatic threshold maintenance")
+    assert_true(bool(ok), "first Pi request succeeds before automatic compaction has enough history")
+    agent.send_player_request("remember automatic context two " + "w".repeat(6000))
+    ok = await agent.finished
+    assert_true(bool(ok), "second Pi request gives threshold maintenance a compactable older span")
+
     entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
-    assert_true("compaction" in JSON.stringify(entries.get("data", {}).get("entries", [])), "configured GameSmith token threshold triggers Pi native compaction")
+    var auto_entries: Array = entries.get("data", {}).get("entries", [])
+    assert_true(auto_entries.any(func(entry): return typeof(entry) == TYPE_DICTIONARY and str(entry.get("type", "")) == "compaction"), "configured GameSmith token threshold triggers a real Pi compaction entry")
+
     var records_before_continue = _fake_records("pi-gamesmith-compact-auto").size()
     agent.send_player_request("continue after compaction")
     ok = await agent.finished
@@ -299,9 +322,16 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     assert_true("Continued from Pi's compacted session" in transcript_text and not "COMPACTION_SUMMARY_MISSING" in transcript_text, "next provider request receives Pi's compacted session context")
     var records_after_continue = _fake_records("pi-gamesmith-compact-auto")
     assert_true(records_after_continue.size() > records_before_continue, "fake endpoint captured provider request after compaction")
-    if records_after_continue.size() > records_before_continue:
-        var post_compaction_messages = records_after_continue[-1].get("messages", [])
-        assert_true("compacted" in JSON.stringify(post_compaction_messages).to_lower() or "## Goal" in JSON.stringify(post_compaction_messages), "post-compaction provider request carries Pi checkpoint context: %s" % JSON.stringify(post_compaction_messages))
+    var saw_checkpoint_request = false
+    for i in range(records_before_continue, records_after_continue.size()):
+        var record: Dictionary = records_after_continue[i]
+        if (record.get("tools", []) as Array).is_empty():
+            continue
+        var rendered = JSON.stringify(record.get("messages", []))
+        if "The conversation history before this point was compacted" in rendered or "## Goal" in rendered:
+            saw_checkpoint_request = true
+    assert_true(saw_checkpoint_request, "post-compaction normal provider request carries Pi checkpoint context")
+
     agent.restart_runtime()
     agent.queue_free()
     runner.queue_free()
