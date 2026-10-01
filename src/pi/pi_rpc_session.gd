@@ -105,7 +105,8 @@ func _process(_delta: float) -> void:
 func _drain_pipe(pipe: FileAccess, is_stderr: bool) -> void:
     if pipe == null:
         return
-    var available = pipe.get_available_bytes()
+    # Pipe-backed FileAccess exposes unread bytes through get_length() in Godot 4.7.
+    var available = pipe.get_length()
     if available <= 0:
         return
     var text = pipe.get_buffer(available).get_string_from_utf8()
