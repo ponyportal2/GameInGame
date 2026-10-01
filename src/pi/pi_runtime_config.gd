@@ -46,15 +46,14 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
         return {"ok": false, "error": "No model configured."}
 
     var base_url = _provider_base_url(provider_id, settings)
-    if base_url == "":
-        if provider_id == "openai_subscription":
-            return {"ok": false, "error": "The legacy OpenAI subscription seam is not mapped into GameSmith's isolated Pi profile yet. Choose a Pi-compatible API provider or Custom endpoint."}
+    var subscription_mode = provider_id == "openai_subscription"
+    if base_url == "" and not subscription_mode:
         return {"ok": false, "error": "Provider endpoint is not configured."}
 
     var key = str(credentials.get(provider_id, ""))
-    if provider_id != "custom" and key.strip_edges() == "":
+    if not subscription_mode and provider_id != "custom" and key.strip_edges() == "":
         return {"ok": false, "error": "No API key configured for %s." % provider_id}
-    if key.strip_edges() == "":
+    if not subscription_mode and key.strip_edges() == "":
         key = "gamesmith-local"
 
     var headers = {}
@@ -67,21 +66,25 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
             pass
 
     var context_window = maxi(DEFAULT_CONTEXT_WINDOW, int(settings.get("compaction_auto_tokens", 100000)) + int(settings.get("compaction_keep_recent_tokens", 20000)) + DEFAULT_MAX_TOKENS)
-    var provider_config = {
-        "baseUrl": base_url,
-        "api": "openai-completions",
-        "apiKey": key,
-        "models": [{
-            "id": model,
-            "name": model,
-            "reasoning": true,
-            "contextWindow": context_window,
-            "maxTokens": DEFAULT_MAX_TOKENS
-        }]
-    }
-    if not headers.is_empty():
-        provider_config["headers"] = headers
-    if not JsonStoreScript.write_dict(agent_dir.path_join("models.json"), {"providers": {PI_PROVIDER_ID: provider_config}}):
+    var pi_provider = "openai-codex" if subscription_mode else PI_PROVIDER_ID
+    var model_config = {"providers": {}}
+    if not subscription_mode:
+        var provider_config = {
+            "baseUrl": base_url,
+            "api": "openai-completions",
+            "apiKey": "$GAMESMITH_PI_API_KEY",
+            "models": [{
+                "id": model,
+                "name": model,
+                "reasoning": true,
+                "contextWindow": context_window,
+                "maxTokens": DEFAULT_MAX_TOKENS
+            }]
+        }
+        if not headers.is_empty():
+            provider_config["headers"] = headers
+        model_config.providers[PI_PROVIDER_ID] = provider_config
+    if not JsonStoreScript.write_dict(agent_dir.path_join("models.json"), model_config):
         return {"ok": false, "error": "Could not write Pi models.json."}
 
     var pi_settings = {
@@ -108,8 +111,10 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
         "bridge_dir": ProjectSettings.globalize_path(bridge_dir),
         "extension_path": ProjectSettings.globalize_path(extension_path),
         "legacy_transcript": ProjectSettings.globalize_path(metadata.transcript_path(game_name)),
-        "provider": PI_PROVIDER_ID,
+        "provider": pi_provider,
         "model": model,
+        "api_key": key if not subscription_mode else "",
+        "use_global_pi_auth": subscription_mode,
         "thinking": _pi_thinking(str(settings.get("reasoning_effort", ""))),
         "llm_delay_ms": maxi(0, int(round(float(settings.get("llm_call_delay_sec", 6.0)) * 1000.0))),
         "max_turns": clampi(int(settings.get("max_agent_steps", 150)), 1, 500)
@@ -123,6 +128,8 @@ static func _provider_base_url(provider_id: String, settings: Dictionary) -> Str
             return "https://opencode.ai/zen/go/v1"
         "command_code":
             return "https://api.commandcode.ai/provider/v1"
+        "openai_subscription":
+            return ""
         "custom":
             return _custom_base_url(str(settings.get("custom_base_url", "")))
     return ""
