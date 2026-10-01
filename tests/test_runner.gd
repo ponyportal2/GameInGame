@@ -50,6 +50,8 @@ class FakeUiAgent:
     signal finished(ok: bool)
 
     var tree: SceneTree
+    var game_name := ""
+    var transcript = TranscriptStoreScript.new()
     var busy := false
     var call_count := 0
     var send_mode := "simple"
@@ -59,12 +61,13 @@ class FakeUiAgent:
     func _init(p_tree: SceneTree):
         tree = p_tree
 
-    func configure(_game_name: String, _tools) -> void:
-        pass
+    func configure(p_game_name: String, _tools) -> void:
+        game_name = p_game_name
 
-    func send_player_request(_text: String) -> void:
+    func send_player_request(text: String) -> void:
         if busy: return
         busy = true
+        transcript.append(game_name, "user", text)
         call_count += 1
         status_changed.emit("Fake UI agent working…")
         call_deferred("_finish_send")
@@ -75,8 +78,10 @@ class FakeUiAgent:
             llm_snippet.emit("thinking", "I should inspect the workspace files before answering…")
             llm_snippet.emit("assistant", "Let me check the current files first so I can answer…")
             llm_snippet.emit("tool", "search_text {\"query\":\"find the player speed consta…")
+            transcript.append(game_name, "assistant", "All done.")
             assistant_message.emit("All done.")
         else:
+            transcript.append(game_name, "assistant", "Hi.")
             assistant_message.emit("Hi.")
         busy = false
         status_changed.emit("Ready")
