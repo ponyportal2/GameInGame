@@ -263,6 +263,9 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     agent.send_player_request("remember this second context span too " + "z".repeat(3000))
     ok = await agent.finished
     assert_true(bool(ok), "real Pi stores a second user span so manual compaction has an older span to summarize")
+    var manual_stats = await agent.rpc.command({"type": "get_session_stats"}, 15.0)
+    var manual_entries_before = await agent.rpc.command({"type": "get_entries"}, 15.0)
+    print("PI MANUAL COMPACTION DEBUG stats=", JSON.stringify(manual_stats), " entries=", JSON.stringify(manual_entries_before))
     var compacted = await agent.compact_now()
     assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction: %s" % str(compacted.get("error", "")))
     assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary: %s" % JSON.stringify(compacted))
@@ -298,7 +301,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     assert_true(records_after_continue.size() > records_before_continue, "fake endpoint captured provider request after compaction")
     if records_after_continue.size() > records_before_continue:
         var post_compaction_messages = records_after_continue[-1].get("messages", [])
-        assert_true("compacted" in JSON.stringify(post_compaction_messages).to_lower() or "## Goal" in JSON.stringify(post_compaction_messages), "post-compaction provider request carries Pi checkpoint context")
+        assert_true("compacted" in JSON.stringify(post_compaction_messages).to_lower() or "## Goal" in JSON.stringify(post_compaction_messages), "post-compaction provider request carries Pi checkpoint context: %s" % JSON.stringify(post_compaction_messages))
     agent.restart_runtime()
     agent.queue_free()
     runner.queue_free()
