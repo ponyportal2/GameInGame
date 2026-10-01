@@ -143,6 +143,7 @@ func _consume_lines(buffer: String, is_stderr: bool) -> String:
         if str(record.get("type", "")) == "response" and record.has("id"):
             responses[str(record.id)] = record
         record_received.emit(record)
+    return remaining
 
 func _write_json(record: Dictionary) -> Error:
     if stdio == null:
