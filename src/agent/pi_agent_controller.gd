@@ -172,10 +172,45 @@ func _ensure_runtime() -> Dictionary:
         return started
     AppLoggerScript.game_event(game_name, "pi.started", "pid=%d model=%s session_dir=%s" % [int(started.get("pid", -1)), str(runtime_config.model), str(runtime_config.session_dir)])
 
+    var synced = await _sync_runtime_state()
+    if not bool(synced.get("ok", false)):
+        return synced
     var auto_off: Dictionary = await rpc.command({"type": "set_auto_compaction", "enabled": false}, 15.0)
     if not bool(auto_off.get("success", false)):
         return {"ok": false, "error": "Could not configure Pi compaction policy: " + str(auto_off.get("error", ""))}
     await _refresh_context_usage()
+    return {"ok": true}
+
+func _sync_runtime_state() -> Dictionary:
+    var state: Dictionary = await rpc.command({"type": "get_state"}, 15.0)
+    if not bool(state.get("success", false)):
+        return {"ok": false, "error": "Could not read Pi session state: " + str(state.get("error", ""))}
+    var data: Dictionary = state.get("data", {})
+    var current_model = data.get("model", {})
+    var current_provider = str(current_model.get("provider", "")) if typeof(current_model) == TYPE_DICTIONARY else ""
+    var current_model_id = str(current_model.get("id", "")) if typeof(current_model) == TYPE_DICTIONARY else ""
+    if current_provider != str(runtime_config.provider) or current_model_id != str(runtime_config.model):
+        var changed: Dictionary = await rpc.command({
+            "type": "set_model",
+            "provider": str(runtime_config.provider),
+            "modelId": str(runtime_config.model)
+        }, 30.0)
+        if not bool(changed.get("success", false)):
+            return {"ok": false, "error": "Could not select Pi model %s/%s: %s" % [str(runtime_config.provider), str(runtime_config.model), str(changed.get("error", ""))]}
+        data["model"] = changed.get("data", {})
+    var desired_thinking = str(runtime_config.get("thinking", "medium"))
+    if desired_thinking == "":
+        desired_thinking = "medium"
+    if str(data.get("thinkingLevel", "")) != desired_thinking:
+        var thinking_result: Dictionary = await rpc.command({"type": "set_thinking_level", "level": desired_thinking}, 15.0)
+        if not bool(thinking_result.get("success", false)):
+            return {"ok": false, "error": "Could not set Pi thinking level %s: %s" % [desired_thinking, str(thinking_result.get("error", ""))]}
+    var wanted_name = str(runtime_config.get("game_name", ""))
+    var current_name = str(data.get("sessionName", ""))
+    if wanted_name != "" and current_name != wanted_name:
+        var name_result: Dictionary = await rpc.command({"type": "set_session_name", "name": wanted_name}, 15.0)
+        if not bool(name_result.get("success", false)):
+            return {"ok": false, "error": "Could not name Pi session: " + str(name_result.get("error", ""))}
     return {"ok": true}
 
 func _refresh_context_usage() -> void:
