@@ -123,6 +123,23 @@ function scriptedReply(body) {
     return responseMessage(model, { role: 'assistant', content: 'History cleaned.' });
   }
 
+  if (model === 'gamesmith-auto-compact') {
+    const firstSystem = messages.find((m) => m?.role === 'system');
+    const isSummary = String(firstSystem?.content || '').startsWith('You are a context summarization assistant.');
+    if (isSummary) {
+      if (Object.prototype.hasOwnProperty.call(body, 'tools') || Object.prototype.hasOwnProperty.call(body, 'tool_choice')) {
+        return { status: 400, body: { error: { message: 'compaction summary request must not expose coding tools' } } };
+      }
+      if (!lastUserText.includes('<conversation>') || !lastUserText.includes('## Goal')) {
+        return { status: 400, body: { error: { message: 'Pi-style compaction prompt missing' } } };
+      }
+      return responseMessage(model, { role: 'assistant', content: '## Goal\nContinue the generated game.\n\n## Constraints & Preferences\n- preserve current behavior\n\n## Progress\n### Done\n- [x] Prior work\n\n### In Progress\n- [ ] Continue\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Keep current workspace**: it is source of truth\n\n## Next Steps\n1. Continue\n\n## Critical Context\n- main.gd' });
+    }
+    const sawCheckpoint = messages.some((m) => m?.role === 'user' && String(m?.content || '').startsWith('The conversation history before this point was compacted into the following summary:'));
+    if (!sawCheckpoint) return { status: 409, body: { error: { message: 'normal call missing persisted compaction checkpoint' } } };
+    return responseMessage(model, { role: 'assistant', content: 'Continued after Pi-style compaction.' });
+  }
+
   if (model === 'gamesmith-http-500') {
     return { status: 500, body: { error: { message: 'simulated HTTP 500' } } };
   }

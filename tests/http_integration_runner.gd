@@ -37,6 +37,7 @@ func run() -> void:
     await _test_real_http_create_edit_and_repair()
     await _test_real_http_malformed_and_provider_failures()
     await _test_real_http_transport_timeout_diagnostics()
+    await _test_real_http_auto_compaction()
     await _test_legacy_verifier_history_cleanup()
     print("HTTP TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
@@ -156,6 +157,49 @@ func _test_real_http_transport_timeout_diagnostics() -> void:
     assert_eq(int(diagnostics.get("http_status", -1)), 0, "transport diagnostics retain HTTP 0 only as secondary status")
     assert_true(int(diagnostics.get("elapsed_ms", 0)) > 0, "transport diagnostics include elapsed time")
     assert_true(str(diagnostics.get("endpoint", "")).ends_with("/v1/chat/completions"), "transport diagnostics include sanitized endpoint")
+
+func _test_real_http_auto_compaction() -> void:
+    var store = WorkspaceStoreScript.new(); store.ensure()
+    var name = "HTTP Auto Compaction"
+    if name in store.list_games(): store.delete_game(name)
+    var created = store.create_game(name)
+    assert_true(bool(created.get("ok", false)), "creates real-HTTP compaction workspace")
+    if not created.get("ok", false): return
+
+    var conv = ConversationStoreScript.new()
+    for i in 12:
+        conv.append(name, {"role": "user", "content": "old-http-%d %s" % [i, "h".repeat(1600)]})
+        conv.append(name, {"role": "assistant", "content": "old-http-answer-%d" % i})
+
+    _settings("gamesmith-auto-compact")
+    var meta = MetadataStoreScript.new()
+    var settings = meta.global_settings().duplicate(true)
+    settings.compaction_auto_tokens = 5000
+    settings.compaction_keep_recent_tokens = 1000
+    settings.llm_call_delay_sec = 0.0
+    meta.save_global_settings(settings)
+
+    var runner = GameRunnerScript.new(); root.add_child(runner)
+    var agent = AgentControllerScript.new(); root.add_child(agent)
+    agent.configure(name, GameToolsScript.new(created.path, runner))
+    agent.send_player_request("tell me the current status")
+    var ok = await agent.finished
+    assert_true(bool(ok), "real HTTP auto-compaction summarizes then continues normal agent request")
+    var entries = conv.read_entries(name)
+    var checkpoint_count = 0
+    for entry in entries:
+        if str(entry.get("type", "")) == "compaction":
+            checkpoint_count += 1
+    assert_true(checkpoint_count >= 1, "real HTTP auto-compaction persists a checkpoint marker")
+    var provider_context = conv.read_for_provider(name)
+    assert_true(not provider_context.is_empty() and "The conversation history before this point was compacted into the following summary:" in str(provider_context[0].get("content", "")), "real HTTP replay begins with Pi checkpoint wrapper")
+
+    settings.compaction_auto_tokens = 100000
+    settings.compaction_keep_recent_tokens = 20000
+    meta.save_global_settings(settings)
+    agent.queue_free(); runner.queue_free(); await process_frame
+    store.delete_game(name)
+
 
 func _test_legacy_verifier_history_cleanup() -> void:
     var store = WorkspaceStoreScript.new(); store.ensure()
