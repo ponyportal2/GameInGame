@@ -107,27 +107,21 @@ Important paths:
 
 Use **Logs** in the library to open the global log folder, or **Logs** inside a game's chat to open that game's host-data/log folder. These logs record high-level app/agent/provider/tool/reload/navigation events and are bounded in size. Authorization/API-key-like values are redacted before writing so the files are safer to share for debugging.
 
-## Conversation persistence, Pi-style compaction, and caching
+## Conversation persistence, Pi-native compaction, and caching
 
-Each game keeps the **full append-only raw agent trace** on disk, including user messages, assistant messages, provider-exposed reasoning, tool calls, and tool results. GameSmith does not continuously rewrite completed turns.
+Production GameSmith now keeps the coding-agent session in **Pi's native session store**. Pi owns assistant reasoning, tool calls/results, session projection, checkpoint entries, and compaction; GameSmith does not rebuild or continuously reduce that history between ordinary turns.
 
-Compaction mirrors Pi coding agent's checkpoint model for GameSmith's linear sessions:
+GameSmith keeps the product controls around Pi's native compactor:
 
-- Before a checkpoint, the normal provider sees the full durable conversation.
-- When the configured token threshold is crossed, or the player presses **Compact now**, GameSmith walks backward from the newest context and keeps roughly the configured recent-token budget verbatim.
-- It never chooses a tool-result message as a cut point, so tool-call/result structure stays valid.
-- Older context is serialized for a separate, tool-free summarization request using Pi's structured Goal / Constraints / Progress / Key Decisions / Next Steps / Critical Context checkpoint format.
-- If the cut falls inside an active turn, the earlier part of that turn receives a separate turn-prefix checkpoint, matching Pi's split-turn behavior.
-- Later compactions update the previous checkpoint instead of summarizing the entire session from scratch.
-- Read/modified file lists are carried forward in the checkpoint.
-- The raw `conversation.jsonl` is never rewritten or destroyed by compaction.
+- **Auto compact at estimated tokens** defaults to 100,000; 0 disables GameSmith's threshold.
+- **Keep recent tokens verbatim** defaults to 20,000 and is passed directly to Pi as `compaction.keepRecentTokens`.
+- **Compact now** invokes Pi's native `compact` RPC.
+- GameSmith disables Pi's independent context-window threshold so there is only one user-visible automatic policy; when the configured GameSmith threshold is crossed, it invokes the same native Pi compactor.
+- If Pi reports that the session is too small to compact, GameSmith reports **Compaction skipped** rather than treating that normal no-op as a provider failure.
 
-Provider replay after compaction is one stable checkpoint message followed by the untouched recent tail. This is cache-friendly: between compactions, the system prompt, tool schema, checkpoint, and retained history remain byte-stable and new turns only append to the end. A compaction intentionally changes that prefix once; subsequent calls can then reuse the new stable prefix. Actual cache eligibility, minimum prefix size, TTL, and billing are still provider/model-specific.
+This remains cache-friendly. Between compactions, Pi's existing session prefix is left alone and new work appends normally. A native compaction intentionally creates one Pi checkpoint and changes the provider prefix once; the checkpoint plus retained recent tail then remain stable. Restarting GameSmith resumes that same Pi session instead of reconstructing the prompt from GameSmith's readable transcript. Real-Pi acceptance tests compare the persisted entry list byte-for-byte across a GameSmith controller restart after compaction and verify that the next provider request contains Pi's checkpoint.
 
-The automatic trigger is intentionally expressed as an explicit estimated-token threshold rather than Pi's `contextWindow - reserveTokens` rule because arbitrary Custom/OpenAI-compatible providers do not reliably expose model context-window metadata. The cut-point, summarization, iterative-summary, split-turn, and retained-tail behavior follow Pi's approach.
-
-Restarting GameSmith and reopening the same game reconstructs the same checkpoint + recent-tail provider context from the durable append-only conversation. Older readable-only transcripts are migrated once when no provider conversation exists yet.
-
+The automatic trigger uses Pi's canonical current-context usage from `get_session_stats`, but the threshold value itself remains explicitly configurable because arbitrary Custom/OpenAI-compatible models do not reliably provide trustworthy context-window metadata. Actual provider-side prompt-cache eligibility, minimum prefix size, TTL, and billing remain model/provider-specific.
 
 ## Provider failures and debug logs
 
