@@ -40,6 +40,64 @@ class FakeProvider:
             return {"ok": false, "error": "Fake provider exhausted."}
         return responses.pop_front()
 
+class FakeUiAgent:
+    extends Node
+    signal status_changed(text: String)
+    signal assistant_message(text: String)
+    signal llm_snippet(kind: String, text: String)
+    signal llm_stream_delta(kind: String, text: String)
+    signal llm_stream_end(kind: String)
+    signal finished(ok: bool)
+
+    var tree: SceneTree
+    var busy := false
+    var call_count := 0
+    var send_mode := "simple"
+    var compact_result: Dictionary = {"ok": true, "tokens_before": 9000, "tokens_after": 1200}
+    var compact_frames := 2
+
+    func _init(p_tree: SceneTree):
+        tree = p_tree
+
+    func configure(_game_name: String, _tools) -> void:
+        pass
+
+    func send_player_request(_text: String) -> void:
+        if busy: return
+        busy = true
+        call_count += 1
+        status_changed.emit("Fake UI agent working…")
+        call_deferred("_finish_send")
+
+    func _finish_send() -> void:
+        await tree.process_frame
+        if send_mode == "snippets":
+            llm_snippet.emit("thinking", "I should inspect the workspace files before answering…")
+            llm_snippet.emit("assistant", "Let me check the current files first so I can answer…")
+            llm_snippet.emit("tool", "search_text {\"query\":\"find the player speed consta…")
+            assistant_message.emit("All done.")
+        else:
+            assistant_message.emit("Hi.")
+        busy = false
+        status_changed.emit("Ready")
+        finished.emit(true)
+
+    func compact_now() -> Dictionary:
+        if busy:
+            return {"ok": false, "error": "Agent is busy."}
+        busy = true
+        for _i in compact_frames:
+            await tree.process_frame
+        busy = false
+        return compact_result.duplicate(true)
+
+    func context_tokens() -> int:
+        return 9000
+
+    func settings_changed() -> void:
+        pass
+
+
 func _init() -> void:
     call_deferred("run")
 
@@ -86,6 +144,19 @@ func run() -> void:
     await _test_agent_step_limit()
     print("TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
+
+func _replace_app_agent(app, fake: FakeUiAgent) -> void:
+    if is_instance_valid(app.agent):
+        app.agent.queue_free()
+    app.agent = fake
+    app.add_child(fake)
+    fake.status_changed.connect(func(text): app.status_label.text = text)
+    fake.assistant_message.connect(func(text): app._append_chat("assistant", text))
+    fake.llm_snippet.connect(func(kind, text): app._append_chat(kind, text))
+    fake.llm_stream_delta.connect(app._append_stream_delta)
+    fake.llm_stream_end.connect(app._end_stream_block)
+    fake.finished.connect(app._on_agent_finished)
+
 
 func _test_paths() -> void:
     assert_eq(PathUtilsScript.sanitize_game_name("  My / Game:*  "), "My Game", "sanitizes folder name")
@@ -268,9 +339,8 @@ func _test_enter_sends_chat_message() -> void:
     app._open_game(name)
     await process_frame
     app._set_chat_visible(true)
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Hi."}})
-    app.agent.provider_override = fake
+    var fake = FakeUiAgent.new(self)
+    _replace_app_agent(app, fake)
     app.chat_input.text = "hello"
     app.chat_input.grab_focus()
     await process_frame
@@ -312,10 +382,9 @@ func _test_llm_snippets_reach_chat() -> void:
     var assistant_raw = "Let me check the current files first so I can answer this accurately."
     var query_raw = "find the player speed constant inside all workspace scripts"
     var tool_raw = "search_text " + JSON.stringify({"query": query_raw})
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": assistant_raw, "reasoning_content": null, "reasoning": thinking_raw, "tool_calls": [_tool_call("search-1", "search_text", {"query": query_raw})]}})
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "All done."}})
-    app.agent.provider_override = fake
+    var fake = FakeUiAgent.new(self)
+    fake.send_mode = "snippets"
+    _replace_app_agent(app, fake)
     app.chat_input.text = "what is the status"
     app._send_chat()
     for _i in 600:
@@ -323,9 +392,9 @@ func _test_llm_snippets_reach_chat() -> void:
         await process_frame
     await process_frame
     var ui_text: String = app.transcript_view.get_parsed_text()
-    var thinking_snip = thinking_raw.left(50) + "…"
-    var assistant_snip = assistant_raw.left(50) + "…"
-    var tool_snip = tool_raw.left(50) + "…"
+    var thinking_snip = "I should inspect the workspace files before answering…"
+    var assistant_snip = "Let me check the current files first so I can answer…"
+    var tool_snip = "search_text {\"query\":\"find the player speed consta…"
     assert_true(not app.agent.busy, "llm snippet request finishes")
     assert_true(thinking_snip in ui_text, "thinking block snippet reaches chat")
     assert_true(not thinking_raw in ui_text, "thinking block is truncated to a snippet")
@@ -364,9 +433,8 @@ func _test_library_is_blocked_while_agent_works() -> void:
     await process_frame
     app._open_game(name)
     await process_frame
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "Still here."}})
-    app.agent.provider_override = fake
+    var fake = FakeUiAgent.new(self)
+    _replace_app_agent(app, fake)
     app.chat_input.text = "tell me the current status"
     app._send_chat()
     assert_true(app.agent.busy, "agent is busy immediately after sending a request")
@@ -415,9 +483,10 @@ func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
     app._set_chat_visible(true)
     app._open_settings()
 
-    var fake = FakeProvider.new(self)
-    fake.push({"ok": true, "message": {"role": "assistant", "content": "## Goal\nKeep building.\n\n## Constraints & Preferences\n- none\n\n## Progress\n### Done\n- [x] prior work\n\n### In Progress\n- [ ] continue\n\n### Blocked\n- none\n\n## Key Decisions\n- **Continue**: preserve state\n\n## Next Steps\n1. Continue\n\n## Critical Context\n- main.gd"}})
-    app.agent.provider_override = fake
+    var fake = FakeUiAgent.new(self)
+    fake.compact_result = {"ok": true, "tokens_before": 9000, "tokens_after": 1200}
+    fake.compact_frames = 3
+    _replace_app_agent(app, fake)
 
     var message_count_before = conv.read_all(name).size()
     app._compact_now_from_settings()
@@ -448,9 +517,9 @@ func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
     for i in range(8, 14):
         conv.append(name, {"role": "user", "content": "more-%d %s" % [i, "z".repeat(1000)]})
         conv.append(name, {"role": "assistant", "content": "more-answer-%d" % i})
-    var failing = FakeProvider.new(self)
-    failing.push({"ok": false, "error": "simulated summary failure"})
-    app.agent.provider_override = failing
+    var failing = FakeUiAgent.new(self)
+    failing.compact_result = {"ok": false, "error": "simulated summary failure"}
+    _replace_app_agent(app, failing)
     app._open_settings()
     app._compact_now_from_settings()
     for _i in 120:
