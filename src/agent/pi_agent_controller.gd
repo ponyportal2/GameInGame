@@ -118,7 +118,10 @@ func compact_now() -> Dictionary:
     busy = false
     status_changed.emit("Ready")
     if not bool(response.get("success", false)):
-        return {"ok": false, "error": str(response.get("error", "Pi compaction failed."))}
+        var error = str(response.get("error", "Pi compaction failed."))
+        var lower = error.to_lower()
+        var no_op = "nothing to compact" in lower or "session too small" in lower
+        return {"ok": false, "no_op": no_op, "error": error}
     var data: Dictionary = response.get("data", {})
     last_context_tokens = int(data.get("estimatedTokensAfter", 0))
     return {
