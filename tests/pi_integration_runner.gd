@@ -260,12 +260,12 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     agent.send_player_request("remember this long context " + "x".repeat(6000))
     var ok = await agent.finished
     assert_true(bool(ok), "real Pi stores long context before manual compaction")
-    agent.send_player_request("add a second context span " + "z".repeat(3000))
+    agent.send_player_request("remember this second context span too " + "z".repeat(3000))
     ok = await agent.finished
     assert_true(bool(ok), "real Pi stores a second user span so manual compaction has an older span to summarize")
     var compacted = await agent.compact_now()
-    assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction")
-    assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary")
+    assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction: %s" % str(compacted.get("error", "")))
+    assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary: %s" % JSON.stringify(compacted))
     var entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
     assert_true("compaction" in JSON.stringify(entries.get("data", {}).get("entries", [])), "Pi session persists a native compaction entry")
     agent.restart_runtime()
@@ -288,11 +288,17 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     assert_true(bool(ok), "normal Pi request succeeds before automatic threshold maintenance")
     entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
     assert_true("compaction" in JSON.stringify(entries.get("data", {}).get("entries", [])), "configured GameSmith token threshold triggers Pi native compaction")
+    var records_before_continue = _fake_records("pi-gamesmith-compact-auto").size()
     agent.send_player_request("continue after compaction")
     ok = await agent.finished
     assert_true(bool(ok), "Pi continues after threshold compaction")
     var transcript_text = FileAccess.get_file_as_string(MetadataStoreScript.new().transcript_path(created.name))
     assert_true("Continued from Pi's compacted session" in transcript_text and not "COMPACTION_SUMMARY_MISSING" in transcript_text, "next provider request receives Pi's compacted session context")
+    var records_after_continue = _fake_records("pi-gamesmith-compact-auto")
+    assert_true(records_after_continue.size() > records_before_continue, "fake endpoint captured provider request after compaction")
+    if records_after_continue.size() > records_before_continue:
+        var post_compaction_messages = records_after_continue[-1].get("messages", [])
+        assert_true("compacted" in JSON.stringify(post_compaction_messages).to_lower() or "## Goal" in JSON.stringify(post_compaction_messages), "post-compaction provider request carries Pi checkpoint context")
     agent.restart_runtime()
     agent.queue_free()
     runner.queue_free()
