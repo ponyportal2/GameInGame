@@ -26,6 +26,7 @@ else
   echo "SKIP: xvfb-run not installed; windowed input-ownership regression test not run"
 fi
 GAMESMITH_TEST_TMP="$TMP/fake-v1" GODOT_BIN="$GODOT_BIN" "$ROOT/tools/testing/run-fake-v1-e2e.sh"
+GAMESMITH_TEST_TMP="$TMP/pi-e2e" GODOT_BIN="$GODOT_BIN" "$ROOT/tools/testing/run-pi-e2e.sh"
 
 # Real process-level migration check: v1.4 and earlier used the spaced application
 # name. A launch of the new project must copy that data into GameSmithHost and

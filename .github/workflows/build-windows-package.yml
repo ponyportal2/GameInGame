@@ -28,6 +28,18 @@ jobs:
         with:
           go-version: '1.23.2'
 
+      - name: Set up Node for globally installed Pi
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - name: Install pinned Pi coding agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g @earendil-works/pi-coding-agent@0.99.2
+          test "$(pi --version)" = "0.99.2"
+
       - name: Download and verify Godot 4.7.2 runtimes
         shell: bash
         run: |
