@@ -2,6 +2,9 @@
 
 ## Current product behavior
 
+- **Lossless large-file edits:** `read_file` is a line-windowed preview with continuation metadata; `patch_file` operates on the complete file and reports full before/after byte sizes. This fixes the production truncation bug where a >30 KB file was rewritten from the old capped preview.
+- **Live intermediate activity:** AGENT/TOOL/THINK snippets remain ephemeral. THINK is emitted only for provider-exposed plain-string reasoning; unknown structured reasoning is ignored. Chat text is BBCode-escaped before rendering.
+
 - **Provider transport diagnostics:** OpenAI-compatible requests now use a 300s default timeout and distinguish Godot HTTP transport results (timeout/DNS/connect/TLS/no-response/etc.) from actual HTTP response codes.
 - Provider request/response log entries include sanitized endpoint/model/context sizing, elapsed time, transport/HTTP result, response bytes, selected safe response headers and finish/token metadata when available.
 - Completion verification is bounded to 3 consecutive no-op rejections; verifier prompts are ephemeral instead of permanently polluting provider history, and old persisted verifier pollution is filtered on replay.
@@ -38,9 +41,9 @@ Final source verification on Godot 4.7.2:
 
 - self-contained root Windows folder verification: **pass**;
 - Go Windows bootstrap tests: **pass**;
-- fast Godot suite: **135/135**;
-- real windowed hostile-input suite: **10/10**;
-- real HTTP fake-`/v1/chat/completions` suite: **50/50**;
+- fast Godot suite: **172/172**;
+- real windowed hostile-input suite: **12/12**;
+- real HTTP fake-`/v1/chat/completions` suite: **62/62**;
 - two-process provider-visible conversation replay: **pass**;
 - process-level old `GameSmith Host` → `GameSmithHost` migration: **pass**;
 - fake-v1 acceptance workflow: **24 real HTTP requests** after keeping the runaway-limit HTTP fixture intentionally small (the separate fast/UI tests verify the production default of 150).

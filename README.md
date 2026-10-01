@@ -46,6 +46,27 @@ Supported adapters in this build are OpenRouter, OpenCode Go, Command Code (Open
 
 OpenAI subscription authentication remains behind the provider abstraction rather than being faked: the ChatGPT subscription path is not a plain embeddable API-key endpoint.
 
+## Live agent activity
+
+While an agent turn is running, chat can show ephemeral **AGENT**, **TOOL**, and **THINK** snippets. These are *intermediate activity messages*, not token streaming: each appears after a provider response arrives and before/while its tool work is executed.
+
+- **AGENT** shows short assistant text that accompanied tool calls.
+- **TOOL** shows the tool name plus a short argument preview.
+- **THINK** is shown only when the provider explicitly exposes reasoning as a plain string (for example `reasoning_content` or `reasoning`). Null, structured, or unknown reasoning payloads are ignored.
+- Snippets are not persisted to the readable transcript and are not inserted into future provider context.
+- User/model/tool text is escaped before RichTextLabel BBCode parsing, so generated text such as `[color=red]` is displayed literally rather than interpreted as UI markup.
+
+## Agent file-tool behavior
+
+GameSmith keeps the model-facing file tools deliberately small. The current read/edit contract follows the useful parts of Pi/OMP-style coding-agent tooling without importing their shell or full patch languages:
+
+- `read_file(path, offset?, limit?)` returns a bounded **line window** (default 300, max 1000) with `line_start`, `line_end`, `total_lines`, `truncated`, and `next_offset`.
+- A truncated read is explicitly a preview. The agent is instructed to continue with `next_offset` or use `search_text`.
+- `patch_file` requires one exact unique match **against the complete file on disk**. It never edits the truncated read preview.
+- `write_file` is explicitly described as a complete overwrite and is reserved for new files or intentional full rewrites.
+
+This separation matters for large generated scripts: preview truncation can never silently truncate the persisted file during a surgical patch.
+
 ## Library/chat behavior
 
 - **F1** toggles chat.
