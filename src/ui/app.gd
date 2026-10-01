@@ -53,6 +53,7 @@ var compaction_keep_spin: SpinBox
 var compact_now_button: Button
 var compaction_status_label: Label
 var library_button: Button
+var send_button: Button
 var game_override_provider: OptionButton
 var game_override_model: LineEdit
 var gameplay_mouse_mode := Input.MOUSE_MODE_VISIBLE
@@ -140,7 +141,7 @@ func _build_chat() -> void:
     transcript_view = RichTextLabel.new(); transcript_view.bbcode_enabled = true; transcript_view.fit_content = false; transcript_view.scroll_active = true; transcript_view.size_flags_vertical = Control.SIZE_EXPAND_FILL; transcript_view.custom_minimum_size.y = 350; box.add_child(transcript_view)
     var composer = HBoxContainer.new(); composer.add_theme_constant_override("separation", 10); box.add_child(composer)
     chat_input = TextEdit.new(); chat_input.placeholder_text = "Describe what to build or change…  Enter sends · Shift+Enter adds a line"; chat_input.custom_minimum_size.y = 64; chat_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL; chat_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY; composer.add_child(chat_input)
-    var send = Button.new(); send.text = "Send"; send.custom_minimum_size = Vector2(82, 64); send.pressed.connect(_send_chat); composer.add_child(send)
+    send_button = Button.new(); send_button.text = "Send"; send_button.custom_minimum_size = Vector2(82, 64); send_button.pressed.connect(_send_chat); composer.add_child(send_button)
 
 func _build_dialogs() -> void:
     new_game_dialog = ConfirmationDialog.new(); new_game_dialog.title = "Create a game"; new_game_dialog.dialog_text = "Name your game. The workspace starts empty with a baseline Git commit."; add_child(new_game_dialog)
@@ -429,10 +430,20 @@ func _cap_generated_canvas_layers(node: Node) -> void:
 func _send_chat() -> void:
     var text = chat_input.text.strip_edges()
     if text == "" or agent == null or agent.busy: return
-    chat_input.text = ""; chat_input.editable = false
-    if is_instance_valid(library_button): library_button.disabled = true
+    chat_input.text = ""
+    _set_chat_busy_controls(true)
     _append_chat("user", text)
     agent.send_player_request(text)
+
+func _set_chat_busy_controls(is_busy: bool) -> void:
+    if is_instance_valid(chat_input):
+        chat_input.editable = not is_busy
+    if is_instance_valid(send_button):
+        send_button.disabled = is_busy
+    if is_instance_valid(library_button):
+        library_button.disabled = is_busy
+    if not is_busy and chat_overlay.visible and not settings_dialog.visible and is_instance_valid(chat_input):
+        chat_input.grab_focus()
 
 func _append_chat(role: String, text: String) -> void:
     var label = {"user": "YOU", "assistant": "AGENT", "thinking": "THINK", "tool": "TOOL"}.get(role, "HOST")
@@ -506,8 +517,7 @@ func _return_to_library() -> void:
     _show_library()
 
 func _on_agent_finished(_ok: bool) -> void:
-    if is_instance_valid(chat_input): chat_input.editable = true
-    if is_instance_valid(library_button): library_button.disabled = false
+    _set_chat_busy_controls(false)
 
 func _open_global_logs() -> void:
     AppLoggerScript.global_event("logs.open", "global")
@@ -603,16 +613,28 @@ func _compact_now_from_settings() -> void:
     if agent.busy:
         compaction_status_label.text = "Wait for the current agent request to finish."
         return
+
     compact_now_button.disabled = true
     compaction_status_label.text = "Compacting…"
+    _set_chat_busy_controls(true)
+    settings_dialog.visible = false
+    _append_chat("system", "Compacting conversation…")
+
     var result: Dictionary = await agent.compact_now()
+    var chat_result = ""
     if bool(result.get("ok", false)):
-        compaction_status_label.text = "Compacted ~%d → ~%d tokens." % [int(result.get("tokens_before", 0)), int(result.get("tokens_after", 0))]
+        chat_result = "Compaction finished: ~%d → ~%d estimated tokens." % [int(result.get("tokens_before", 0)), int(result.get("tokens_after", 0))]
+        compaction_status_label.text = chat_result
     elif bool(result.get("no_op", false)):
-        compaction_status_label.text = str(result.get("error", "Nothing to compact."))
+        chat_result = "Compaction skipped: " + str(result.get("error", "Nothing to compact."))
+        compaction_status_label.text = chat_result
     else:
-        compaction_status_label.text = "Compaction failed: " + str(result.get("error", "Unknown error."))
+        chat_result = "Compaction failed: " + str(result.get("error", "Unknown error."))
+        compaction_status_label.text = chat_result
+
+    _append_chat("system", chat_result)
     compact_now_button.disabled = false
+    _set_chat_busy_controls(false)
 
 
 func _provider_changed(index: int) -> void:
