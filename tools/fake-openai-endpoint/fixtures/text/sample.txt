@@ -1,0 +1,3 @@
+This is a sample fixture text file for the Fake AI API Simulator.
+It can be used to test file uploads, embeddings, and context loading.
+Simulating AI responses locally enables fast frontend and backend testing without real API costs.

@@ -1,0 +1,28 @@
+[application]
+config/name="GameSmithHost"
+config/description="Build and modify small Godot games from chat without leaving the host."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7")
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.035, 0.043, 0.06, 1)
+
+[debug]
+file_logging/enable_file_logging=true
+file_logging/log_path="user://logs/gamesmith.log"
+file_logging/max_log_files=5
+
+[input]
+toggle_chat={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194332,"unicode":0)]
+}
