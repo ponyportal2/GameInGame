@@ -4,23 +4,23 @@ GameSmith is a Godot 4.7 host for creating and iterating on small games by chatt
 
 ## Windows
 
-Download **`GameSmith-Windows.zip` from the repository root**, then:
-
-1. **Extract the entire ZIP** (do not run it from inside the ZIP viewer).
-2. Open the extracted `GameSmith-Windows` folder.
-3. Double-click **`GameSmith.exe`**.
-
-The ZIP is self-contained and already includes:
+The repository root contains a self-contained **`GameSmith-Windows/`** folder:
 
 ```text
 GameSmith-Windows/
   GameSmith.exe
   GameSmith.pck
+  README.txt
+  THIRD_PARTY_NOTICES.md
   runtime/
     Godot_v4.7.2-stable_win64.exe
 ```
 
+Clone/download the repository, open `GameSmith-Windows`, and double-click **`GameSmith.exe`**. There is no release ZIP to unpack.
+
 The bundled Godot runtime means normal startup requires **no Godot download**. The launcher still contains the verified download path as a recovery fallback if someone deletes the bundled runtime.
+
+The Godot runtime is larger than GitHub's normal 100 MB Git-object limit, so that one file is stored with **Git LFS**. A normal GitHub ZIP download of the repository or a Git clone with Git LFS resolves it to the real executable.
 
 Git for Windows must be installed and available on `PATH` for generated-game repositories.
 
@@ -80,7 +80,11 @@ Use **Logs** in the library to open the global log folder, or **Logs** inside a 
 
 ## Conversation persistence and caching
 
-Each game stores a provider-visible JSONL conversation containing user messages, assistant messages, tool calls, and tool results. The system prompt is static and prior messages are replayed unchanged before each new user message, giving compatible providers a stable prefix for prompt caching. Restarting GameSmith and reopening the same game restores that provider-visible conversation. Older readable-only transcripts are migrated once when no provider conversation exists yet.
+Each game keeps the **full append-only raw agent trace** on disk, including user messages, assistant messages, tool calls, and tool results. Provider replay is deliberately more compact: completed historical turns are deterministically reduced to the exact user request plus the final assistant response, while the current active tool loop retains its full tool calls/results.
+
+This is cache-friendly by construction: the system prompt and tool schema are stable, no timestamps/session IDs are injected into the provider-visible prefix, completed historical turns remain byte-stable, and each new turn appends after that stable prefix. Compatible providers can therefore reuse prompt-prefix caches. Actual cache eligibility, minimum prefix size, billing, and lifetime still depend on the selected provider/model.
+
+Restarting GameSmith and reopening the same game reconstructs the same compact provider history from the durable raw conversation. Older readable-only transcripts are migrated once when no provider conversation exists yet.
 
 
 ## Provider failures and debug logs
@@ -107,6 +111,6 @@ Full source verification:
 GODOT_BIN=./Godot_v4.7.2-stable_linux.x86_64 tools/testing/run-verification.sh
 ```
 
-The full workflow verifies the self-contained root Windows ZIP, the Go runtime-bootstrap unit tests (when Go is installed), fast agent/runtime/storage tests, a windowed hostile-generated-input regression (when `xvfb-run` is present), real OpenAI-compatible `/v1/chat/completions` traffic through the production HTTP adapter, two-process durable conversation replay, and a process-level migration from the old `GameSmith Host` app-data directory to `GameSmithHost`.
+The full workflow verifies the self-contained root Windows folder, the Go runtime-bootstrap unit tests (when Go is installed), fast agent/runtime/storage tests, a windowed hostile-generated-input regression (when `xvfb-run` is present), real OpenAI-compatible `/v1/chat/completions` traffic through the production HTTP adapter, two-process durable conversation replay, and a process-level migration from the old `GameSmith Host` app-data directory to `GameSmithHost`.
 
 The fake-v1 acceptance server is under `tools/fake-openai-endpoint/`; GameSmith-specific orchestration is documented in `tools/testing/README.md`. The server requires Node but no npm install for the GameSmith scripted workflow.

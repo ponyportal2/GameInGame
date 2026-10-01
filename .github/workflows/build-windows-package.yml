@@ -1,21 +1,27 @@
-name: Build Windows package
+name: Build Windows folder
 
 on:
   push:
     branches: [main]
     paths-ignore:
-      - GameSmith-Windows.zip
+      - 'GameSmith-Windows/**'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-windows-package:
+  build-windows-folder:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up Git LFS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs install --local
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -59,45 +65,42 @@ jobs:
           .ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64 \
             --headless --path . --export-pack "Linux Pack" .ci-godot/GameSmith.pck
 
-      - name: Assemble self-contained Windows ZIP
+      - name: Assemble self-contained Windows folder
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .ci-godot/package GameSmith-Windows.zip
-          mkdir -p .ci-godot/package/GameSmith-Windows/runtime
-          cp .ci-godot/GameSmith.exe .ci-godot/package/GameSmith-Windows/GameSmith.exe
-          cp .ci-godot/GameSmith.pck .ci-godot/package/GameSmith-Windows/GameSmith.pck
+          rm -rf GameSmith-Windows GameSmith-Windows.zip
+          mkdir -p GameSmith-Windows/runtime
+          cp .ci-godot/GameSmith.exe GameSmith-Windows/GameSmith.exe
+          cp .ci-godot/GameSmith.pck GameSmith-Windows/GameSmith.pck
           cp .ci-godot/windows/Godot_v4.7.2-stable_win64.exe \
-            .ci-godot/package/GameSmith-Windows/runtime/
-          cp THIRD_PARTY_NOTICES.md .ci-godot/package/GameSmith-Windows/
-          cat > .ci-godot/package/GameSmith-Windows/README.txt <<'EOF'
+            GameSmith-Windows/runtime/
+          cp THIRD_PARTY_NOTICES.md GameSmith-Windows/
+          cat > GameSmith-Windows/README.txt <<'EOF'
           GameSmith for Windows
           =====================
 
-          1. Extract this entire ZIP.
-          2. Open the extracted GameSmith-Windows folder.
-          3. Double-click GameSmith.exe.
-
-          Do not run GameSmith.exe from inside the ZIP viewer; extract everything first.
+          Double-click GameSmith.exe.
 
           The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith does not need to download it during normal startup.
 
           Git for Windows must be installed and available on PATH for generated-game repositories.
           EOF
-          (cd .ci-godot/package && zip -9 -qr "$GITHUB_WORKSPACE/GameSmith-Windows.zip" GameSmith-Windows)
           python3 tools/testing/verify_windows_package.py
-          sha256sum GameSmith-Windows.zip
+          sha256sum GameSmith-Windows/GameSmith.exe GameSmith-Windows/GameSmith.pck GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
 
-      - name: Commit refreshed package to main
+      - name: Commit refreshed Windows folder to main
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add GameSmith-Windows.zip
+          git lfs track "GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe"
+          git add .gitattributes GameSmith-Windows
+          git add -u GameSmith-Windows.zip || true
           if git diff --cached --quiet; then
-            echo "Windows package is unchanged."
+            echo "Windows folder is unchanged."
             exit 0
           fi
-          git commit -m "build: refresh self-contained Windows package [skip ci]"
+          git commit -m "build: refresh self-contained Windows folder [skip ci]"
           git push

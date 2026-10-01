@@ -11,7 +11,7 @@
 - Per-game Git repository with an immediate `Initialize game` baseline commit.
 - GDScript-only runtime games mounted directly in the persistent host process; both 2D and 3D are supported.
 - Runtime-loaded multi-file games, failed-candidate preservation, last-working snapshots, and explicit agent-controlled reloads.
-- Durable readable transcript **and** full provider-visible conversation history (assistant tool calls/results included) replayed across app restarts with a cache-stable prefix.
+- Durable full raw conversation/tool trace on disk; completed historical provider replay is deterministically compacted to user/final-assistant pairs, preserving a cache-stable prefix while current-turn tool calls/results remain complete.
 - OpenRouter, OpenCode Go, Command Code, and Custom OpenAI-compatible `/v1` providers; optional Custom API key and configurable `reasoning_effort`.
 - Completion guards reject text-only `Done` when required workspace work/reload has not actually happened.
 - Host chat owns input while open, including against hostile generated full-screen Controls/mouse capture.
@@ -22,13 +22,13 @@
 - Bounded global `user://logs/gamesmith-app.log` plus bounded per-game `user://host/games/<game>/gamesmith.log`, with API-key/Authorization redaction.
 - Compact library/chat action controls and Settings access from both library and game chat.
 
-## Windows release ZIP
+## Windows release folder
 
-The repository root contains `GameSmith-Windows.zip` rather than a loose executable. After extraction it contains `GameSmith.exe`, `GameSmith.pck`, and the supplied Godot 4.7.2 Windows x64 runtime under `runtime/`.
+The repository root contains a directly usable `GameSmith-Windows/` folder with `GameSmith.exe`, `GameSmith.pck`, `README.txt`, third-party notices, and the supplied Godot 4.7.2 Windows x64 runtime under `runtime/`.
 
-Normal Windows startup is therefore fully local and does not download Godot. The launcher still retains its checksum-verified missing-runtime fallback, but the bundled executable satisfies the existing-runtime/no-network path.
+Normal Windows startup is fully local and does not download Godot. The launcher retains its checksum-verified missing-runtime fallback, but the bundled executable satisfies the existing-runtime/no-network path.
 
-Package verification checks ZIP integrity and requires the launcher, PCK, bundled runtime, and README to be present. The current release ZIP is below GitHub's 100 MB per-file Git limit.
+The Godot runtime exceeds GitHub's normal 100 MB Git-object limit, so that one executable is stored with Git LFS. Package verification checks the unpacked folder directly and requires the launcher, PCK, runtime, README, and notices to be present.
 
 `tools/windows-bootstrap/` contains the release launcher and unit tests for existing-runtime/no-network, missing-runtime download/cache, checksum rejection, invalid existing paths, and ZIP traversal rejection.
 
@@ -36,7 +36,7 @@ Package verification checks ZIP integrity and requires the launcher, PCK, bundle
 
 Final source verification on Godot 4.7.2:
 
-- self-contained root Windows ZIP verification: **pass**;
+- self-contained root Windows folder verification: **pass**;
 - Go Windows bootstrap tests: **pass**;
 - fast Godot suite: **135/135**;
 - real windowed hostile-input suite: **10/10**;
