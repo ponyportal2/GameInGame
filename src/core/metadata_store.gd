@@ -60,6 +60,7 @@ func global_settings() -> Dictionary:
         "custom_base_url": "",
         "reasoning_effort": "",
         "max_agent_steps": 150,
+        "llm_call_delay_sec": 6.0,
     })
 
 func save_global_settings(data: Dictionary) -> bool:

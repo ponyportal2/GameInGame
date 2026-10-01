@@ -11,7 +11,12 @@ signal finished(ok: bool)
 const DEFAULT_MAX_STEPS = 150
 const MIN_AGENT_STEPS = 1
 const MAX_AGENT_STEPS = 500
+const DEFAULT_LLM_CALL_DELAY_SEC = 6.0
+const MIN_LLM_CALL_DELAY_SEC = 0.0
+const MAX_LLM_CALL_DELAY_SEC = 300.0
 const MAX_CONSECUTIVE_VERIFICATION_REJECTIONS = 3
+
+static var _last_provider_call_finished_msec: Dictionary = {}
 var game_name = ""
 var tools: GameTools
 var metadata = MetadataStore.new()
@@ -59,7 +64,9 @@ func send_player_request(text: String) -> void:
     messages.append_array(prior_history)
     messages.append(user_message)
     var max_steps = clampi(int(settings.get("max_agent_steps", DEFAULT_MAX_STEPS)), MIN_AGENT_STEPS, MAX_AGENT_STEPS)
-    AppLoggerScript.game_event(game_name, "agent.request", "session=%s provider=%s model=%s max_steps=%d request=%s" % [session_id, provider_id, model, max_steps, text.left(500)])
+    var llm_call_delay_sec = clampf(float(settings.get("llm_call_delay_sec", DEFAULT_LLM_CALL_DELAY_SEC)), MIN_LLM_CALL_DELAY_SEC, MAX_LLM_CALL_DELAY_SEC)
+    var throttle_key = "%s|%s" % [provider_id, model]
+    AppLoggerScript.game_event(game_name, "agent.request", "session=%s provider=%s model=%s max_steps=%d llm_delay_sec=%.1f prior_messages=%d request=%s" % [session_id, provider_id, model, max_steps, llm_call_delay_sec, prior_history.size(), text.left(500)])
     var started_without_main = not FileAccess.file_exists(tools.workspace.path_join("main.gd"))
     var request_requires_change = _request_requires_workspace_change(text)
     var turn_had_workspace_mutation = false
@@ -69,11 +76,13 @@ func send_player_request(text: String) -> void:
     var tool_schema = _tool_schema()
     for step in max_steps:
         status_changed.emit("Agent step %d/%d…" % [step + 1, max_steps])
+        await _wait_for_provider_slot(llm_call_delay_sec, throttle_key, step + 1)
         var provider_summary = ""
         if provider.has_method("diagnostic_summary"):
             provider_summary = str(provider.diagnostic_summary(messages, tool_schema))
         AppLoggerScript.game_event(game_name, "provider.request", "session=%s step=%d %s" % [session_id, step + 1, provider_summary])
         var result: Dictionary = await provider.complete(messages, tool_schema)
+        _last_provider_call_finished_msec[throttle_key] = Time.get_ticks_msec()
         var diagnostics = result.get("diagnostics", {})
         AppLoggerScript.game_event(game_name, "provider.response", "session=%s step=%d ok=%s diagnostics=%s" % [session_id, step + 1, str(result.get("ok", false)), JSON.stringify(diagnostics)], "INFO" if bool(result.get("ok", false)) else "ERROR")
         if not result.ok:
@@ -141,7 +150,8 @@ func send_player_request(text: String) -> void:
                     if fn_name == "reload_game":
                         had_successful_reload = true
                         pending_code_changes = false
-            AppLoggerScript.game_event(game_name, "agent.tool", "session=%s step=%d name=%s ok=%s error=%s" % [session_id, step + 1, fn_name, str(tool_result.get("ok", false)), str(tool_result.get("error", "")).left(500)], "INFO" if bool(tool_result.get("ok", false)) else "WARN")
+            var tool_error = str(tool_result.get("error", tool_result.get("output", ""))).left(500)
+            AppLoggerScript.game_event(game_name, "agent.tool", "session=%s step=%d name=%s ok=%s error=%s" % [session_id, step + 1, fn_name, str(tool_result.get("ok", false)), tool_error], "INFO" if bool(tool_result.get("ok", false)) else "WARN")
             var tool_message = {
                 "role": "tool",
                 "tool_call_id": str(call.get("id", "")),
@@ -151,6 +161,20 @@ func send_player_request(text: String) -> void:
             conversation.append(game_name, tool_message)
     _fail("The agent reached the per-request step limit (%d). Your files were left as-is; continue with another message if needed." % max_steps)
 
+
+func _wait_for_provider_slot(delay_sec: float, throttle_key: String, step_number: int) -> void:
+    if delay_sec <= 0.0:
+        return
+    var last_finished = int(_last_provider_call_finished_msec.get(throttle_key, 0))
+    if last_finished <= 0:
+        return
+    var elapsed_sec = float(Time.get_ticks_msec() - last_finished) / 1000.0
+    var remaining = delay_sec - elapsed_sec
+    if remaining <= 0.0:
+        return
+    status_changed.emit("Waiting %.1fs for provider rate limit…" % remaining)
+    AppLoggerScript.game_event(game_name, "provider.delay", "session=%s step=%d wait_sec=%.3f" % [session_id, step_number, remaining])
+    await get_tree().create_timer(remaining, true).timeout
 
 func _completion_guard(started_without_main: bool, request_requires_change: bool, turn_had_workspace_mutation: bool, pending_code_changes: bool, had_successful_reload: bool) -> String:
     if started_without_main and request_requires_change and (not FileAccess.file_exists(tools.workspace.path_join("main.gd")) or not had_successful_reload):

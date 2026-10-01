@@ -27,9 +27,13 @@ func read_all(game_name: String) -> Array:
     return out
 
 func read_for_provider(game_name: String) -> Array:
-    var raw = read_all(game_name)
+    return _compact_completed_turns(_without_verification_messages(read_all(game_name)))
+
+func _without_verification_messages(raw: Array) -> Array:
     var out: Array = []
     for message in raw:
+        if typeof(message) != TYPE_DICTIONARY:
+            continue
         if _is_verification_message(message):
             if not out.is_empty():
                 var previous = out[-1]
@@ -38,6 +42,41 @@ func read_for_provider(game_name: String) -> Array:
             continue
         out.append(message)
     return out
+
+func _compact_completed_turns(messages: Array) -> Array:
+    var out: Array = []
+    var turn: Array = []
+    for message in messages:
+        if typeof(message) != TYPE_DICTIONARY:
+            continue
+        var role = str(message.get("role", ""))
+        if role == "user":
+            if not turn.is_empty():
+                out.append_array(_compact_turn(turn))
+            turn = [message]
+        elif turn.is_empty():
+            if role != "tool":
+                out.append(message)
+        else:
+            turn.append(message)
+    if not turn.is_empty():
+        out.append_array(_compact_turn(turn))
+    return out
+
+func _compact_turn(turn: Array) -> Array:
+    if turn.is_empty():
+        return []
+    var user_message = turn[0]
+    for i in range(turn.size() - 1, 0, -1):
+        var message = turn[i]
+        if typeof(message) != TYPE_DICTIONARY or str(message.get("role", "")) != "assistant":
+            continue
+        var calls = message.get("tool_calls", [])
+        if typeof(calls) == TYPE_ARRAY and not calls.is_empty():
+            continue
+        if str(message.get("content", "")).strip_edges() != "":
+            return [user_message, message]
+    return [user_message]
 
 func needs_recovery_marker(history: Array) -> bool:
     if history.is_empty():
