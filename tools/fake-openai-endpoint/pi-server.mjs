@@ -8,7 +8,7 @@ const expectedKey = process.env.GAMESMITH_PI_FAKE_KEY || "pi-test-key";
 const states = new Map();
 
 function state(model) {
-  if (!states.has(model)) states.set(model, { calls: 0, lastResponseAt: 0 });
+  if (!states.has(model)) states.set(model, { calls: 0, lastResponseAt: 0, compacted: false });
   return states.get(model);
 }
 function appendLog(entry) {
@@ -47,6 +47,7 @@ function answer(res, model, content, usage = null, reasoning = "") {
   sse(res, model, delta, "stop", usage ?? { prompt_tokens: 700, completion_tokens: 30, total_tokens: 730 });
 }
 function summary(res, model) {
+  state(model).compacted = true;
   answer(res, model, [
     "## Goal",
     "Continue building the Godot game.",
@@ -201,12 +202,12 @@ const server = http.createServer((req, res) => {
     }
 
     if (model.startsWith("pi-gamesmith-compact")) {
-      if (st.calls === 1) {
+      if (!st.compacted) {
         answer(res, model, "Stored lots of context.", { prompt_tokens: 7000, completion_tokens: 20, total_tokens: 7020 });
       } else {
         const sawSummary = messages.some((m) => {
           const value = textOf(m?.content);
-          return value.includes("compacted") || value.includes("## Goal");
+          return value.includes("The conversation history before this point was compacted") || value.includes("## Goal");
         });
         answer(res, model, sawSummary ? "Continued from Pi's compacted session." : "COMPACTION_SUMMARY_MISSING", { prompt_tokens: 1600, completion_tokens: 20, total_tokens: 1620 });
       }
