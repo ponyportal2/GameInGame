@@ -170,7 +170,16 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!legacyTranscriptPath) return;
     const existing = ctx.sessionManager.getEntries();
-    if (existing.length > 0) return;
+    const hasMeaningfulHistory = existing.some((entry) => {
+      const type = String(entry.type || "");
+      if (type === "model_change" || type === "thinking_level_change" || type === "session_info") return false;
+      if (type === "message") {
+        const message = (entry as { message?: { role?: string } }).message;
+        if (message?.role === "system") return false;
+      }
+      return true;
+    });
+    if (hasMeaningfulHistory) return;
     try {
       const raw = await readFile(legacyTranscriptPath, "utf8");
       const lines = raw.split(/\r?\n/).filter(Boolean);
