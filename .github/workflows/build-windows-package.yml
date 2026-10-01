@@ -96,8 +96,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git lfs track "GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe"
-          git add .gitattributes GameSmith-Windows
+          git add .gitattributes .gitignore GameSmith-Windows
+          git add -f GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
           git add -u GameSmith-Windows.zip || true
+          git ls-files --error-unmatch GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe >/dev/null
+          git lfs ls-files | grep -F "GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe" >/dev/null
           if git diff --cached --quiet; then
             echo "Windows folder is unchanged."
             exit 0

@@ -3,6 +3,8 @@
 .DS_Store
 
 runtime/
+!GameSmith-Windows/runtime/
+!GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
 
 __pycache__/
 *.pyc
