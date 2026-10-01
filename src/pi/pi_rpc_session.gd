@@ -18,6 +18,9 @@ var stop_message := ""
 func start(config: Dictionary) -> Dictionary:
     if running:
         return {"ok": true}
+    var availability = _check_pi_available()
+    if not bool(availability.get("ok", false)):
+        return availability
     var command = _command_line(config)
     var env_changes = {
         "GAMESMITH_HOST_BRIDGE_DIR": str(config.bridge_dir),
@@ -152,6 +155,29 @@ func _write_json(record: Dictionary) -> Error:
     stdio.flush()
     return stdio.get_error()
 
+func _check_pi_available() -> Dictionary:
+    var configured = OS.get_environment("GAMESMITH_PI_BIN").strip_edges()
+    if configured != "":
+        if configured.contains("/") or configured.contains("\\"):
+            if FileAccess.file_exists(configured):
+                return {"ok": true}
+            return {"ok": false, "error": "Configured Pi executable does not exist: " + configured}
+        var configured_out: Array = []
+        var configured_code = OS.execute("/bin/sh", PackedStringArray(["-lc", "command -v " + configured]), configured_out, true) if OS.get_name() != "Windows" else OS.execute("cmd.exe", PackedStringArray(["/D", "/S", "/C", "where " + configured]), configured_out, true)
+        if configured_code == 0:
+            return {"ok": true}
+        return {"ok": false, "error": "Configured Pi command was not found on PATH: " + configured}
+
+    var output: Array = []
+    var code: int
+    if OS.get_name() == "Windows":
+        code = OS.execute("cmd.exe", PackedStringArray(["/D", "/S", "/C", "where pi"]), output, true)
+    else:
+        code = OS.execute("/bin/sh", PackedStringArray(["-lc", "command -v pi"]), output, true)
+    if code == 0:
+        return {"ok": true}
+    return {"ok": false, "error": "Global Pi executable was not found on PATH. Install @earendil-works/pi-coding-agent globally, or set GAMESMITH_PI_BIN."}
+
 func _command_line(config: Dictionary) -> String:
     var pi_bin = OS.get_environment("GAMESMITH_PI_BIN").strip_edges()
     if pi_bin == "":
@@ -166,6 +192,7 @@ func _command_line(config: Dictionary) -> String:
         "--no-prompt-templates",
         "--no-themes",
         "--no-context-files",
+        "--append-system-prompt", str(config.prompt_path),
         "--no-builtin-tools",
         "--tools", "read,edit,write,grep,find,ls,delete_path,move_path,git_status,git_diff,git_log,git_commit,reload_game,read_runtime_log",
         "--extension", str(config.extension_path),
