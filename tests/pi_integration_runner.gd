@@ -257,6 +257,8 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     var runner = GameRunnerScript.new()
     root.add_child(runner)
     var agent = _controller(created.name, created.path, runner)
+    var small_noop = await agent.compact_now()
+    assert_true(not bool(small_noop.get("ok", false)) and bool(small_noop.get("no_op", false)), "manual Pi compaction classifies an empty/small session as skipped, not failed")
     agent.send_player_request("remember this long context " + "x".repeat(6000))
     var ok = await agent.finished
     assert_true(bool(ok), "real Pi stores long context before manual compaction")
