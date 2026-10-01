@@ -44,12 +44,6 @@ jobs:
           echo "731980f9608d61333e5baf54a2ef17210acc7a538446c0cb9969f002aca1e953  .ci-godot/godot-windows.zip" | sha256sum -c -
           unzip -q .ci-godot/godot-windows.zip -d .ci-godot/windows
 
-      - name: Run full GameSmith verification
-        shell: bash
-        run: |
-          set -euo pipefail
-          GODOT_BIN="$GITHUB_WORKSPACE/.ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64" bash tools/testing/run-verification.sh
-
       - name: Test launcher and build Windows launcher
         shell: bash
         run: |
@@ -88,6 +82,12 @@ jobs:
           EOF
           python3 tools/testing/verify_windows_package.py
           sha256sum GameSmith-Windows/GameSmith.exe GameSmith-Windows/GameSmith.pck GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
+
+      - name: Run full GameSmith verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          GODOT_BIN="$GITHUB_WORKSPACE/.ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64" bash tools/testing/run-verification.sh
 
       - name: Commit refreshed Windows folder to main
         shell: bash

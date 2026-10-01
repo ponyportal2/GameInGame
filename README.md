@@ -20,7 +20,7 @@ Clone/download the repository, open `GameSmith-Windows`, and double-click **`Gam
 
 The bundled Godot runtime means normal startup requires **no Godot download**. The launcher still contains the verified download path as a recovery fallback if someone deletes the bundled runtime.
 
-The Godot runtime is larger than GitHub's normal 100 MB Git-object limit, so that one file is stored with **Git LFS**. A normal GitHub ZIP download of the repository or a Git clone with Git LFS resolves it to the real executable.
+The Godot runtime is larger than GitHub's normal 100 MB Git-object limit, so that one file is stored with **Git LFS**. A Git clone with Git LFS resolves it to the real executable; browser-generated source archives depend on the repository's Git LFS archive setting.
 
 Git for Windows must be installed and available on `PATH` for generated-game repositories.
 
