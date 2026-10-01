@@ -82,6 +82,17 @@ Use **Logs** in the library to open the global log folder, or **Logs** inside a 
 
 Each game stores a provider-visible JSONL conversation containing user messages, assistant messages, tool calls, and tool results. The system prompt is static and prior messages are replayed unchanged before each new user message, giving compatible providers a stable prefix for prompt caching. Restarting GameSmith and reopening the same game restores that provider-visible conversation. Older readable-only transcripts are migrated once when no provider conversation exists yet.
 
+
+## Provider failures and debug logs
+
+Provider calls now distinguish **transport failures** (timeout, DNS, connection, TLS, no response) from real HTTP status codes. The default provider request timeout is **300 seconds** so slower reasoning models are not mislabeled as `HTTP 0` after 90 seconds.
+
+Per-game logs include a safe provider request/response diagnostic line with the sanitized endpoint, model, timeout, message/context size, transport result, HTTP status, elapsed time, response size, finish reason/token usage when supplied, and safe request-ID/server headers. Authorization/API-key values and URL query strings are not logged.
+
+If a model repeatedly replies with progress text/`Done` without using tools for a game-changing request, GameSmith now stops after **3 consecutive verifier rejections** instead of potentially burning the full agent action budget. Those internal verifier nudges are ephemeral and are no longer written into durable model history. Old persisted verifier pollution is filtered when conversation history is replayed, and interrupted prior turns get one explicit recovery marker before a new request.
+
+For debugging, share the per-game `gamesmith.log` plus `conversation.jsonl`/workspace snapshot. The per-game log should now be sufficient to tell whether a failure was provider transport, HTTP/API, malformed response, verifier-loop, tool, or reload related.
+
 ## Verification
 
 Fast in-process suite:

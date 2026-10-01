@@ -2,6 +2,11 @@
 
 ## Current product behavior
 
+- **Provider transport diagnostics:** OpenAI-compatible requests now use a 300s default timeout and distinguish Godot HTTP transport results (timeout/DNS/connect/TLS/no-response/etc.) from actual HTTP response codes.
+- Provider request/response log entries include sanitized endpoint/model/context sizing, elapsed time, transport/HTTP result, response bytes, selected safe response headers and finish/token metadata when available.
+- Completion verification is bounded to 3 consecutive no-op rejections; verifier prompts are ephemeral instead of permanently polluting provider history, and old persisted verifier pollution is filtered on replay.
+- Interrupted prior turns are explicitly closed with a recovery marker before a later user request, avoiding ambiguous consecutive dangling user/tool history.
+
 - Game library with New Game, Open, Rename, Delete, Folder, global Logs, and global Settings.
 - Per-game Git repository with an immediate `Initialize game` baseline commit.
 - GDScript-only runtime games mounted directly in the persistent host process; both 2D and 3D are supported.

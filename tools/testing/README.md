@@ -39,3 +39,10 @@ The GameSmith-specific scripted server needs Node but no `npm install`. The rest
 ## Expected parse errors
 
 Some verification cases deliberately write invalid generated GDScript. Godot will print parse errors for those candidates. The tests only pass when the host rejects the candidate, keeps/recovers the working game as expected, and continues the agent flow correctly.
+
+
+### Provider transport/recovery regression coverage
+
+The real HTTP suite also delays one fake `/v1/chat/completions` response past a deliberately tiny test timeout. It asserts that GameSmith reports a **transport timeout** with elapsed/endpoint diagnostics rather than the ambiguous `Provider HTTP 0` message.
+
+The same workflow seeds a legacy conversation containing a persisted rejected `Done.` plus GameSmith verifier correction, verifies those internal messages are filtered from provider replay, and requires an interrupted-turn recovery marker before the next real HTTP call.
