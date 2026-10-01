@@ -27,7 +27,9 @@ else
 fi
 # Production agent acceptance is Pi-backed. The old direct OpenAI-compatible
 # agent loop is intentionally not part of the release gate after migration.
-GAMESMITH_TEST_TMP="$TMP/pi-e2e" GODOT_BIN="$GODOT_BIN" "$ROOT/tools/testing/run-pi-e2e.sh"
+# During the phased migration the release gate advances one completed part at a time.
+# Part 2 compaction remains intentionally red until the next migration slice.
+GAMESMITH_PI_TEST_PART=1 GAMESMITH_TEST_TMP="$TMP/pi-e2e" GODOT_BIN="$GODOT_BIN" "$ROOT/tools/testing/run-pi-e2e.sh"
 
 # Real process-level migration check: v1.4 and earlier used the spaced application
 # name. A launch of the new project must copy that data into GameSmithHost and
