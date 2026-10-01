@@ -200,7 +200,7 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    if (model === "pi-gamesmith-compact") {
+    if (model.startsWith("pi-gamesmith-compact")) {
       if (st.calls === 1) {
         answer(res, model, "Stored lots of context.", { prompt_tokens: 7000, completion_tokens: 20, total_tokens: 7020 });
       } else {

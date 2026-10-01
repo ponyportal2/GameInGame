@@ -227,7 +227,7 @@ func _test_real_pi_retry_and_action_limit() -> void:
     WorkspaceStoreScript.new().delete_game(created.name)
 
 func _test_real_pi_manual_and_auto_compaction() -> void:
-    _settings("pi-gamesmith-compact", 0.0, 150, 0, 1000)
+    _settings("pi-gamesmith-compact-manual", 0.0, 150, 0, 1000)
     var created = _new_game("Pi Compact Manual")
     if not created.get("ok", false):
         assert_true(false, "creates manual Pi compaction game")
@@ -239,6 +239,9 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     agent.send_player_request("remember this long context " + "x".repeat(6000))
     var ok = await agent.finished
     assert_true(bool(ok), "real Pi stores long context before manual compaction")
+    agent.send_player_request("add a second context span " + "z".repeat(3000))
+    ok = await agent.finished
+    assert_true(bool(ok), "real Pi stores a second user span so manual compaction has an older span to summarize")
     var compacted = await agent.compact_now()
     assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction")
     assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary")
@@ -250,7 +253,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     await process_frame
     WorkspaceStoreScript.new().delete_game(created.name)
 
-    _settings("pi-gamesmith-compact", 0.0, 150, 2000, 1000)
+    _settings("pi-gamesmith-compact-auto", 0.0, 150, 2000, 1000)
     created = _new_game("Pi Compact Auto")
     if not created.get("ok", false):
         assert_true(false, "creates automatic Pi compaction game")
