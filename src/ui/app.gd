@@ -38,7 +38,7 @@ var toast_label: Label
 var new_game_dialog: ConfirmationDialog
 var rename_dialog: ConfirmationDialog
 var delete_dialog: ConfirmationDialog
-var settings_dialog: AcceptDialog
+var settings_dialog: Control
 var name_edit: LineEdit
 var rename_edit: LineEdit
 var provider_option: OptionButton
@@ -48,6 +48,10 @@ var custom_base_edit: LineEdit
 var reasoning_option: OptionButton
 var agent_steps_spin: SpinBox
 var llm_delay_spin: SpinBox
+var compaction_auto_spin: SpinBox
+var compaction_keep_spin: SpinBox
+var compact_now_button: Button
+var compaction_status_label: Label
 var library_button: Button
 var game_override_provider: OptionButton
 var game_override_model: LineEdit
@@ -144,33 +148,187 @@ func _build_dialogs() -> void:
     rename_dialog = ConfirmationDialog.new(); rename_dialog.title = "Rename game"; add_child(rename_dialog)
     rename_edit = LineEdit.new(); rename_edit.custom_minimum_size.x = 360; rename_dialog.add_child(rename_edit); rename_edit.position = Vector2(24, 58); rename_dialog.confirmed.connect(_rename_game)
     delete_dialog = ConfirmationDialog.new(); delete_dialog.title = "Delete game"; delete_dialog.confirmed.connect(_delete_game_confirmed); add_child(delete_dialog)
-    settings_dialog = AcceptDialog.new(); settings_dialog.title = "Settings"; settings_dialog.min_size = Vector2i(600, 560); add_child(settings_dialog)
-    var settings_scroll = ScrollContainer.new(); settings_scroll.custom_minimum_size = Vector2(560, 430); settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; settings_dialog.add_child(settings_scroll)
-    var sm = MarginContainer.new(); sm.add_theme_constant_override("margin_left", 22); sm.add_theme_constant_override("margin_right", 22); sm.add_theme_constant_override("margin_top", 18); sm.add_theme_constant_override("margin_bottom", 18); settings_scroll.add_child(sm)
-    var sv = VBoxContainer.new(); sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL; sv.add_theme_constant_override("separation", 8); sm.add_child(sv)
-    sv.add_child(_small_label("Agent action limit per request")); agent_steps_spin = SpinBox.new(); agent_steps_spin.min_value = AgentControllerScript.MIN_AGENT_STEPS; agent_steps_spin.max_value = AgentControllerScript.MAX_AGENT_STEPS; agent_steps_spin.step = 1; agent_steps_spin.allow_greater = false; agent_steps_spin.allow_lesser = false; agent_steps_spin.tooltip_text = "Maximum model/tool rounds before GameSmith stops a runaway request."; sv.add_child(agent_steps_spin)
-    var agent_note = Label.new(); agent_note.text = "Default: 150. Lower it to cap cost/latency; raise it for larger builds."; agent_note.add_theme_color_override("font_color", Color("8492ad")); sv.add_child(agent_note)
-    sv.add_child(_small_label("Delay between LLM calls (seconds)")); llm_delay_spin = SpinBox.new(); llm_delay_spin.min_value = AgentControllerScript.MIN_LLM_CALL_DELAY_SEC; llm_delay_spin.max_value = AgentControllerScript.MAX_LLM_CALL_DELAY_SEC; llm_delay_spin.step = 0.5; llm_delay_spin.allow_greater = false; llm_delay_spin.allow_lesser = false; llm_delay_spin.tooltip_text = "Minimum quiet time after one provider response before GameSmith starts the next LLM call. First call is immediate."; sv.add_child(llm_delay_spin)
-    var delay_note = Label.new(); delay_note.text = "Default: 6 seconds. Set 0 to disable. Helps provider request/token rate limits between agent steps."; delay_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; delay_note.add_theme_color_override("font_color", Color("8492ad")); sv.add_child(delay_note)
+    _build_settings_overlay()
+
+func _build_settings_overlay() -> void:
+    settings_dialog = Control.new()
+    settings_dialog.name = "SettingsOverlay"
+    settings_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    settings_dialog.visible = false
+    settings_dialog.process_mode = Node.PROCESS_MODE_ALWAYS
+    settings_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
+    host_ui_root.add_child(settings_dialog)
+
+    var shade = ColorRect.new()
+    shade.color = Color(0.015, 0.02, 0.03, 0.90)
+    shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    settings_dialog.add_child(shade)
+
+    var center = CenterContainer.new()
+    center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    settings_dialog.add_child(center)
+
+    var panel = PanelContainer.new()
+    panel.custom_minimum_size = Vector2(620, 610)
+    center.add_child(panel)
+
+    var outer = MarginContainer.new()
+    outer.add_theme_constant_override("margin_left", 20)
+    outer.add_theme_constant_override("margin_right", 20)
+    outer.add_theme_constant_override("margin_top", 16)
+    outer.add_theme_constant_override("margin_bottom", 16)
+    panel.add_child(outer)
+
+    var root_box = VBoxContainer.new()
+    root_box.add_theme_constant_override("separation", 10)
+    outer.add_child(root_box)
+
+    var head = HBoxContainer.new()
+    root_box.add_child(head)
+    var title = Label.new()
+    title.text = "Settings"
+    title.add_theme_font_size_override("font_size", 22)
+    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    head.add_child(title)
+    var close_btn = Button.new()
+    close_btn.text = "Close"
+    close_btn.pressed.connect(_close_settings)
+    head.add_child(close_btn)
+
+    var settings_scroll = ScrollContainer.new()
+    settings_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    root_box.add_child(settings_scroll)
+    var sm = MarginContainer.new()
+    sm.add_theme_constant_override("margin_right", 10)
+    settings_scroll.add_child(sm)
+    var sv = VBoxContainer.new()
+    sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    sv.add_theme_constant_override("separation", 8)
+    sm.add_child(sv)
+
+    sv.add_child(_small_label("Agent action limit per request"))
+    agent_steps_spin = SpinBox.new()
+    agent_steps_spin.min_value = AgentControllerScript.MIN_AGENT_STEPS
+    agent_steps_spin.max_value = AgentControllerScript.MAX_AGENT_STEPS
+    agent_steps_spin.step = 1
+    agent_steps_spin.allow_greater = false
+    agent_steps_spin.allow_lesser = false
+    agent_steps_spin.tooltip_text = "Maximum model/tool rounds before GameSmith stops a runaway request."
+    sv.add_child(agent_steps_spin)
+    var agent_note = Label.new()
+    agent_note.text = "Default: 150. Lower it to cap cost/latency; raise it for larger builds."
+    agent_note.add_theme_color_override("font_color", Color("8492ad"))
+    sv.add_child(agent_note)
+
+    sv.add_child(_small_label("Delay between LLM calls (seconds)"))
+    llm_delay_spin = SpinBox.new()
+    llm_delay_spin.min_value = AgentControllerScript.MIN_LLM_CALL_DELAY_SEC
+    llm_delay_spin.max_value = AgentControllerScript.MAX_LLM_CALL_DELAY_SEC
+    llm_delay_spin.step = 0.5
+    llm_delay_spin.allow_greater = false
+    llm_delay_spin.allow_lesser = false
+    llm_delay_spin.tooltip_text = "Minimum wall-clock quiet time after one provider response before GameSmith starts the next LLM call. First call is immediate."
+    sv.add_child(llm_delay_spin)
+    var delay_note = Label.new()
+    delay_note.text = "Default: 6 seconds. Set 0 to disable."
+    delay_note.add_theme_color_override("font_color", Color("8492ad"))
+    sv.add_child(delay_note)
+
     sv.add_child(HSeparator.new())
-    sv.add_child(_small_label("Global provider")); provider_option = OptionButton.new(); sv.add_child(provider_option)
-    for id in ProviderFactoryScript.display_names(): provider_option.add_item(ProviderFactoryScript.display_names()[id]); provider_option.set_item_metadata(provider_option.item_count - 1, id)
-    provider_option.item_selected.connect(_provider_changed)
-    sv.add_child(_small_label("Global model")); model_edit = LineEdit.new(); sv.add_child(model_edit)
-    sv.add_child(_small_label("Reasoning effort (reasoning_effort)")); reasoning_option = OptionButton.new(); sv.add_child(reasoning_option)
-    for pair in [["Provider default (omit)", ""], ["None", "none"], ["Minimal", "minimal"], ["Low", "low"], ["Medium", "medium"], ["High", "high"], ["XHigh", "xhigh"], ["Max", "max"]]:
-        reasoning_option.add_item(pair[0]); reasoning_option.set_item_metadata(reasoning_option.item_count - 1, pair[1])
-    sv.add_child(_small_label("API key for selected provider")); key_edit = LineEdit.new(); key_edit.secret = true; key_edit.placeholder_text = "Stored under user://host, outside game workspaces"; sv.add_child(key_edit)
-    sv.add_child(_small_label("Custom /v1 base address (used by Custom provider)")); custom_base_edit = LineEdit.new(); custom_base_edit.placeholder_text = "http://127.0.0.1:1234/v1"; sv.add_child(custom_base_edit)
-    var note = Label.new(); note.text = "Custom accepts an OpenAI-compatible /v1 base address and does not require an API key.\nreasoning_effort is omitted when Provider default is selected."; note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; note.add_theme_color_override("font_color", Color("8492ad")); sv.add_child(note)
-    var split = HSeparator.new(); sv.add_child(split)
-    sv.add_child(_small_label("Current game override"))
-    game_override_provider = OptionButton.new(); sv.add_child(game_override_provider)
-    game_override_provider.add_item("Use global default"); game_override_provider.set_item_metadata(0, "")
+    sv.add_child(_small_label("Conversation compaction"))
+    var compaction_note = Label.new()
+    compaction_note.text = "Pi-style checkpoint compaction summarizes old context only when triggered and keeps a recent verbatim tail. Raw conversation.jsonl is never rewritten."
+    compaction_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    compaction_note.add_theme_color_override("font_color", Color("8492ad"))
+    sv.add_child(compaction_note)
+    sv.add_child(_small_label("Auto compact at estimated tokens (0 = disabled)"))
+    compaction_auto_spin = SpinBox.new()
+    compaction_auto_spin.min_value = 0
+    compaction_auto_spin.max_value = 2000000
+    compaction_auto_spin.step = 1000
+    compaction_auto_spin.allow_greater = false
+    compaction_auto_spin.allow_lesser = false
+    sv.add_child(compaction_auto_spin)
+    sv.add_child(_small_label("Keep recent tokens verbatim"))
+    compaction_keep_spin = SpinBox.new()
+    compaction_keep_spin.min_value = 1000
+    compaction_keep_spin.max_value = 500000
+    compaction_keep_spin.step = 1000
+    compaction_keep_spin.allow_greater = false
+    compaction_keep_spin.allow_lesser = false
+    sv.add_child(compaction_keep_spin)
+    compaction_status_label = Label.new()
+    compaction_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    compaction_status_label.add_theme_color_override("font_color", Color("8492ad"))
+    sv.add_child(compaction_status_label)
+
+    sv.add_child(HSeparator.new())
+    sv.add_child(_small_label("Global provider"))
+    provider_option = OptionButton.new()
+    sv.add_child(provider_option)
     for id in ProviderFactoryScript.display_names():
-        game_override_provider.add_item(ProviderFactoryScript.display_names()[id]); game_override_provider.set_item_metadata(game_override_provider.item_count - 1, id)
-    sv.add_child(_small_label("Current game model override")); game_override_model = LineEdit.new(); game_override_model.placeholder_text = "Blank = use global model"; sv.add_child(game_override_model)
-    settings_dialog.confirmed.connect(_save_settings)
+        provider_option.add_item(ProviderFactoryScript.display_names()[id])
+        provider_option.set_item_metadata(provider_option.item_count - 1, id)
+    provider_option.item_selected.connect(_provider_changed)
+    sv.add_child(_small_label("Global model"))
+    model_edit = LineEdit.new()
+    sv.add_child(model_edit)
+    sv.add_child(_small_label("Reasoning effort (reasoning_effort)"))
+    reasoning_option = OptionButton.new()
+    sv.add_child(reasoning_option)
+    for pair in [["Provider default (omit)", ""], ["None", "none"], ["Minimal", "minimal"], ["Low", "low"], ["Medium", "medium"], ["High", "high"], ["XHigh", "xhigh"], ["Max", "max"]]:
+        reasoning_option.add_item(pair[0])
+        reasoning_option.set_item_metadata(reasoning_option.item_count - 1, pair[1])
+    sv.add_child(_small_label("API key for selected provider"))
+    key_edit = LineEdit.new()
+    key_edit.secret = true
+    key_edit.placeholder_text = "Stored under user://host, outside game workspaces"
+    sv.add_child(key_edit)
+    sv.add_child(_small_label("Custom /v1 base address (used by Custom provider)"))
+    custom_base_edit = LineEdit.new()
+    custom_base_edit.placeholder_text = "http://127.0.0.1:1234/v1"
+    sv.add_child(custom_base_edit)
+    var note = Label.new()
+    note.text = "Custom accepts an OpenAI-compatible /v1 base address and does not require an API key.\nreasoning_effort is omitted when Provider default is selected."
+    note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    note.add_theme_color_override("font_color", Color("8492ad"))
+    sv.add_child(note)
+
+    sv.add_child(HSeparator.new())
+    sv.add_child(_small_label("Current game override"))
+    game_override_provider = OptionButton.new()
+    sv.add_child(game_override_provider)
+    game_override_provider.add_item("Use global default")
+    game_override_provider.set_item_metadata(0, "")
+    for id in ProviderFactoryScript.display_names():
+        game_override_provider.add_item(ProviderFactoryScript.display_names()[id])
+        game_override_provider.set_item_metadata(game_override_provider.item_count - 1, id)
+    sv.add_child(_small_label("Current game model override"))
+    game_override_model = LineEdit.new()
+    game_override_model.placeholder_text = "Blank = use global model"
+    sv.add_child(game_override_model)
+
+    var actions = HBoxContainer.new()
+    actions.add_theme_constant_override("separation", 8)
+    root_box.add_child(actions)
+    compact_now_button = Button.new()
+    compact_now_button.text = "Compact now"
+    compact_now_button.tooltip_text = "Summarize older context now using the current game's provider/model."
+    compact_now_button.pressed.connect(_compact_now_from_settings)
+    actions.add_child(compact_now_button)
+    var action_spacer = Control.new()
+    action_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    actions.add_child(action_spacer)
+    var cancel = Button.new()
+    cancel.text = "Cancel"
+    cancel.pressed.connect(_close_settings)
+    actions.add_child(cancel)
+    var save = Button.new()
+    save.text = "Save"
+    save.pressed.connect(_save_settings)
+    actions.add_child(save)
+
 
 func _small_label(text: String) -> Label:
     var l = Label.new(); l.text = text; l.add_theme_color_override("font_color", Color("aab6cf")); return l
@@ -405,23 +563,57 @@ func _delete_game_confirmed() -> void:
     _show_library()
 
 func _open_settings() -> void:
-    var settings = metadata.global_settings(); var creds = metadata.credentials()
-    var id = str(settings.get("provider", "openrouter")); _select_provider_id(id)
+    var settings = metadata.global_settings()
+    var creds = metadata.credentials()
+    var id = str(settings.get("provider", "openrouter"))
+    _select_provider_id(id)
     model_edit.text = str(settings.get("model", ProviderFactoryScript.defaults().get(id, "")))
     key_edit.text = str(creds.get(id, ""))
     custom_base_edit.text = str(settings.get("custom_base_url", ""))
     _select_reasoning_effort(str(settings.get("reasoning_effort", "")))
     agent_steps_spin.value = clampi(int(settings.get("max_agent_steps", AgentControllerScript.DEFAULT_MAX_STEPS)), AgentControllerScript.MIN_AGENT_STEPS, AgentControllerScript.MAX_AGENT_STEPS)
     llm_delay_spin.value = clampf(float(settings.get("llm_call_delay_sec", AgentControllerScript.DEFAULT_LLM_CALL_DELAY_SEC)), AgentControllerScript.MIN_LLM_CALL_DELAY_SEC, AgentControllerScript.MAX_LLM_CALL_DELAY_SEC)
+    compaction_auto_spin.value = clampi(int(settings.get("compaction_auto_tokens", 100000)), 0, 2000000)
+    compaction_keep_spin.value = clampi(int(settings.get("compaction_keep_recent_tokens", 20000)), 1000, 500000)
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
         _select_game_provider_id(str(game_meta.get("provider_override", "")))
         game_override_model.text = str(game_meta.get("model_override", ""))
-        game_override_provider.disabled = false; game_override_model.editable = true
+        game_override_provider.disabled = false
+        game_override_model.editable = true
+        var estimated = agent.conversation.estimate_provider_tokens(current_game) if is_instance_valid(agent) else 0
+        compaction_status_label.text = "Current provider history: ~%d estimated tokens." % estimated
+        compact_now_button.disabled = not is_instance_valid(agent) or agent.busy
     else:
-        game_override_provider.select(0); game_override_model.text = ""
-        game_override_provider.disabled = true; game_override_model.editable = false
-    settings_dialog.popup_centered(Vector2i(600, 560))
+        game_override_provider.select(0)
+        game_override_model.text = ""
+        game_override_provider.disabled = true
+        game_override_model.editable = false
+        compaction_status_label.text = "Open a game to compact its conversation manually."
+        compact_now_button.disabled = true
+    settings_dialog.visible = true
+
+func _close_settings() -> void:
+    settings_dialog.visible = false
+
+func _compact_now_from_settings() -> void:
+    if current_game == "" or not is_instance_valid(agent):
+        compaction_status_label.text = "Open a game first."
+        return
+    if agent.busy:
+        compaction_status_label.text = "Wait for the current agent request to finish."
+        return
+    compact_now_button.disabled = true
+    compaction_status_label.text = "Compacting…"
+    var result: Dictionary = await agent.compact_now()
+    if bool(result.get("ok", false)):
+        compaction_status_label.text = "Compacted ~%d → ~%d tokens." % [int(result.get("tokens_before", 0)), int(result.get("tokens_after", 0))]
+    elif bool(result.get("no_op", false)):
+        compaction_status_label.text = str(result.get("error", "Nothing to compact."))
+    else:
+        compaction_status_label.text = "Compaction failed: " + str(result.get("error", "Unknown error."))
+    compact_now_button.disabled = false
+
 
 func _provider_changed(index: int) -> void:
     var id = str(provider_option.get_item_metadata(index)); var settings = metadata.global_settings(); var creds = metadata.credentials()
@@ -437,14 +629,17 @@ func _save_settings() -> void:
     settings.reasoning_effort = str(reasoning_option.get_item_metadata(reasoning_option.selected))
     settings.max_agent_steps = int(agent_steps_spin.value)
     settings.llm_call_delay_sec = float(llm_delay_spin.value)
+    settings.compaction_auto_tokens = int(compaction_auto_spin.value)
+    settings.compaction_keep_recent_tokens = int(compaction_keep_spin.value)
     metadata.save_global_settings(settings)
-    AppLoggerScript.global_event("settings.save", "provider=%s model=%s reasoning_effort=%s max_agent_steps=%d llm_call_delay_sec=%.1f" % [id, settings.model, settings.reasoning_effort, int(settings.max_agent_steps), float(settings.llm_call_delay_sec)])
+    AppLoggerScript.global_event("settings.save", "provider=%s model=%s reasoning_effort=%s max_agent_steps=%d llm_call_delay_sec=%.1f compaction_auto_tokens=%d compaction_keep_recent_tokens=%d" % [id, settings.model, settings.reasoning_effort, int(settings.max_agent_steps), float(settings.llm_call_delay_sec), int(settings.compaction_auto_tokens), int(settings.compaction_keep_recent_tokens)])
     var creds = metadata.credentials(); creds[id] = key_edit.text.strip_edges(); metadata.save_credentials(creds)
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
         game_meta.provider_override = str(game_override_provider.get_item_metadata(game_override_provider.selected))
         game_meta.model_override = game_override_model.text.strip_edges()
         metadata.write_game(current_game, game_meta)
+    settings_dialog.visible = false
     _toast("Settings saved.")
 
 func _select_provider_id(id: String) -> void:
