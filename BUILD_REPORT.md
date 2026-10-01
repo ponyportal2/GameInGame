@@ -2,6 +2,8 @@
 
 ## Current product behavior
 
+- **Manual compaction UX:** Compact now returns from Settings to chat, shows HOST progress/result lines, and disables composer/Send/Library for the operation. Success, no-op, and provider failure are distinguishable without polluting durable transcript/model context.
+
 - **Pi-style checkpoint compaction:** backwards token-budget cut points, no cuts on tool results, split-turn prefix summaries, exact structured checkpoint/update prompts, 2,000-character tool-result serialization cap for summary requests, iterative previous-summary updates, and carried read/modified file lists.
 - **Compaction controls:** automatic estimated-token threshold defaults to 100,000 (0 disables), retained recent context defaults to 20,000, and open games expose manual **Compact now**.
 - **Cache behavior:** context stays append-only and byte-stable between compactions; a checkpoint intentionally changes the prefix only when compaction occurs, after which the new checkpoint + retained tail become the stable prefix.
@@ -46,7 +48,7 @@ Final source verification on Godot 4.7.2:
 
 - self-contained root Windows folder verification: **pass**;
 - Go Windows bootstrap tests: **pass**;
-- fast Godot suite: **212/212**;
+- fast Godot suite: **228/228**;
 - real windowed hostile-input suite: **20/20**;
 - real HTTP fake-`/v1/chat/completions` suite: **67/67**;
 - two-process provider-visible conversation replay: **pass**;

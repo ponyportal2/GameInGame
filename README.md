@@ -46,6 +46,8 @@ Use **Settings** from either the library or an open game's chat toolbar. Current
 - **Recent context kept verbatim during compaction**, default **20,000 estimated tokens**;
 - **Compact now** when a game is open, for an explicit manual checkpoint.
 
+Clicking **Compact now** returns to chat immediately so the operation is visible. GameSmith posts an ephemeral HOST progress line, disables the composer, Send, and Library controls until compaction finishes, then posts an explicit **finished**, **skipped**, or **failed** result. These status lines are UI-only and are not added to `transcript.jsonl` or future model context.
+
 Supported adapters in this build are OpenRouter, OpenCode Go, Command Code (OpenAI-compatible routes), and a Custom OpenAI-compatible provider. The Custom provider can be used without an API key for local servers.
 
 OpenAI subscription authentication remains behind the provider abstraction rather than being faked: the ChatGPT subscription path is not a plain embeddable API-key endpoint.
