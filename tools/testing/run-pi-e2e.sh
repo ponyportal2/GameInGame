@@ -39,4 +39,5 @@ HOME="$TMP/home" \
 GAMESMITH_PI_BIN="$PI_BIN" \
 GAMESMITH_PI_FAKE_URL="http://127.0.0.1:$PORT/v1" \
 GAMESMITH_PI_FAKE_LOG="$LOG" \
+GAMESMITH_PI_TEST_PART="${GAMESMITH_PI_TEST_PART:-}" \
 "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/pi_integration_runner.gd
