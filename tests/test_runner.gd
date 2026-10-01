@@ -71,6 +71,7 @@ func run() -> void:
     await _test_agent_requires_reload_after_code_change()
     await _test_agent_recovers_from_failed_reload_before_completion()
     await _test_agent_history_survives_restart_and_keeps_stable_prefix()
+    await _test_pi_style_compaction_contract()
     await _test_legacy_transcript_is_imported_into_agent_history()
     await _test_provider_settings_surface()
     await _test_custom_provider_and_reasoning_payload()
@@ -385,6 +386,8 @@ func _test_app_identity_settings_and_compact_ui() -> void:
     var settings = metadata.global_settings()
     assert_eq(int(settings.get("max_agent_steps", -1)), 150, "default agent action limit is 150")
     assert_eq(float(settings.get("llm_call_delay_sec", -1.0)), 6.0, "default delay between LLM calls is 6 seconds")
+    assert_eq(int(settings.get("compaction_auto_tokens", -1)), 100000, "default automatic compaction threshold is 100k tokens")
+    assert_eq(int(settings.get("compaction_keep_recent_tokens", -1)), 20000, "Pi-style compaction keeps 20k recent tokens by default")
     var theme = ThemeFactoryScript.build()
     var button_box = theme.get_stylebox("normal", "Button")
     assert_true(button_box != null and button_box.content_margin_left <= 10.0 and button_box.content_margin_top <= 7.0, "buttons use compact deliberate padding")
@@ -398,13 +401,24 @@ func _test_app_identity_settings_and_compact_ui() -> void:
     assert_true(_find_button_with_text(app.library_layer, "Logs") != null, "library exposes global logs without entering a game")
     assert_true(app.get("agent_steps_spin") != null, "settings exposes editable agent action limit")
     assert_true(app.get("llm_delay_spin") != null, "settings exposes editable LLM call delay")
+    assert_true(app.get("compaction_auto_spin") != null, "settings exposes automatic compaction token threshold")
+    assert_true(app.get("compaction_keep_spin") != null, "settings exposes Pi-style recent-token budget")
+    assert_true(app.get("compact_now_button") != null, "settings exposes manual Compact now action")
+    assert_true(not (app.settings_dialog is Window), "general Settings is an in-canvas host overlay, not a modal subwindow")
+    assert_true(app.settings_dialog.get_parent() == app.host_ui_root, "Settings overlay is rendered in the reserved host UI layer")
     app._open_settings()
     assert_eq(float(app.llm_delay_spin.value), 6.0, "Settings UI loads the 6-second LLM delay default")
     app.agent_steps_spin.value = 77
     app.llm_delay_spin.value = 2.5
+    if app.get("compaction_auto_spin") != null:
+        app.compaction_auto_spin.value = 54321
+    if app.get("compaction_keep_spin") != null:
+        app.compaction_keep_spin.value = 12345
     app._save_settings()
     assert_eq(int(metadata.global_settings().get("max_agent_steps", -1)), 77, "Settings UI persists edited agent action limit")
     assert_eq(float(metadata.global_settings().get("llm_call_delay_sec", -1.0)), 2.5, "Settings UI persists edited LLM call delay")
+    assert_eq(int(metadata.global_settings().get("compaction_auto_tokens", -1)), 54321, "Settings UI persists automatic compaction threshold")
+    assert_eq(int(metadata.global_settings().get("compaction_keep_recent_tokens", -1)), 12345, "Settings UI persists recent-token compaction budget")
     metadata.save_global_settings(original_settings)
     var send = _find_button_with_text(app.chat_overlay, "Send")
     assert_true(send != null and send.custom_minimum_size.y <= 68.0, "chat composer Send button is not oversized")
@@ -658,6 +672,43 @@ func _test_agent_history_survives_restart_and_keeps_stable_prefix() -> void:
 
     agent3.queue_free(); runner.queue_free(); await process_frame
     store.delete_game(name)
+
+
+func _test_pi_style_compaction_contract() -> void:
+    var name = "Compaction Contract %d" % Time.get_ticks_msec()
+    var store = ConversationStoreScript.new()
+    var metadata = MetadataStoreScript.new()
+    metadata.ensure_game(name)
+    for i in 8:
+        store.append(name, {"role": "user", "content": "request-%d %s" % [i, "u".repeat(700)]})
+        store.append(name, {"role": "assistant", "content": "", "tool_calls": [_tool_call("read-%d" % i, "read_file", {"path": "main.gd"})]})
+        store.append(name, {"role": "tool", "tool_call_id": "read-%d" % i, "content": JSON.stringify({"ok": true, "content": "x".repeat(5000)})})
+        store.append(name, {"role": "assistant", "content": "done-%d" % i, "reasoning_content": "reason-%d" % i})
+
+    var before = store.read_for_provider(name)
+    assert_true(before.size() >= 32, "before explicit compaction, full tool/reasoning history remains provider-visible like Pi")
+    assert_true(store.has_method("estimate_provider_tokens"), "conversation store exposes Pi-style chars/4 context estimate")
+    assert_true(store.has_method("prepare_compaction"), "conversation store exposes Pi-style backwards cut-point preparation")
+    assert_true(store.has_method("append_compaction"), "conversation store persists append-only compaction checkpoints")
+    if store.has_method("estimate_provider_tokens"):
+        assert_true(int(store.estimate_provider_tokens(name)) > 1000, "token estimator sees long provider context")
+    if store.has_method("prepare_compaction"):
+        var prep: Dictionary = store.prepare_compaction(name, 700)
+        assert_true(bool(prep.get("ok", false)), "Pi-style compaction finds a valid cut point")
+        assert_true(int(prep.get("first_kept_message_index", -1)) > 0, "compaction keeps a recent tail rather than replacing the entire conversation")
+        assert_true((prep.get("messages_to_summarize", []) as Array).size() > 0, "compaction selects older messages for summarization")
+        var kept: Array = prep.get("kept_messages", [])
+        assert_true(not kept.is_empty(), "compaction leaves recent messages verbatim")
+        if not kept.is_empty():
+            assert_true(str(kept[-1].get("content", "")) == "done-7", "newest completed turn is kept verbatim")
+        if store.has_method("append_compaction"):
+            store.append_compaction(name, "## Goal\nKeep building.\n\n## Progress\n### Done\n- [x] Old work", int(prep.get("first_kept_message_index", 0)), int(prep.get("tokens_before", 0)), {"readFiles": ["main.gd"], "modifiedFiles": []})
+            var compacted = store.read_for_provider(name)
+            assert_true(str(compacted[0].get("role", "")) == "user", "Pi compaction summary re-enters provider context as a user message")
+            assert_true("The conversation history before this point was compacted into the following summary:" in str(compacted[0].get("content", "")), "provider replay uses Pi compaction-summary wrapper")
+            assert_true((compacted.size() < before.size()), "compaction replaces old context with summary plus recent tail")
+            assert_true((store.read_all(name) as Array).size() == 32, "raw append-only message history remains intact after compaction")
+    metadata.delete_game_metadata(name)
 
 
 func _test_legacy_transcript_is_imported_into_agent_history() -> void:
