@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          GODOT_BIN="$GITHUB_WORKSPACE/.ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64"             tools/testing/run-verification.sh
+          GODOT_BIN="$GITHUB_WORKSPACE/.ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64" bash tools/testing/run-verification.sh
 
       - name: Test launcher and build Windows launcher
         shell: bash
