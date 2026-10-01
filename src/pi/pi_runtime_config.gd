@@ -3,7 +3,7 @@ extends RefCounted
 
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const JsonStoreScript = preload("res://src/core/json_store.gd")
-const ProviderFactoryScript = preload("res://src/providers/provider_factory.gd")
+const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
 
 const PI_PROVIDER_ID = "gamesmith"
 const DEFAULT_CONTEXT_WINDOW = 200000
@@ -41,17 +41,17 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
     if provider_id == "":
         provider_id = str(settings.get("provider", "openrouter"))
     if model == "":
-        model = str(settings.get("model", ProviderFactoryScript.defaults().get(provider_id, "")))
+        model = str(settings.get("model", PiProviderCatalogScript.defaults().get(provider_id, "")))
     if model.strip_edges() == "":
         return {"ok": false, "error": "No model configured."}
 
-    var base_url = _provider_base_url(provider_id, settings)
-    var subscription_mode = provider_id == "openai_subscription"
+    var base_url = PiProviderCatalogScript.base_url(provider_id, settings)
+    var subscription_mode = PiProviderCatalogScript.uses_global_auth(provider_id)
     if base_url == "" and not subscription_mode:
         return {"ok": false, "error": "Provider endpoint is not configured."}
 
     var key = str(credentials.get(provider_id, ""))
-    if not subscription_mode and provider_id != "custom" and key.strip_edges() == "":
+    if not subscription_mode and PiProviderCatalogScript.requires_api_key(provider_id) and key.strip_edges() == "":
         return {"ok": false, "error": "No API key configured for %s." % provider_id}
     if not subscription_mode and key.strip_edges() == "":
         key = "gamesmith-local"
@@ -120,28 +120,6 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
         "llm_delay_ms": maxi(0, int(round(float(settings.get("llm_call_delay_sec", 6.0)) * 1000.0))),
         "max_turns": clampi(int(settings.get("max_agent_steps", 150)), 1, 500)
     }
-
-static func _provider_base_url(provider_id: String, settings: Dictionary) -> String:
-    match provider_id:
-        "openrouter":
-            return "https://openrouter.ai/api/v1"
-        "opencode_go":
-            return "https://opencode.ai/zen/go/v1"
-        "command_code":
-            return "https://api.commandcode.ai/provider/v1"
-        "openai_subscription":
-            return ""
-        "custom":
-            return _custom_base_url(str(settings.get("custom_base_url", "")))
-    return ""
-
-static func _custom_base_url(raw: String) -> String:
-    var base = raw.strip_edges()
-    while base.ends_with("/"):
-        base = base.left(base.length() - 1)
-    if base.ends_with("/chat/completions"):
-        base = base.left(base.length() - "/chat/completions".length())
-    return base
 
 static func _pi_thinking(value: String) -> String:
     var effort = value.strip_edges().to_lower()
