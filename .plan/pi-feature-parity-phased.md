@@ -14,7 +14,7 @@ Pinned integration target for tests: `@earendil-works/pi-coding-agent@0.99.2`.
 - TDD remains red -> green. Each phase gets its own acceptance gate; later known-red phases are not treated as failures of the completed phase.
 - Do not delete the old agent/provider implementation until the Pi replacement has equivalent acceptance coverage.
 
-## Part 1 — normal Pi agent runtime
+## Part 1 — normal Pi agent runtime — COMPLETE
 
 Scope:
 
@@ -37,7 +37,25 @@ Scope:
 
 Acceptance boundary: all Pi integration tests **except compaction** plus the existing core/windowed suites.
 
-Status at plan creation: current real-Pi suite is **42 passed / 5 failed**, and all five failures are compaction-only. Core is **228/228** and windowed is **20/20**.
+Status at plan creation: current real-Pi suite was **42 passed / 5 failed**, and all five failures were compaction-only. Core was **228/228** and windowed was **20/20**.
+
+Part 1 completion:
+
+- Added an explicit phase selector to the real-Pi integration runner; `GAMESMITH_PI_TEST_PART=1` runs only the normal-agent slice, while the default still runs the complete suite.
+- Added a missing-global-Pi acceptance check with a clear pre-launch error.
+- CI's phased release gate now runs Part 1 only. This does **not** mark compaction as passing; Part 2 remains separately runnable and intentionally unfinished.
+- Production remains Pi-backed; no rollback to the homegrown provider loop was used to make this phase green.
+- Verified on GitHub Actions run `36923886630`:
+  - core: **228 passed / 0 failed**;
+  - windowed UI/input: **20 passed / 0 failed**;
+  - real globally-installed Pi Part 1: **40 passed / 0 failed**;
+  - legacy app-data migration: pass;
+  - source verification: pass;
+  - Windows folder build/refresh: pass.
+- Part 1 acceptance commits: `e1800b5` (phase split), `dadf301` (runner selector), `2d1d6db` (CI Part 1 gate), followed by Windows refresh `1b7e3e3`.
+- Cache behavior covered in Part 1: normal Pi history survives process restart without GameSmith rebuilding/reducing it; the existing pre-turn session prefix remains stable until Pi itself appends new entries.
+
+Known remaining red work is deliberately confined to **Part 2 compaction**.
 
 ## Part 2 — Pi-native compaction parity
 
