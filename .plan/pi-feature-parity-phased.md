@@ -57,7 +57,7 @@ Part 1 completion:
 
 Known remaining red work is deliberately confined to **Part 2 compaction**.
 
-## Part 2 — Pi-native compaction parity
+## Part 2 — Pi-native compaction parity — COMPLETE
 
 Scope:
 
@@ -70,6 +70,33 @@ Scope:
 - verify cache-friendly session behavior across compaction and restart.
 
 Acceptance boundary: compaction-specific real-Pi tests only.
+
+Part 2 completion:
+
+- Manual **Compact now** calls Pi's native `compact` RPC; GameSmith no longer generates its own production checkpoint for the Pi path.
+- The configured `compaction_keep_recent_tokens` value is written into Pi's own `compaction.keepRecentTokens` setting and is asserted in the real-Pi acceptance test.
+- GameSmith keeps Pi's built-in threshold auto-compaction disabled and applies the product's explicit configurable token threshold by reading Pi's canonical `get_session_stats.contextUsage.tokens`; crossing the threshold invokes Pi's native `compact`.
+- Tests require a real Pi `type: "compaction"` session entry, not a string/shape approximation.
+- The next normal provider request must contain Pi's compacted checkpoint context.
+- A native compacted session is restarted in a new GameSmith controller and its Pi entry prefix must remain byte-stable before the next prompt; the provider then receives the checkpoint after restart.
+- Manual UI progress/success/failure and send/navigation blocking remain covered by the existing core UI tests.
+- Pi's explicit `Nothing to compact (session too small)` result is surfaced as **Compaction skipped**, not a provider/summary failure.
+- TDD evidence:
+  - initial native-Pi Part 2 gate: **8 passed / 5 failed**;
+  - corrected compactable-span fixture: **11 passed / 2 failed**;
+  - native compaction/restart/context acceptance: **19 passed / 0 failed**;
+  - no-op RED commit `dd690db`: **19 passed / 1 failed**;
+  - no-op GREEN commit `cc5fbb2`: **20 passed / 0 failed**.
+- Final verification run `36926099737`:
+  - core: **228/228**;
+  - windowed: **20/20**;
+  - real global-Pi Part 1: **40/40**;
+  - real global-Pi Part 2: **20/20**;
+  - legacy app-data migration: pass;
+  - source verification: pass;
+  - Windows folder refresh: `f9b67cf`.
+- Cache behavior: GameSmith never reconstructs or continuously compacts Pi history. Native Pi owns the append-only session and checkpoint entry; after compaction, restart preserves those entries byte-for-byte until Pi appends new work.
+
 
 ## Part 3 — migration and deletion of duplicate agent code
 
@@ -99,4 +126,4 @@ Acceptance boundary: complete CI green with no allowed/red migration tests.
 
 ## Stop rule
 
-For this execution, finish **Part 1 only**. Do not implement or paper over Part 2 compaction failures, and do not delete the old agent stack yet.
+For this execution, Part 2 is complete. Stop before **Part 3**: do not delete the old agent/provider stack or change legacy-import semantics in the same slice.
