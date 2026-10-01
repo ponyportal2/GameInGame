@@ -7,6 +7,7 @@ const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const AgentControllerScript = preload("res://src/agent/agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
+const ConversationStoreScript = preload("res://src/core/conversation_store.gd")
 const ProviderFactoryScript = preload("res://src/providers/provider_factory.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
@@ -59,6 +60,7 @@ func run() -> void:
     await _test_enter_sends_chat_message()
     await _test_library_is_blocked_while_agent_works()
     await _test_app_identity_settings_and_compact_ui()
+    _set_test_llm_call_delay(0.0)
     await _test_legacy_user_data_migration()
     await _test_debug_logs_and_redaction()
     await _test_agent_generation_and_second_edit()
@@ -69,6 +71,7 @@ func run() -> void:
     await _test_legacy_transcript_is_imported_into_agent_history()
     await _test_provider_settings_surface()
     await _test_custom_provider_and_reasoning_payload()
+    await _test_agent_llm_call_delay()
     await _test_agent_malformed_tool_arguments()
     await _test_agent_provider_failure()
     await _test_agent_step_limit()
@@ -91,6 +94,12 @@ func _test_workspace_and_git() -> void:
         var log: Dictionary = store.git.log(created.path, 3)
         assert_true(bool(log.get("ok", false)) and "Initialize game" in str(log.get("output", "")), "creates baseline commit")
         assert_true(not FileAccess.file_exists(created.path.path_join("main.gd")), "new workspace has no scaffold")
+        _write(created.path.path_join("main.gd"), "extends Node\n")
+        assert_true(store._remove_tree(created.path.path_join(".git")), "test fixture can remove Git metadata")
+        var recovered = store.ensure_game_repo(created.name)
+        assert_true(bool(recovered.get("ok", false)) and bool(recovered.get("recovered", false)), "opening an existing workspace can recover missing Git metadata")
+        var recovered_log: Dictionary = store.git.log(created.path, 3)
+        assert_true("Initialize existing game" in str(recovered_log.get("output", "")), "Git recovery captures current workspace as a baseline commit")
         store.delete_game(created.name)
 
 func _test_rename_metadata_and_snapshot() -> void:
@@ -277,6 +286,7 @@ func _test_app_identity_settings_and_compact_ui() -> void:
     var metadata = MetadataStoreScript.new()
     var settings = metadata.global_settings()
     assert_eq(int(settings.get("max_agent_steps", -1)), 150, "default agent action limit is 150")
+    assert_eq(float(settings.get("llm_call_delay_sec", -1.0)), 6.0, "default delay between LLM calls is 6 seconds")
     var theme = ThemeFactoryScript.build()
     var button_box = theme.get_stylebox("normal", "Button")
     assert_true(button_box != null and button_box.content_margin_left <= 10.0 and button_box.content_margin_top <= 7.0, "buttons use compact deliberate padding")
@@ -289,14 +299,24 @@ func _test_app_identity_settings_and_compact_ui() -> void:
         assert_true(settings_button.size.y <= 42.0, "library header actions stay compact instead of stretching to brand height")
     assert_true(_find_button_with_text(app.library_layer, "Logs") != null, "library exposes global logs without entering a game")
     assert_true(app.get("agent_steps_spin") != null, "settings exposes editable agent action limit")
+    assert_true(app.get("llm_delay_spin") != null, "settings exposes editable LLM call delay")
     app._open_settings()
+    assert_eq(float(app.llm_delay_spin.value), 6.0, "Settings UI loads the 6-second LLM delay default")
     app.agent_steps_spin.value = 77
+    app.llm_delay_spin.value = 2.5
     app._save_settings()
     assert_eq(int(metadata.global_settings().get("max_agent_steps", -1)), 77, "Settings UI persists edited agent action limit")
+    assert_eq(float(metadata.global_settings().get("llm_call_delay_sec", -1.0)), 2.5, "Settings UI persists edited LLM call delay")
     metadata.save_global_settings(original_settings)
     var send = _find_button_with_text(app.chat_overlay, "Send")
     assert_true(send != null and send.custom_minimum_size.y <= 68.0, "chat composer Send button is not oversized")
     app.queue_free(); await process_frame
+
+func _set_test_llm_call_delay(seconds: float) -> void:
+    var metadata = MetadataStoreScript.new()
+    var settings = metadata.global_settings().duplicate(true)
+    settings.llm_call_delay_sec = seconds
+    metadata.save_global_settings(settings)
 
 func _find_button_with_text(node: Node, text: String) -> Button:
     if node is Button and node.text == text:
@@ -511,14 +531,18 @@ func _test_agent_history_survives_restart_and_keeps_stable_prefix() -> void:
     agent2.configure(name, tools); agent2.provider_override = second
     agent2.send_player_request("What did I say?")
     assert_true(await agent2.finished, "request after agent restart succeeds")
+    var raw_history = ConversationStoreScript.new().read_all(name)
+    assert_true(raw_history.size() >= 4, "full raw agent trace remains durable on disk")
+    if raw_history.size() >= 4:
+        assert_true(not (raw_history[1].get("tool_calls", []) as Array).is_empty(), "raw history retains assistant tool calls for debugging")
+        assert_eq(str(raw_history[2].get("role", "")), "tool", "raw history retains tool results for debugging")
     var resumed: Array = second.seen_messages[0]
-    assert_eq(resumed.size(), 6, "restarted agent replays full prior provider conversation before new user message")
-    if resumed.size() >= 6:
-        assert_eq(str(resumed[1].get("content", "")), "Remember blue", "replayed history includes previous user message")
-        assert_true(not (resumed[2].get("tool_calls", []) as Array).is_empty(), "replayed history includes assistant tool call")
-        assert_eq(str(resumed[3].get("role", "")), "tool", "replayed history includes tool result")
-        assert_eq(str(resumed[4].get("content", "")), "Blue remembered.", "replayed history includes previous final assistant response")
-        assert_eq(str(resumed[5].get("content", "")), "What did I say?", "new user message is appended after stable history")
+    assert_eq(resumed.size(), 4, "restarted agent replays compact completed conversation plus new user message")
+    if resumed.size() >= 4:
+        assert_eq(str(resumed[1].get("content", "")), "Remember blue", "compacted history includes previous user message")
+        assert_eq(str(resumed[2].get("content", "")), "Blue remembered.", "compacted history includes previous final assistant response")
+        assert_true(not resumed[2].has("tool_calls"), "old completed tool trace is omitted from provider replay")
+        assert_eq(str(resumed[3].get("content", "")), "What did I say?", "new user message follows compact stable history")
     var stable_prefix_json = JSON.stringify(resumed.slice(0, maxi(0, resumed.size() - 1)))
     agent2.queue_free(); await process_frame
 
@@ -568,6 +592,7 @@ func _test_provider_settings_surface() -> void:
     var settings = MetadataStoreScript.new().global_settings()
     assert_true(settings.has("custom_base_url"), "global settings include custom /v1 base address")
     assert_true(settings.has("reasoning_effort"), "global settings include reasoning_effort")
+    assert_true(settings.has("llm_call_delay_sec"), "global settings include configurable delay between LLM calls")
 
 
 func _test_custom_provider_and_reasoning_payload() -> void:
@@ -584,6 +609,39 @@ func _test_custom_provider_and_reasoning_payload() -> void:
     var default_payload: Dictionary = no_reasoning.build_payload([], [])
     assert_true(not default_payload.has("reasoning_effort"), "provider-default reasoning omits reasoning_effort from request")
     owner.queue_free(); await process_frame
+
+func _test_agent_llm_call_delay() -> void:
+    var metadata = MetadataStoreScript.new()
+    var original_settings = metadata.global_settings().duplicate(true)
+    var settings = original_settings.duplicate(true)
+    settings.provider = "custom"
+    settings.model = "delay-test-%d" % Time.get_ticks_msec()
+    settings.llm_call_delay_sec = 0.06
+    metadata.save_global_settings(settings)
+
+    var store = WorkspaceStoreScript.new(); store.ensure()
+    var name = "LLM Delay %d" % Time.get_ticks_msec()
+    var created = store.create_game(name)
+    assert_true(bool(created.get("ok", false)), "creates provider-delay workspace")
+    if not created.get("ok", false):
+        metadata.save_global_settings(original_settings)
+        return
+    var runner = GameRunnerScript.new(); root.add_child(runner)
+    var fake = FakeProvider.new(self)
+    fake.push({"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": [_tool_call("delay-status", "git_status", {})]}})
+    fake.push({"ok": true, "message": {"role": "assistant", "content": "Status checked."}})
+    var agent = AgentControllerScript.new(); root.add_child(agent)
+    agent.configure(name, GameToolsScript.new(created.path, runner)); agent.provider_override = fake
+    var started = Time.get_ticks_msec()
+    agent.send_player_request("check status")
+    assert_true(await agent.finished, "agent succeeds with configured provider pacing")
+    var elapsed = Time.get_ticks_msec() - started
+    assert_true(elapsed >= 45, "configured LLM delay inserts a real quiet period between provider calls")
+    var debug_log = FileAccess.get_file_as_string(AppLoggerScript.game_log_path(name))
+    assert_true("provider.delay" in debug_log, "provider pacing is visible in per-game debug logs")
+    agent.queue_free(); runner.queue_free(); await process_frame
+    store.delete_game(name)
+    metadata.save_global_settings(original_settings)
 
 func _test_agent_malformed_tool_arguments() -> void:
     var store = WorkspaceStoreScript.new(); store.ensure()
