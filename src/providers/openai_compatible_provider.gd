@@ -25,10 +25,11 @@ func build_payload(messages: Array, tools: Array) -> Dictionary:
     var body = {
         "model": model,
         "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
         "temperature": 0.2
     }
+    if not tools.is_empty():
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
     var effort = reasoning_effort.strip_edges()
     if effort != "":
         body["reasoning_effort"] = effort

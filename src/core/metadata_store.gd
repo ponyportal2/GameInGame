@@ -61,6 +61,8 @@ func global_settings() -> Dictionary:
         "reasoning_effort": "",
         "max_agent_steps": 150,
         "llm_call_delay_sec": 6.0,
+        "compaction_auto_tokens": 100000,
+        "compaction_keep_recent_tokens": 20000,
     })
 
 func save_global_settings(data: Dictionary) -> bool:
