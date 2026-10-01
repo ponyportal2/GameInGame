@@ -174,7 +174,11 @@ func _wait_for_provider_slot(delay_sec: float, throttle_key: String, step_number
         return
     status_changed.emit("Waiting %.1fs for provider rate limit…" % remaining)
     AppLoggerScript.game_event(game_name, "provider.delay", "session=%s step=%d wait_sec=%.3f" % [session_id, step_number, remaining])
-    await get_tree().create_timer(remaining, true).timeout
+    # Provider quotas use wall time. An uncapped/headless SceneTreeTimer can advance
+    # faster than wall time, so yield frames until the monotonic wall-clock deadline.
+    var deadline_msec = Time.get_ticks_msec() + ceili(remaining * 1000.0)
+    while Time.get_ticks_msec() < deadline_msec:
+        await get_tree().process_frame
 
 func _completion_guard(started_without_main: bool, request_requires_change: bool, turn_had_workspace_mutation: bool, pending_code_changes: bool, had_successful_reload: bool) -> String:
     if started_without_main and request_requires_change and (not FileAccess.file_exists(tools.workspace.path_join("main.gd")) or not had_successful_reload):
