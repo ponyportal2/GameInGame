@@ -4,9 +4,9 @@ const WorkspaceStoreScript = preload("res://src/core/workspace_store.gd")
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
-const AgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
+const PiPiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
-const ProviderFactoryScript = preload("res://src/providers/provider_factory.gd")
+const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd")
@@ -111,7 +111,7 @@ func _build_library() -> void:
     var title = Label.new(); title.text = "GAMESMITH"; title.add_theme_font_size_override("font_size", 34); title.add_theme_color_override("font_color", Color("f3f6ff")); brand.add_child(title)
     var subtitle = Label.new(); subtitle.text = "Describe a game. Change it while it runs."; subtitle.add_theme_color_override("font_color", Color("93a1bd")); brand.add_child(subtitle)
     var logs_btn = Button.new(); logs_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; logs_btn.text = "Logs"; logs_btn.tooltip_text = "Open global GameSmith logs"; logs_btn.pressed.connect(_open_global_logs); header.add_child(logs_btn)
-    var settings_btn = Button.new(); settings_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; settings_btn.text = "Settings"; settings_btn.tooltip_text = "Provider, model, and agent limits"; settings_btn.pressed.connect(_open_settings); header.add_child(settings_btn)
+    var settings_btn = Button.new(); settings_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; settings_btn.text = "Settings"; settings_btn.tooltip_text = "Pi provider, model, and agent limits"; settings_btn.pressed.connect(_open_settings); header.add_child(settings_btn)
     var new_btn = Button.new(); new_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; new_btn.text = "+ New Game"; new_btn.pressed.connect(func(): name_edit.text = ""; new_game_dialog.popup_centered(Vector2i(420, 170))); header.add_child(new_btn)
     var divider = HSeparator.new(); root.add_child(divider)
     var section = Label.new(); section.name = "SectionTitle"; section.text = "YOUR GAMES"; section.add_theme_color_override("font_color", Color("7f8eaa")); section.add_theme_font_size_override("font_size", 13); root.add_child(section)
@@ -209,28 +209,28 @@ func _build_settings_overlay() -> void:
     sv.add_theme_constant_override("separation", 8)
     sm.add_child(sv)
 
-    sv.add_child(_small_label("Agent action limit per request"))
+    sv.add_child(_small_label("Pi turn limit per request"))
     agent_steps_spin = SpinBox.new()
-    agent_steps_spin.min_value = AgentControllerScript.MIN_AGENT_STEPS
-    agent_steps_spin.max_value = AgentControllerScript.MAX_AGENT_STEPS
+    agent_steps_spin.min_value = PiAgentControllerScript.MIN_AGENT_STEPS
+    agent_steps_spin.max_value = PiAgentControllerScript.MAX_AGENT_STEPS
     agent_steps_spin.step = 1
     agent_steps_spin.allow_greater = false
     agent_steps_spin.allow_lesser = false
-    agent_steps_spin.tooltip_text = "Maximum model/tool rounds before GameSmith stops a runaway request."
+    agent_steps_spin.tooltip_text = "Maximum Pi agent turns before GameSmith stops a runaway request."
     sv.add_child(agent_steps_spin)
     var agent_note = Label.new()
     agent_note.text = "Default: 150. Lower it to cap cost/latency; raise it for larger builds."
     agent_note.add_theme_color_override("font_color", Color("8492ad"))
     sv.add_child(agent_note)
 
-    sv.add_child(_small_label("Delay between LLM calls (seconds)"))
+    sv.add_child(_small_label("Delay between Pi provider calls (seconds)"))
     llm_delay_spin = SpinBox.new()
-    llm_delay_spin.min_value = AgentControllerScript.MIN_LLM_CALL_DELAY_SEC
-    llm_delay_spin.max_value = AgentControllerScript.MAX_LLM_CALL_DELAY_SEC
+    llm_delay_spin.min_value = PiAgentControllerScript.MIN_LLM_CALL_DELAY_SEC
+    llm_delay_spin.max_value = PiAgentControllerScript.MAX_LLM_CALL_DELAY_SEC
     llm_delay_spin.step = 0.5
     llm_delay_spin.allow_greater = false
     llm_delay_spin.allow_lesser = false
-    llm_delay_spin.tooltip_text = "Minimum wall-clock quiet time after one provider response before GameSmith starts the next LLM call. First call is immediate."
+    llm_delay_spin.tooltip_text = "Minimum wall-clock quiet time after one Pi provider response before the next provider request. First call is immediate."
     sv.add_child(llm_delay_spin)
     var delay_note = Label.new()
     delay_note.text = "Default: 6 seconds. Set 0 to disable."
@@ -238,9 +238,9 @@ func _build_settings_overlay() -> void:
     sv.add_child(delay_note)
 
     sv.add_child(HSeparator.new())
-    sv.add_child(_small_label("Conversation compaction"))
+    sv.add_child(_small_label("Pi session compaction"))
     var compaction_note = Label.new()
-    compaction_note.text = "Pi-style checkpoint compaction summarizes old context only when triggered and keeps a recent verbatim tail. Raw conversation.jsonl is never rewritten."
+    compaction_note.text = "Pi owns agent history and native compaction. GameSmith only chooses when to trigger it and how much recent context Pi keeps verbatim."
     compaction_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     compaction_note.add_theme_color_override("font_color", Color("8492ad"))
     sv.add_child(compaction_note)
@@ -266,47 +266,47 @@ func _build_settings_overlay() -> void:
     sv.add_child(compaction_status_label)
 
     sv.add_child(HSeparator.new())
-    sv.add_child(_small_label("Global provider"))
+    sv.add_child(_small_label("Global Pi provider"))
     provider_option = OptionButton.new()
     sv.add_child(provider_option)
-    for id in ProviderFactoryScript.display_names():
-        provider_option.add_item(ProviderFactoryScript.display_names()[id])
+    for id in PiProviderCatalogScript.display_names():
+        provider_option.add_item(PiProviderCatalogScript.display_names()[id])
         provider_option.set_item_metadata(provider_option.item_count - 1, id)
     provider_option.item_selected.connect(_provider_changed)
-    sv.add_child(_small_label("Global model"))
+    sv.add_child(_small_label("Global Pi model"))
     model_edit = LineEdit.new()
     sv.add_child(model_edit)
-    sv.add_child(_small_label("Reasoning effort (reasoning_effort)"))
+    sv.add_child(_small_label("Pi thinking / reasoning effort"))
     reasoning_option = OptionButton.new()
     sv.add_child(reasoning_option)
     for pair in [["Provider default (omit)", ""], ["None", "none"], ["Minimal", "minimal"], ["Low", "low"], ["Medium", "medium"], ["High", "high"], ["XHigh", "xhigh"], ["Max", "max"]]:
         reasoning_option.add_item(pair[0])
         reasoning_option.set_item_metadata(reasoning_option.item_count - 1, pair[1])
-    sv.add_child(_small_label("API key for selected provider"))
+    sv.add_child(_small_label("API key passed to Pi for selected provider"))
     key_edit = LineEdit.new()
     key_edit.secret = true
     key_edit.placeholder_text = "Stored under user://host, outside game workspaces"
     sv.add_child(key_edit)
-    sv.add_child(_small_label("Custom /v1 base address (used by Custom provider)"))
+    sv.add_child(_small_label("Custom OpenAI-compatible /v1 base address"))
     custom_base_edit = LineEdit.new()
     custom_base_edit.placeholder_text = "http://127.0.0.1:1234/v1"
     sv.add_child(custom_base_edit)
     var note = Label.new()
-    note.text = "Custom accepts an OpenAI-compatible /v1 base address and does not require an API key.\nreasoning_effort is omitted when Provider default is selected."
+    note.text = "GameSmith writes this provider/model config into Pi. Custom can omit an API key; OpenAI subscription delegates authentication to Pi global auth."
     note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     note.add_theme_color_override("font_color", Color("8492ad"))
     sv.add_child(note)
 
     sv.add_child(HSeparator.new())
-    sv.add_child(_small_label("Current game override"))
+    sv.add_child(_small_label("Current game Pi override"))
     game_override_provider = OptionButton.new()
     sv.add_child(game_override_provider)
     game_override_provider.add_item("Use global default")
     game_override_provider.set_item_metadata(0, "")
-    for id in ProviderFactoryScript.display_names():
-        game_override_provider.add_item(ProviderFactoryScript.display_names()[id])
+    for id in PiProviderCatalogScript.display_names():
+        game_override_provider.add_item(PiProviderCatalogScript.display_names()[id])
         game_override_provider.set_item_metadata(game_override_provider.item_count - 1, id)
-    sv.add_child(_small_label("Current game model override"))
+    sv.add_child(_small_label("Current game Pi model override"))
     game_override_model = LineEdit.new()
     game_override_model.placeholder_text = "Blank = use global model"
     sv.add_child(game_override_model)
@@ -388,7 +388,7 @@ func _open_game(name: String) -> void:
     runner.load_succeeded.connect(_on_load_success)
     runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _toast(msg))
     tools = GameToolsScript.new(store.game_path(name), runner)
-    agent = AgentControllerScript.new(); add_child(agent); agent.configure(name, tools)
+    agent = PiAgentControllerScript.new(); add_child(agent); agent.configure(name, tools)
     agent.status_changed.connect(func(text): status_label.text = text)
     agent.assistant_message.connect(func(text): _append_chat("assistant", text))
     agent.llm_snippet.connect(func(kind, text): _append_chat(kind, text))
@@ -601,12 +601,12 @@ func _open_settings() -> void:
     var creds = metadata.credentials()
     var id = str(settings.get("provider", "openrouter"))
     _select_provider_id(id)
-    model_edit.text = str(settings.get("model", ProviderFactoryScript.defaults().get(id, "")))
+    model_edit.text = str(settings.get("model", PiProviderCatalogScript.defaults().get(id, "")))
     key_edit.text = str(creds.get(id, ""))
     custom_base_edit.text = str(settings.get("custom_base_url", ""))
     _select_reasoning_effort(str(settings.get("reasoning_effort", "")))
-    agent_steps_spin.value = clampi(int(settings.get("max_agent_steps", AgentControllerScript.DEFAULT_MAX_STEPS)), AgentControllerScript.MIN_AGENT_STEPS, AgentControllerScript.MAX_AGENT_STEPS)
-    llm_delay_spin.value = clampf(float(settings.get("llm_call_delay_sec", AgentControllerScript.DEFAULT_LLM_CALL_DELAY_SEC)), AgentControllerScript.MIN_LLM_CALL_DELAY_SEC, AgentControllerScript.MAX_LLM_CALL_DELAY_SEC)
+    agent_steps_spin.value = clampi(int(settings.get("max_agent_steps", PiAgentControllerScript.DEFAULT_MAX_STEPS)), PiAgentControllerScript.MIN_AGENT_STEPS, PiAgentControllerScript.MAX_AGENT_STEPS)
+    llm_delay_spin.value = clampf(float(settings.get("llm_call_delay_sec", PiAgentControllerScript.DEFAULT_LLM_CALL_DELAY_SEC)), PiAgentControllerScript.MIN_LLM_CALL_DELAY_SEC, PiAgentControllerScript.MAX_LLM_CALL_DELAY_SEC)
     compaction_auto_spin.value = clampi(int(settings.get("compaction_auto_tokens", 100000)), 0, 2000000)
     compaction_keep_spin.value = clampi(int(settings.get("compaction_keep_recent_tokens", 20000)), 1000, 500000)
     if current_game != "":
@@ -663,7 +663,7 @@ func _compact_now_from_settings() -> void:
 
 func _provider_changed(index: int) -> void:
     var id = str(provider_option.get_item_metadata(index)); var settings = metadata.global_settings(); var creds = metadata.credentials()
-    model_edit.text = str(ProviderFactoryScript.defaults().get(id, settings.get("model", "")))
+    model_edit.text = str(PiProviderCatalogScript.defaults().get(id, settings.get("model", "")))
     key_edit.text = str(creds.get(id, ""))
 
 func _save_settings() -> void:
