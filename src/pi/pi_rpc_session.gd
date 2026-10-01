@@ -20,11 +20,14 @@ func start(config: Dictionary) -> Dictionary:
         return {"ok": true}
     var command = _command_line(config)
     var env_changes = {
-        "PI_CODING_AGENT_DIR": str(config.agent_dir),
         "GAMESMITH_HOST_BRIDGE_DIR": str(config.bridge_dir),
         "GAMESMITH_LEGACY_TRANSCRIPT": str(config.legacy_transcript),
         "GAMESMITH_LLM_DELAY_MS": str(config.llm_delay_ms)
     }
+    if not bool(config.get("use_global_pi_auth", false)):
+        env_changes["PI_CODING_AGENT_DIR"] = str(config.agent_dir)
+    if str(config.get("api_key", "")) != "":
+        env_changes["GAMESMITH_PI_API_KEY"] = str(config.api_key)
     var old_env := {}
     for key in env_changes:
         old_env[key] = {"had": OS.has_environment(key), "value": OS.get_environment(key)}
