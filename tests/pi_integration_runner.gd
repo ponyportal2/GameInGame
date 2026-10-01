@@ -6,6 +6,7 @@ const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
+const PiRpcSessionScript = preload("res://src/pi/pi_rpc_session.gd")
 
 var failures := 0
 var passed := 0
@@ -29,15 +30,35 @@ func assert_eq(actual, expected, label: String) -> void:
 func run() -> void:
     base_url = OS.get_environment("GAMESMITH_PI_FAKE_URL")
     fake_log = OS.get_environment("GAMESMITH_PI_FAKE_LOG")
+    var part = OS.get_environment("GAMESMITH_PI_TEST_PART").strip_edges()
     assert_true(base_url != "", "Pi integration receives fake OpenAI-compatible base URL")
     assert_true(OS.get_environment("GAMESMITH_PI_BIN") != "", "Pi integration receives explicit globally-installed Pi command for CI")
-    await _test_production_app_uses_pi()
-    await _test_real_pi_generation_edit_stream_and_restart()
-    await _test_real_pi_false_done_verifier()
-    await _test_real_pi_retry_and_action_limit()
-    await _test_real_pi_manual_and_auto_compaction()
-    print("PI INTEGRATION TESTS: %d passed, %d failed" % [passed, failures])
+
+    if part == "" or part == "1":
+        await _test_missing_global_pi_error()
+        await _test_production_app_uses_pi()
+        await _test_real_pi_generation_edit_stream_and_restart()
+        await _test_real_pi_false_done_verifier()
+        await _test_real_pi_retry_and_action_limit()
+
+    if part == "" or part == "2":
+        await _test_real_pi_manual_and_auto_compaction()
+
+    var label = "ALL" if part == "" else "PART " + part
+    print("PI %s INTEGRATION TESTS: %d passed, %d failed" % [label, passed, failures])
     quit(0 if failures == 0 else 1)
+
+func _test_missing_global_pi_error() -> void:
+    var old = OS.get_environment("GAMESMITH_PI_BIN")
+    OS.set_environment("GAMESMITH_PI_BIN", "/definitely/missing/gamesmith-pi")
+    var session = PiRpcSessionScript.new()
+    var result: Dictionary = session._check_pi_available()
+    assert_true(not bool(result.get("ok", false)), "missing configured Pi executable is rejected before process launch")
+    assert_true("does not exist" in str(result.get("error", "")).to_lower(), "missing Pi error explains that the configured executable does not exist")
+    if old == "":
+        OS.unset_environment("GAMESMITH_PI_BIN")
+    else:
+        OS.set_environment("GAMESMITH_PI_BIN", old)
 
 func _settings(model: String, delay_sec: float = 0.0, max_steps: int = 150, auto_tokens: int = 100000, keep_tokens: int = 20000, reasoning: String = "high") -> void:
     var meta = MetadataStoreScript.new()
