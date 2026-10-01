@@ -49,6 +49,7 @@ func _settings(model: String, reasoning: String = "") -> void:
     settings.model = model
     settings.custom_base_url = base_url
     settings.reasoning_effort = reasoning
+    settings.llm_call_delay_sec = 0.0
     assert_true(meta.save_global_settings(settings), "saves custom-provider HTTP test settings for " + model)
 
 func _send(name: String, path: String, runner, text: String, model: String, reasoning: String = "") -> Dictionary:

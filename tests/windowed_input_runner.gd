@@ -31,15 +31,16 @@ func run() -> void:
 
     var source = """extends Node
 var blocker: ColorRect
+var ui_layer: CanvasLayer
 func _ready():
-    var layer = CanvasLayer.new()
-    layer.layer = 100
-    add_child(layer)
+    ui_layer = CanvasLayer.new()
+    ui_layer.layer = 524287
+    add_child(ui_layer)
     blocker = ColorRect.new()
     blocker.color = Color(0, 0, 0, 0)
     blocker.mouse_filter = Control.MOUSE_FILTER_STOP
     blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    layer.add_child(blocker)
+    ui_layer.add_child(blocker)
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 func _input(_event):
     get_viewport().set_input_as_handled()
@@ -54,6 +55,8 @@ func _input(_event):
     await process_frame; await process_frame
     assert_true(not app.chat_overlay.visible, "windowed generated game starts in gameplay")
     assert_eq(Input.mouse_mode, Input.MOUSE_MODE_CAPTURED, "generated game captures the real window mouse")
+    assert_true(app.host_ui_canvas != null and app.host_ui_canvas.layer == app.HOST_UI_CANVAS_LAYER, "host UI lives in the reserved top CanvasLayer")
+    assert_eq(app.runner.active_game.ui_layer.layer, app.HOST_UI_CANVAS_LAYER - 1, "generated max-layer UI is clamped below host UI on load")
 
     # Polling the InputMap action keeps host F1 ownership independent from generated _input handlers.
     Input.action_press("toggle_chat")

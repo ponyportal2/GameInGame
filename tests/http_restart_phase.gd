@@ -20,7 +20,7 @@ func run() -> void:
         quit(2); return
     var store = WorkspaceStoreScript.new(); store.ensure()
     var meta = MetadataStoreScript.new(); meta.ensure()
-    meta.save_global_settings({"provider": "custom", "model": "gamesmith-history", "custom_base_url": base_url, "reasoning_effort": ""})
+    meta.save_global_settings({"provider": "custom", "model": "gamesmith-history", "custom_base_url": base_url, "reasoning_effort": "", "llm_call_delay_sec": 0.0, "max_agent_steps": 150})
     if phase == "seed":
         if GAME_NAME in store.list_games(): store.delete_game(GAME_NAME)
         var created = store.create_game(GAME_NAME)
