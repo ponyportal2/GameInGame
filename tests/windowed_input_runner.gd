@@ -66,6 +66,23 @@ func _input(_event):
     assert_eq(Input.mouse_mode, Input.MOUSE_MODE_VISIBLE, "F1 chat releases captured mouse for host controls")
     assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_IGNORE, "host chat disables high-layer generated GUI blocker")
 
+    var settings_button = _find_button(app.chat_overlay, "Settings")
+    assert_true(settings_button != null, "finds real chat Settings button")
+    if settings_button != null:
+        settings_button.emit_signal("pressed")
+        await process_frame; await process_frame
+        assert_true(app.settings_dialog.visible, "Settings opens visibly while gameplay tree is paused")
+        assert_true(not (app.settings_dialog is Window), "Settings uses host-canvas overlay instead of modal subwindow")
+        assert_true(app.settings_dialog.get_parent() == app.host_ui_root, "Settings overlay stays above generated game UI")
+        var settings_close = _find_button(app.settings_dialog, "Close")
+        assert_true(settings_close != null, "finds in-canvas Settings Close button")
+        if settings_close != null:
+            settings_close.emit_signal("pressed")
+            await process_frame
+            assert_true(not app.settings_dialog.visible, "Settings closes without freezing host input")
+            assert_true(app.chat_overlay.visible, "closing Settings returns to the still-live chat overlay")
+            assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_IGNORE, "Settings round-trip keeps generated input suspended behind chat")
+
     var close = _find_button(app.chat_overlay, "Close  Esc")
     assert_true(close != null, "finds real chat Close button")
     if close != null:

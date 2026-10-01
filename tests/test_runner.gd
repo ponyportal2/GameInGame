@@ -8,6 +8,7 @@ const GameToolsScript = preload("res://src/core/game_tools.gd")
 const AgentControllerScript = preload("res://src/agent/agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const ConversationStoreScript = preload("res://src/core/conversation_store.gd")
+const CompactionServiceScript = preload("res://src/core/compaction_service.gd")
 const ProviderFactoryScript = preload("res://src/providers/provider_factory.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
@@ -21,6 +22,7 @@ class FakeProvider:
     var tree: SceneTree
     var responses: Array = []
     var seen_messages: Array = []
+    var seen_tools: Array = []
     var call_count = 0
 
     func _init(p_tree: SceneTree):
@@ -32,6 +34,7 @@ class FakeProvider:
     func complete(messages: Array, _tools: Array) -> Dictionary:
         call_count += 1
         seen_messages.append(messages.duplicate(true))
+        seen_tools.append(_tools.duplicate(true))
         await tree.process_frame
         if responses.is_empty():
             return {"ok": false, "error": "Fake provider exhausted."}
@@ -649,12 +652,13 @@ func _test_agent_history_survives_restart_and_keeps_stable_prefix() -> void:
         assert_true(not (raw_history[1].get("tool_calls", []) as Array).is_empty(), "raw history retains assistant tool calls for debugging")
         assert_eq(str(raw_history[2].get("role", "")), "tool", "raw history retains tool results for debugging")
     var resumed: Array = second.seen_messages[0]
-    assert_eq(resumed.size(), 4, "restarted agent replays compact completed conversation plus new user message")
-    if resumed.size() >= 4:
-        assert_eq(str(resumed[1].get("content", "")), "Remember blue", "compacted history includes previous user message")
-        assert_eq(str(resumed[2].get("content", "")), "Blue remembered.", "compacted history includes previous final assistant response")
-        assert_true(not resumed[2].has("tool_calls"), "old completed tool trace is omitted from provider replay")
-        assert_eq(str(resumed[3].get("content", "")), "What did I say?", "new user message follows compact stable history")
+    assert_eq(resumed.size(), 6, "before an explicit checkpoint, restarted agent replays full prior Pi-style history plus new user message")
+    if resumed.size() >= 6:
+        assert_eq(str(resumed[1].get("content", "")), "Remember blue", "full history includes previous user message")
+        assert_true(not (resumed[2].get("tool_calls", []) as Array).is_empty(), "full history retains assistant tool call until compaction")
+        assert_eq(str(resumed[3].get("role", "")), "tool", "full history retains tool result until compaction")
+        assert_eq(str(resumed[4].get("content", "")), "Blue remembered.", "full history includes previous final assistant response")
+        assert_eq(str(resumed[5].get("content", "")), "What did I say?", "new user message follows stable history")
     var stable_prefix_json = JSON.stringify(resumed.slice(0, maxi(0, resumed.size() - 1)))
     agent2.queue_free(); await process_frame
 
@@ -677,8 +681,6 @@ func _test_agent_history_survives_restart_and_keeps_stable_prefix() -> void:
 func _test_pi_style_compaction_contract() -> void:
     var name = "Compaction Contract %d" % Time.get_ticks_msec()
     var store = ConversationStoreScript.new()
-    var metadata = MetadataStoreScript.new()
-    metadata.ensure_game(name)
     for i in 8:
         store.append(name, {"role": "user", "content": "request-%d %s" % [i, "u".repeat(700)]})
         store.append(name, {"role": "assistant", "content": "", "tool_calls": [_tool_call("read-%d" % i, "read_file", {"path": "main.gd"})]})
@@ -687,28 +689,52 @@ func _test_pi_style_compaction_contract() -> void:
 
     var before = store.read_for_provider(name)
     assert_true(before.size() >= 32, "before explicit compaction, full tool/reasoning history remains provider-visible like Pi")
-    assert_true(store.has_method("estimate_provider_tokens"), "conversation store exposes Pi-style chars/4 context estimate")
-    assert_true(store.has_method("prepare_compaction"), "conversation store exposes Pi-style backwards cut-point preparation")
-    assert_true(store.has_method("append_compaction"), "conversation store persists append-only compaction checkpoints")
-    if store.has_method("estimate_provider_tokens"):
-        assert_true(int(store.estimate_provider_tokens(name)) > 1000, "token estimator sees long provider context")
-    if store.has_method("prepare_compaction"):
-        var prep: Dictionary = store.prepare_compaction(name, 700)
-        assert_true(bool(prep.get("ok", false)), "Pi-style compaction finds a valid cut point")
-        assert_true(int(prep.get("first_kept_message_index", -1)) > 0, "compaction keeps a recent tail rather than replacing the entire conversation")
-        assert_true((prep.get("messages_to_summarize", []) as Array).size() > 0, "compaction selects older messages for summarization")
-        var kept: Array = prep.get("kept_messages", [])
-        assert_true(not kept.is_empty(), "compaction leaves recent messages verbatim")
-        if not kept.is_empty():
-            assert_true(str(kept[-1].get("content", "")) == "done-7", "newest completed turn is kept verbatim")
-        if store.has_method("append_compaction"):
-            store.append_compaction(name, "## Goal\nKeep building.\n\n## Progress\n### Done\n- [x] Old work", int(prep.get("first_kept_message_index", 0)), int(prep.get("tokens_before", 0)), {"readFiles": ["main.gd"], "modifiedFiles": []})
-            var compacted = store.read_for_provider(name)
-            assert_true(str(compacted[0].get("role", "")) == "user", "Pi compaction summary re-enters provider context as a user message")
-            assert_true("The conversation history before this point was compacted into the following summary:" in str(compacted[0].get("content", "")), "provider replay uses Pi compaction-summary wrapper")
-            assert_true((compacted.size() < before.size()), "compaction replaces old context with summary plus recent tail")
-            assert_true((store.read_all(name) as Array).size() == 32, "raw append-only message history remains intact after compaction")
-    metadata.delete_game_metadata(name)
+    assert_true(int(store.estimate_provider_tokens(name)) > 1000, "token estimator sees long provider context")
+    var prep: Dictionary = store.prepare_compaction(name, 700)
+    assert_true(bool(prep.get("ok", false)), "Pi-style compaction finds a valid cut point")
+    assert_true(int(prep.get("first_kept_message_index", -1)) > 0, "compaction keeps a recent tail rather than replacing the entire conversation")
+    assert_true((prep.get("messages_to_summarize", []) as Array).size() > 0 or (prep.get("turn_prefix_messages", []) as Array).size() > 0, "compaction selects older context for summarization")
+    var kept: Array = prep.get("kept_messages", [])
+    assert_true(not kept.is_empty(), "compaction leaves recent messages verbatim")
+    if not kept.is_empty():
+        assert_true(str(kept[-1].get("content", "")) == "done-7", "newest completed turn is kept verbatim")
+
+    var fake = FakeProvider.new(self)
+    var summary = "## Goal\nKeep building.\n\n## Constraints & Preferences\n- preserve behavior\n\n## Progress\n### Done\n- [x] Old work\n\n### In Progress\n- [ ] Continue\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Edit safely**: use exact patches\n\n## Next Steps\n1. Continue\n\n## Critical Context\n- main.gd"
+    fake.push({"ok": true, "message": {"role": "assistant", "content": summary}})
+    fake.push({"ok": true, "message": {"role": "assistant", "content": "## Original Request\nContinue\n\n## Progress So Far\n- Work\n\n## Context Needed to Continue\n- main.gd"}})
+    var compacted_result: Dictionary = await CompactionServiceScript.new().compact_game(name, fake, 700)
+    assert_true(bool(compacted_result.get("ok", false)), "Pi-style compaction generates and persists a checkpoint through the provider")
+    assert_true(fake.call_count >= 1, "compaction uses an LLM summarization call")
+    for tool_list in fake.seen_tools:
+        assert_true((tool_list as Array).is_empty(), "compaction summarization call exposes no coding tools")
+    if not fake.seen_messages.is_empty():
+        var summary_messages: Array = fake.seen_messages[0]
+        assert_true(str(summary_messages[0].get("content", "")).begins_with("You are a context summarization assistant."), "compaction uses Pi summarization system instruction")
+        assert_true("<conversation>" in str(summary_messages[1].get("content", "")), "compaction serializes history inside conversation tags")
+        assert_true("[... " in str(summary_messages[1].get("content", "")), "tool results are truncated only in the summarization request")
+
+    var compacted = store.read_for_provider(name)
+    assert_true(str(compacted[0].get("role", "")) == "user", "Pi compaction summary re-enters provider context as a user message")
+    assert_true("The conversation history before this point was compacted into the following summary:" in str(compacted[0].get("content", "")), "provider replay uses Pi compaction-summary wrapper")
+    assert_true(compacted.size() < before.size(), "compaction replaces old provider context with summary plus recent tail")
+    assert_eq((store.read_all(name) as Array).size(), 32, "raw append-only message history remains intact after compaction")
+
+    for i in range(8, 12):
+        store.append(name, {"role": "user", "content": "request-%d %s" % [i, "z".repeat(700)]})
+        store.append(name, {"role": "assistant", "content": "done-%d" % i})
+    var fake_update = FakeProvider.new(self)
+    fake_update.push({"ok": true, "message": {"role": "assistant", "content": summary + "\n- updated"}})
+    fake_update.push({"ok": true, "message": {"role": "assistant", "content": "## Original Request\nContinue\n\n## Progress So Far\n- Updated\n\n## Context Needed to Continue\n- main.gd"}})
+    var updated_result: Dictionary = await CompactionServiceScript.new().compact_game(name, fake_update, 400)
+    assert_true(bool(updated_result.get("ok", false)), "later compaction updates the existing checkpoint")
+    var saw_previous_summary = false
+    for request in fake_update.seen_messages:
+        if (request as Array).size() > 1 and "<previous-summary>" in str(request[1].get("content", "")):
+            saw_previous_summary = true
+    assert_true(saw_previous_summary, "iterative compaction passes the previous checkpoint into Pi update prompt")
+
+    MetadataStoreScript.new().delete_game(name)
 
 
 func _test_legacy_transcript_is_imported_into_agent_history() -> void:
@@ -753,6 +779,8 @@ func _test_custom_provider_and_reasoning_payload() -> void:
         var payload: Dictionary = provider.build_payload([{"role": "user", "content": "hello"}], [])
         assert_eq(str(payload.get("reasoning_effort", "")), "high", "provider sends reasoning_effort exactly in OpenAI-compatible request payload")
         assert_true(not payload.has("temperature"), "reasoning payload omits incompatible temperature when effort is enabled")
+        var summary_payload: Dictionary = provider.build_payload([{"role": "user", "content": "summarize"}], [])
+        assert_true(not summary_payload.has("tools") and not summary_payload.has("tool_choice"), "tool-free compaction requests omit OpenAI tool fields")
     var no_reasoning = ProviderFactoryScript.make(owner, "custom", "local-model", {}, "session", {"custom_base_url": "http://127.0.0.1:1234", "reasoning_effort": ""})
     assert_eq(no_reasoning.endpoint, "http://127.0.0.1:1234/v1/chat/completions", "custom address without /v1 receives the v1 suffix")
     var default_payload: Dictionary = no_reasoning.build_payload([], [])
