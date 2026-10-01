@@ -40,11 +40,17 @@ Use **Settings** from either the library or an open game's chat toolbar. Current
 - optional Custom OpenAI-compatible `/v1` base address;
 - provider API key;
 - `reasoning_effort` (`Provider default` omits the field);
-- **Agent action limit per request**, default **150**, configurable from 1 to 500.
+- **Agent action limit per request**, default **150**, configurable from 1 to 500;
+- **Delay between LLM calls**, default **6 seconds**;
+- **Automatic conversation compaction threshold**, default **100,000 estimated tokens**; set to **0** to disable;
+- **Recent context kept verbatim during compaction**, default **20,000 estimated tokens**;
+- **Compact now** when a game is open, for an explicit manual checkpoint.
 
 Supported adapters in this build are OpenRouter, OpenCode Go, Command Code (OpenAI-compatible routes), and a Custom OpenAI-compatible provider. The Custom provider can be used without an API key for local servers.
 
 OpenAI subscription authentication remains behind the provider abstraction rather than being faked: the ChatGPT subscription path is not a plain embeddable API-key endpoint.
+
+Settings is rendered as a host-owned in-canvas overlay rather than a modal subwindow. This keeps it visible and interactive above generated-game CanvasLayers even while gameplay is paused behind chat.
 
 ## Live agent activity
 
@@ -99,13 +105,26 @@ Important paths:
 
 Use **Logs** in the library to open the global log folder, or **Logs** inside a game's chat to open that game's host-data/log folder. These logs record high-level app/agent/provider/tool/reload/navigation events and are bounded in size. Authorization/API-key-like values are redacted before writing so the files are safer to share for debugging.
 
-## Conversation persistence and caching
+## Conversation persistence, Pi-style compaction, and caching
 
-Each game keeps the **full append-only raw agent trace** on disk, including user messages, assistant messages, tool calls, and tool results. Provider replay is deliberately more compact: completed historical turns are deterministically reduced to the exact user request plus the final assistant response, while the current active tool loop retains its full tool calls/results.
+Each game keeps the **full append-only raw agent trace** on disk, including user messages, assistant messages, provider-exposed reasoning, tool calls, and tool results. GameSmith does not continuously rewrite completed turns.
 
-This is cache-friendly by construction: the system prompt and tool schema are stable, no timestamps/session IDs are injected into the provider-visible prefix, completed historical turns remain byte-stable, and each new turn appends after that stable prefix. Compatible providers can therefore reuse prompt-prefix caches. Actual cache eligibility, minimum prefix size, billing, and lifetime still depend on the selected provider/model.
+Compaction mirrors Pi coding agent's checkpoint model for GameSmith's linear sessions:
 
-Restarting GameSmith and reopening the same game reconstructs the same compact provider history from the durable raw conversation. Older readable-only transcripts are migrated once when no provider conversation exists yet.
+- Before a checkpoint, the normal provider sees the full durable conversation.
+- When the configured token threshold is crossed, or the player presses **Compact now**, GameSmith walks backward from the newest context and keeps roughly the configured recent-token budget verbatim.
+- It never chooses a tool-result message as a cut point, so tool-call/result structure stays valid.
+- Older context is serialized for a separate, tool-free summarization request using Pi's structured Goal / Constraints / Progress / Key Decisions / Next Steps / Critical Context checkpoint format.
+- If the cut falls inside an active turn, the earlier part of that turn receives a separate turn-prefix checkpoint, matching Pi's split-turn behavior.
+- Later compactions update the previous checkpoint instead of summarizing the entire session from scratch.
+- Read/modified file lists are carried forward in the checkpoint.
+- The raw `conversation.jsonl` is never rewritten or destroyed by compaction.
+
+Provider replay after compaction is one stable checkpoint message followed by the untouched recent tail. This is cache-friendly: between compactions, the system prompt, tool schema, checkpoint, and retained history remain byte-stable and new turns only append to the end. A compaction intentionally changes that prefix once; subsequent calls can then reuse the new stable prefix. Actual cache eligibility, minimum prefix size, TTL, and billing are still provider/model-specific.
+
+The automatic trigger is intentionally expressed as an explicit estimated-token threshold rather than Pi's `contextWindow - reserveTokens` rule because arbitrary Custom/OpenAI-compatible providers do not reliably expose model context-window metadata. The cut-point, summarization, iterative-summary, split-turn, and retained-tail behavior follow Pi's approach.
+
+Restarting GameSmith and reopening the same game reconstructs the same checkpoint + recent-tail provider context from the durable append-only conversation. Older readable-only transcripts are migrated once when no provider conversation exists yet.
 
 
 ## Provider failures and debug logs

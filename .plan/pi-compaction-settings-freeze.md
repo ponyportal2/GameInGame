@@ -20,24 +20,40 @@ Mirror Pi coding-agent compaction semantics, adapted only where GameSmith's simp
 
 ## Product controls
 
-- [ ] Settings: auto-compaction threshold in estimated tokens; default 100000; 0 disables.
-- [ ] Settings: recent-token keep budget; default 20000.
-- [ ] Settings: manual **Compact now** button for the current game.
-- [ ] Show compacting state/result without inserting fake chat history.
-- [ ] Prevent manual compaction while agent is already busy.
+- [x] Settings: auto-compaction threshold in estimated tokens; default 100000; 0 disables.
+- [x] Settings: recent-token keep budget; default 20000.
+- [x] Settings: manual **Compact now** button for the current game.
+- [x] Show compacting state/result without inserting fake chat history.
+- [x] Prevent manual compaction while agent is already busy.
 
 ## Settings freeze
 
 - [x] RED: Settings must not be a modal `Window` outside the reserved host CanvasLayer.
-- [ ] GREEN: replace general Settings with a host-owned in-canvas overlay.
-- [ ] Windowed regression: open Settings while game/chat is paused, interact with it, close it, and confirm chat/game state remains correct.
+- [x] GREEN: replace general Settings with a host-owned in-canvas overlay.
+- [x] Windowed regression: open Settings while game/chat is paused, interact with it, close it, and confirm chat/game state remains correct.
 
 ## TDD
 
 - [x] RED: defaults + controls + in-canvas Settings assertions.
 - [x] RED: Pi-style append-only checkpoint/cut/replay contract.
-- [ ] GREEN: compaction store and summarizer.
-- [ ] GREEN: auto-trigger and manual action.
-- [ ] GREEN: settings overlay freeze fix.
-- [ ] HTTP regression: summarization call has no tools and resulting checkpoint is used by the next normal request.
-- [ ] Full source/windowed/fake-v1/restart/Windows-folder verification.
+- [x] GREEN: compaction store and summarizer.
+- [x] GREEN: auto-trigger and manual action.
+- [x] GREEN: settings overlay freeze fix.
+- [x] HTTP regression: summarization call has no tools and resulting checkpoint is used by the next normal request.
+- [x] Full source/windowed/fake-v1/restart/Windows-folder verification.
+
+
+## Outcome
+
+- RED contract commit: `87fee7f`.
+- Pi-style append-only compaction core: `77f2e1a`.
+- Compaction settings + tool-free summary payloads: `b9de9da`.
+- Agent auto/manual compaction lifecycle: `ff07753`.
+- In-canvas Settings overlay + compaction controls: `211c57b`.
+- Compaction/store/windowed tests: `c7acaa4`.
+- Automatic threshold regression: `c154d2e`.
+- Real OpenAI-compatible HTTP compaction acceptance: `169a3d5`.
+- Final green CI: **212/212 core**, **20/20 windowed**, **67/67 real fake-v1 HTTP**, restart/migration verification and self-contained Windows folder all pass.
+- CI release refresh: `e8246b0`.
+- Cache policy: raw history is append-only; no per-turn history rewrite. Prefix changes only at an explicit checkpoint, then checkpoint + retained tail remain stable until the next checkpoint.
+- Intentional GameSmith adaptation from Pi: automatic trigger uses a user-configured estimated-token threshold because arbitrary custom providers do not supply reliable context-window metadata. The compaction/cut/summarization behavior itself follows Pi's linearizable core.

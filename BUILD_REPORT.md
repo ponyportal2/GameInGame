@@ -2,6 +2,11 @@
 
 ## Current product behavior
 
+- **Pi-style checkpoint compaction:** backwards token-budget cut points, no cuts on tool results, split-turn prefix summaries, exact structured checkpoint/update prompts, 2,000-character tool-result serialization cap for summary requests, iterative previous-summary updates, and carried read/modified file lists.
+- **Compaction controls:** automatic estimated-token threshold defaults to 100,000 (0 disables), retained recent context defaults to 20,000, and open games expose manual **Compact now**.
+- **Cache behavior:** context stays append-only and byte-stable between compactions; a checkpoint intentionally changes the prefix only when compaction occurs, after which the new checkpoint + retained tail become the stable prefix.
+- **Settings freeze fix:** general Settings is now an in-canvas host overlay inside the reserved top CanvasLayer, not a modal subwindow hidden behind host UI.
+
 - **Lossless large-file edits:** `read_file` is a line-windowed preview with continuation metadata; `patch_file` operates on the complete file and reports full before/after byte sizes. This fixes the production truncation bug where a >30 KB file was rewritten from the old capped preview.
 - **Live intermediate activity:** AGENT/TOOL/THINK snippets remain ephemeral. THINK is emitted only for provider-exposed plain-string reasoning; unknown structured reasoning is ignored. Chat text is BBCode-escaped before rendering.
 
@@ -14,7 +19,7 @@
 - Per-game Git repository with an immediate `Initialize game` baseline commit.
 - GDScript-only runtime games mounted directly in the persistent host process; both 2D and 3D are supported.
 - Runtime-loaded multi-file games, failed-candidate preservation, last-working snapshots, and explicit agent-controlled reloads.
-- Durable full raw conversation/tool trace on disk; completed historical provider replay is deterministically compacted to user/final-assistant pairs, preserving a cache-stable prefix while current-turn tool calls/results remain complete.
+- Durable full raw conversation/reasoning/tool trace stays append-only on disk. Pi-style compaction is checkpoint-based: only threshold/manual compaction replaces older provider context with a structured summary plus an untouched recent tail; no continuous per-turn rewrite.
 - OpenRouter, OpenCode Go, Command Code, and Custom OpenAI-compatible `/v1` providers; optional Custom API key and configurable `reasoning_effort`.
 - Completion guards reject text-only `Done` when required workspace work/reload has not actually happened.
 - Host chat owns input while open, including against hostile generated full-screen Controls/mouse capture.
@@ -41,14 +46,14 @@ Final source verification on Godot 4.7.2:
 
 - self-contained root Windows folder verification: **pass**;
 - Go Windows bootstrap tests: **pass**;
-- fast Godot suite: **172/172**;
-- real windowed hostile-input suite: **12/12**;
-- real HTTP fake-`/v1/chat/completions` suite: **62/62**;
+- fast Godot suite: **212/212**;
+- real windowed hostile-input suite: **20/20**;
+- real HTTP fake-`/v1/chat/completions` suite: **67/67**;
 - two-process provider-visible conversation replay: **pass**;
 - process-level old `GameSmith Host` → `GameSmithHost` migration: **pass**;
 - fake-v1 acceptance workflow: **24 real HTTP requests** after keeping the runaway-limit HTTP fixture intentionally small (the separate fast/UI tests verify the production default of 150).
 
-Coverage includes workspace traversal isolation, Git initialization/history, candidate compilation, sibling-script loading, preservation of a working game after broken candidates, generated-game frame processing, input ownership, Enter/Shift+Enter, busy navigation blocking, Settings persistence, default/custom action limits, app-data migration, global/per-game debug logs and secret redaction, simulated first generation + second edit, false-completion recovery, required post-edit reload, provider failures, malformed tool arguments, cache-stable conversation replay, custom `/v1` address normalization, exact `reasoning_effort` payload behavior, real UI keyboard-to-HTTP-provider flow, HTTP 500/invalid JSON, failed-reload repair, and restart persistence.
+Coverage includes workspace traversal isolation, Git initialization/history, candidate compilation, sibling-script loading, preservation of a working game after broken candidates, generated-game frame processing, input ownership, Enter/Shift+Enter, busy navigation blocking, in-canvas Settings interaction while paused, Settings persistence, default/custom action limits, automatic/manual compaction controls, Pi-style checkpoint cut/replay/update semantics, tool-free real HTTP summarization, cache-stable conversation replay, app-data migration, global/per-game debug logs and secret redaction, simulated first generation + second edit, false-completion recovery, required post-edit reload, provider failures, malformed tool arguments, custom `/v1` address normalization, exact `reasoning_effort` payload behavior, real UI keyboard-to-HTTP-provider flow, HTTP 500/invalid JSON, failed-reload repair, and restart persistence.
 
 The deliberate broken-candidate tests emit GDScript parse errors into test output; those errors are expected evidence that the previous game survives bad generated code.
 
