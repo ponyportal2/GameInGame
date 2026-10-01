@@ -155,6 +155,7 @@ func _replace_app_agent(app, fake: FakeUiAgent) -> void:
         app.agent.queue_free()
     app.agent = fake
     app.add_child(fake)
+    fake.configure(app.current_game, app.tools)
     fake.status_changed.connect(func(text): app.status_label.text = text)
     fake.assistant_message.connect(func(text): app._append_chat("assistant", text))
     fake.llm_snippet.connect(func(kind, text): app._append_chat(kind, text))
