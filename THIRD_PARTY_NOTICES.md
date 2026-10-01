@@ -33,17 +33,19 @@ Godot license information: https://godotengine.org/license/
 `seyf1elislam/fake_openai_endpoint_ts` at commit
 `d1105bf2573d95b043f5e1d0c5c427aa316d4487`, used only for local verification.
 Its package metadata declares the project MIT-licensed. GameSmith's
-`gamesmith-server.mjs` is a small project-specific, zero-dependency scripted
-server added beside that upstream source for deterministic acceptance tests.
+`pi-server.mjs` is a small project-specific, zero-dependency scripted server
+added beside that upstream source for deterministic real-Pi acceptance tests.
 
 
-## Pi coding agent compaction
+## Pi coding agent runtime
 
-GameSmith's conversation compaction implementation adapts compaction algorithms,
-checkpoint prompt structure, serialization behavior, and message-wrapper conventions
-from Pi coding agent / pi-mono by Mario Zechner.
+Production GameSmith integrates with a globally installed Pi coding agent rather
+than shipping a separate homegrown provider/agent/compaction implementation.
+The verification target is `@earendil-works/pi-coding-agent@0.99.2`, licensed MIT.
+GameSmith supplies its own extension and host bridge, while Pi owns generic agent
+history, streaming, retries, coding tools, provider calls, persistence, and compaction.
 
-Source reference: https://github.com/badlogic/pi-mono
+Source reference: https://github.com/earendil-works/pi
 
 MIT License
 
