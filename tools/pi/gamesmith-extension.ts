@@ -130,10 +130,18 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("turn_end", async (event) => {
-    if (delayMs > 0 && event.toolResults.length > 0) {
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, delayMs));
+  let lastProviderResponseAt = 0;
+
+  pi.on("before_provider_request", async () => {
+    if (delayMs <= 0 || lastProviderResponseAt <= 0) return;
+    const remaining = delayMs - (Date.now() - lastProviderResponseAt);
+    if (remaining > 0) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, remaining));
     }
+  });
+
+  pi.on("after_provider_response", () => {
+    lastProviderResponseAt = Date.now();
   });
 
   pi.on("agent_before_settle", async (_event, ctx) => {
