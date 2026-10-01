@@ -15,6 +15,24 @@ func init_repo(path: String) -> Dictionary:
     _run(path, ["config", "user.email", "gamesmith@local.invalid"])
     return _run(path, AUTHOR_ARGS + ["commit", "--allow-empty", "-q", "-m", "Initialize game"])
 
+func ensure_repo(path: String) -> Dictionary:
+    var check = _run(path, ["rev-parse", "--is-inside-work-tree"])
+    if bool(check.get("ok", false)) and str(check.get("output", "")).strip_edges() == "true":
+        return {"ok": true, "code": 0, "output": "", "recovered": false}
+    var init = _run(path, ["init", "-q"])
+    if not bool(init.get("ok", false)):
+        init["recovered"] = false
+        return init
+    _run(path, ["config", "user.name", "GameSmith"])
+    _run(path, ["config", "user.email", "gamesmith@local.invalid"])
+    var add = _run(path, ["add", "-A"])
+    if not bool(add.get("ok", false)):
+        add["recovered"] = false
+        return add
+    var commit = _run(path, AUTHOR_ARGS + ["commit", "--allow-empty", "-q", "-m", "Initialize existing game"])
+    commit["recovered"] = bool(commit.get("ok", false))
+    return commit
+
 func status(path: String) -> Dictionary:
     return _run(path, ["status", "--short", "--branch"])
 

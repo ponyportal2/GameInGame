@@ -67,6 +67,9 @@ func delete_game(name: String) -> bool:
 func game_path(name: String) -> String:
     return GAMES_ROOT.path_join(name)
 
+func ensure_game_repo(name: String) -> Dictionary:
+    return git.ensure_repo(game_path(name))
+
 func save_working_snapshot(name: String) -> bool:
     var dest = metadata.snapshot_dir(name)
     _remove_tree(dest)

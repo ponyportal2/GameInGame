@@ -11,6 +11,8 @@ const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd")
 
+const HOST_UI_CANVAS_LAYER = 524287
+
 var store = WorkspaceStoreScript.new()
 var metadata = MetadataStoreScript.new()
 var transcript = TranscriptStoreScript.new()
@@ -21,6 +23,8 @@ var current_game = ""
 var pending_delete = ""
 var rename_target = ""
 
+var host_ui_canvas: CanvasLayer
+var host_ui_root: Control
 var background: ColorRect
 var game_layer: Control
 var library_layer: Control
@@ -43,6 +47,7 @@ var key_edit: LineEdit
 var custom_base_edit: LineEdit
 var reasoning_option: OptionButton
 var agent_steps_spin: SpinBox
+var llm_delay_spin: SpinBox
 var library_button: Button
 var game_override_provider: OptionButton
 var game_override_model: LineEdit
@@ -77,11 +82,13 @@ func _input(event: InputEvent) -> void:
         _send_chat()
 
 func _build_ui() -> void:
-    background = ColorRect.new(); background.color = Color("090d16"); background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); add_child(background)
-    game_layer = Control.new(); game_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); add_child(game_layer)
-    library_layer = Control.new(); library_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); add_child(library_layer)
-    play_hud = Control.new(); play_hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); play_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(play_hud)
-    chat_overlay = Control.new(); chat_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); chat_overlay.visible = false; chat_overlay.process_mode = Node.PROCESS_MODE_ALWAYS; chat_overlay.mouse_filter = Control.MOUSE_FILTER_STOP; add_child(chat_overlay)
+    host_ui_canvas = CanvasLayer.new(); host_ui_canvas.layer = HOST_UI_CANVAS_LAYER; add_child(host_ui_canvas)
+    host_ui_root = Control.new(); host_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.theme = theme; host_ui_canvas.add_child(host_ui_root)
+    background = ColorRect.new(); background.color = Color("090d16"); background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.add_child(background)
+    game_layer = Control.new(); game_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.add_child(game_layer)
+    library_layer = Control.new(); library_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.add_child(library_layer)
+    play_hud = Control.new(); play_hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); play_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE; host_ui_root.add_child(play_hud)
+    chat_overlay = Control.new(); chat_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); chat_overlay.visible = false; chat_overlay.process_mode = Node.PROCESS_MODE_ALWAYS; chat_overlay.mouse_filter = Control.MOUSE_FILTER_STOP; host_ui_root.add_child(chat_overlay)
     _build_library()
     _build_play_hud()
     _build_chat()
@@ -143,6 +150,8 @@ func _build_dialogs() -> void:
     var sv = VBoxContainer.new(); sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL; sv.add_theme_constant_override("separation", 8); sm.add_child(sv)
     sv.add_child(_small_label("Agent action limit per request")); agent_steps_spin = SpinBox.new(); agent_steps_spin.min_value = AgentControllerScript.MIN_AGENT_STEPS; agent_steps_spin.max_value = AgentControllerScript.MAX_AGENT_STEPS; agent_steps_spin.step = 1; agent_steps_spin.allow_greater = false; agent_steps_spin.allow_lesser = false; agent_steps_spin.tooltip_text = "Maximum model/tool rounds before GameSmith stops a runaway request."; sv.add_child(agent_steps_spin)
     var agent_note = Label.new(); agent_note.text = "Default: 150. Lower it to cap cost/latency; raise it for larger builds."; agent_note.add_theme_color_override("font_color", Color("8492ad")); sv.add_child(agent_note)
+    sv.add_child(_small_label("Delay between LLM calls (seconds)")); llm_delay_spin = SpinBox.new(); llm_delay_spin.min_value = AgentControllerScript.MIN_LLM_CALL_DELAY_SEC; llm_delay_spin.max_value = AgentControllerScript.MAX_LLM_CALL_DELAY_SEC; llm_delay_spin.step = 0.5; llm_delay_spin.allow_greater = false; llm_delay_spin.allow_lesser = false; llm_delay_spin.tooltip_text = "Minimum quiet time after one provider response before GameSmith starts the next LLM call. First call is immediate."; sv.add_child(llm_delay_spin)
+    var delay_note = Label.new(); delay_note.text = "Default: 6 seconds. Set 0 to disable. Helps provider request/token rate limits between agent steps."; delay_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; delay_note.add_theme_color_override("font_color", Color("8492ad")); sv.add_child(delay_note)
     sv.add_child(HSeparator.new())
     sv.add_child(_small_label("Global provider")); provider_option = OptionButton.new(); sv.add_child(provider_option)
     for id in ProviderFactoryScript.display_names(): provider_option.add_item(ProviderFactoryScript.display_names()[id]); provider_option.set_item_metadata(provider_option.item_count - 1, id)
@@ -210,6 +219,11 @@ func _open_game(name: String) -> void:
     background.visible = false
     library_layer.visible = false; play_hud.visible = true
     game_title_label.text = name
+    var git_state = store.ensure_game_repo(name)
+    if not bool(git_state.get("ok", false)):
+        AppLoggerScript.game_event(name, "git.recovery_failed", "code=%s output=%s" % [str(git_state.get("code", "")), str(git_state.get("output", "")).left(1000)], "WARN")
+    elif bool(git_state.get("recovered", false)):
+        AppLoggerScript.game_event(name, "git.recovered", "missing Git metadata was recreated and current workspace captured as baseline", "WARN")
     runner = GameRunnerScript.new(); runner.name = "GeneratedGameRunner"; runner.process_mode = Node.PROCESS_MODE_PAUSABLE; add_child(runner); move_child(runner, 2)
     runner.load_succeeded.connect(_on_load_success)
     runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _toast(msg))
@@ -230,6 +244,7 @@ func _open_game(name: String) -> void:
 
 func _on_load_success(_version: int) -> void:
     if current_game != "":
+        _reserve_host_canvas_layers()
         store.save_working_snapshot(current_game)
         if chat_overlay.visible:
             # A freshly loaded game may capture the mouse or add full-screen Controls in _ready().
@@ -239,6 +254,18 @@ func _on_load_success(_version: int) -> void:
             _suspend_generated_input()
         AppLoggerScript.game_event(current_game, "game.reload", "load_version=%d ok=true" % _version)
         _toast("Game reloaded successfully.")
+
+func _reserve_host_canvas_layers() -> void:
+    if not is_instance_valid(runner) or not runner.has_active_game():
+        return
+    _cap_generated_canvas_layers(runner.active_game)
+
+func _cap_generated_canvas_layers(node: Node) -> void:
+    if node is CanvasLayer and node.layer >= HOST_UI_CANVAS_LAYER:
+        AppLoggerScript.game_event(current_game, "ui.layer_clamped", "generated CanvasLayer %s layer=%d -> %d" % [node.name, node.layer, HOST_UI_CANVAS_LAYER - 1], "WARN")
+        node.layer = HOST_UI_CANVAS_LAYER - 1
+    for child in node.get_children():
+        _cap_generated_canvas_layers(child)
 
 func _send_chat() -> void:
     var text = chat_input.text.strip_edges()
@@ -379,6 +406,7 @@ func _open_settings() -> void:
     custom_base_edit.text = str(settings.get("custom_base_url", ""))
     _select_reasoning_effort(str(settings.get("reasoning_effort", "")))
     agent_steps_spin.value = clampi(int(settings.get("max_agent_steps", AgentControllerScript.DEFAULT_MAX_STEPS)), AgentControllerScript.MIN_AGENT_STEPS, AgentControllerScript.MAX_AGENT_STEPS)
+    llm_delay_spin.value = clampf(float(settings.get("llm_call_delay_sec", AgentControllerScript.DEFAULT_LLM_CALL_DELAY_SEC)), AgentControllerScript.MIN_LLM_CALL_DELAY_SEC, AgentControllerScript.MAX_LLM_CALL_DELAY_SEC)
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
         _select_game_provider_id(str(game_meta.get("provider_override", "")))
@@ -402,8 +430,9 @@ func _save_settings() -> void:
     settings.custom_base_url = custom_base_edit.text.strip_edges()
     settings.reasoning_effort = str(reasoning_option.get_item_metadata(reasoning_option.selected))
     settings.max_agent_steps = int(agent_steps_spin.value)
+    settings.llm_call_delay_sec = float(llm_delay_spin.value)
     metadata.save_global_settings(settings)
-    AppLoggerScript.global_event("settings.save", "provider=%s model=%s reasoning_effort=%s max_agent_steps=%d" % [id, settings.model, settings.reasoning_effort, int(settings.max_agent_steps)])
+    AppLoggerScript.global_event("settings.save", "provider=%s model=%s reasoning_effort=%s max_agent_steps=%d llm_call_delay_sec=%.1f" % [id, settings.model, settings.reasoning_effort, int(settings.max_agent_steps), float(settings.llm_call_delay_sec)])
     var creds = metadata.credentials(); creds[id] = key_edit.text.strip_edges(); metadata.save_credentials(creds)
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
