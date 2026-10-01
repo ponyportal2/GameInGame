@@ -67,6 +67,7 @@ func run() -> void:
     await _test_llm_snippets_reach_chat()
     await _test_chat_escapes_bbcode()
     await _test_library_is_blocked_while_agent_works()
+    await _test_manual_compaction_chat_feedback_and_send_guard()
     await _test_legacy_user_data_migration()
     await _test_debug_logs_and_redaction()
     await _test_agent_generation_and_second_edit()
@@ -383,6 +384,89 @@ func _test_library_is_blocked_while_agent_works() -> void:
     app.queue_free(); await process_frame
     paused = false
     store.delete_game(name)
+
+func _test_manual_compaction_chat_feedback_and_send_guard() -> void:
+    var metadata = MetadataStoreScript.new()
+    var original_settings = metadata.global_settings().duplicate(true)
+    var settings = original_settings.duplicate(true)
+    settings.llm_call_delay_sec = 0.0
+    settings.compaction_keep_recent_tokens = 800
+    metadata.save_global_settings(settings)
+
+    var store = WorkspaceStoreScript.new(); store.ensure()
+    var name = "Manual Compaction UI %d" % Time.get_ticks_msec()
+    var created: Dictionary = store.create_game(name)
+    assert_true(bool(created.get("ok", false)), "creates manual-compaction UI workspace")
+    if not created.get("ok", false):
+        metadata.save_global_settings(original_settings)
+        return
+    _write(created.path.path_join("main.gd"), "extends Node\n")
+
+    var conv = ConversationStoreScript.new()
+    for i in 8:
+        conv.append(name, {"role": "user", "content": "old-%d %s" % [i, "u".repeat(1000)]})
+        conv.append(name, {"role": "assistant", "content": "answer-%d" % i})
+
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app._open_game(name)
+    await process_frame
+    app._set_chat_visible(true)
+    app._open_settings()
+
+    var fake = FakeProvider.new(self)
+    fake.push({"ok": true, "message": {"role": "assistant", "content": "## Goal\nKeep building.\n\n## Constraints & Preferences\n- none\n\n## Progress\n### Done\n- [x] prior work\n\n### In Progress\n- [ ] continue\n\n### Blocked\n- none\n\n## Key Decisions\n- **Continue**: preserve state\n\n## Next Steps\n1. Continue\n\n## Critical Context\n- main.gd"}})
+    app.agent.provider_override = fake
+
+    var message_count_before = conv.read_all(name).size()
+    app._compact_now_from_settings()
+    assert_true(app.agent.busy, "manual compaction marks agent busy immediately")
+    assert_true(not app.settings_dialog.visible, "manual compaction returns from Settings to chat so progress is visible")
+    assert_true(not app.chat_input.editable, "chat composer is disabled while manual compaction runs")
+    assert_true(app.get("send_button") != null and app.send_button.disabled, "Send button is disabled while manual compaction runs")
+    assert_true(app.library_button.disabled, "Library navigation is disabled while manual compaction runs")
+    var during_text: String = app.transcript_view.get_parsed_text()
+    assert_true("Compacting conversation" in during_text, "manual compaction immediately posts a visible HOST progress message in chat")
+
+    app.chat_input.text = "this must not send"
+    app._send_chat()
+    assert_eq(conv.read_all(name).size(), message_count_before, "new chat messages cannot enter durable history while manual compaction is running")
+
+    for _i in 120:
+        if not app.agent.busy: break
+        await process_frame
+    await process_frame
+    var finished_text: String = app.transcript_view.get_parsed_text()
+    assert_true(not app.agent.busy, "manual compaction finishes")
+    assert_true("Compaction finished" in finished_text, "successful manual compaction posts an explicit completion message in chat")
+    assert_true(app.chat_input.editable, "chat composer is re-enabled after manual compaction")
+    assert_true(app.get("send_button") != null and not app.send_button.disabled, "Send button is re-enabled after manual compaction")
+    assert_true(not app.library_button.disabled, "Library navigation is re-enabled after manual compaction")
+    assert_eq(TranscriptStoreScript.new().read_all(name).size(), 0, "manual compaction status messages stay ephemeral and do not pollute readable transcript")
+
+    for i in range(8, 14):
+        conv.append(name, {"role": "user", "content": "more-%d %s" % [i, "z".repeat(1000)]})
+        conv.append(name, {"role": "assistant", "content": "more-answer-%d" % i})
+    var failing = FakeProvider.new(self)
+    failing.push({"ok": false, "error": "simulated summary failure"})
+    app.agent.provider_override = failing
+    app._open_settings()
+    app._compact_now_from_settings()
+    for _i in 120:
+        if not app.agent.busy: break
+        await process_frame
+    await process_frame
+    var failed_text: String = app.transcript_view.get_parsed_text()
+    assert_true("Compaction failed" in failed_text and "simulated summary failure" in failed_text, "failed manual compaction posts an explicit failure message in chat")
+    assert_true(app.chat_input.editable and not app.send_button.disabled, "composer is restored after failed manual compaction")
+
+    app.queue_free()
+    paused = false
+    await process_frame
+    store.delete_game(name)
+    metadata.save_global_settings(original_settings)
+
 
 func _test_app_identity_settings_and_compact_ui() -> void:
     assert_eq(str(ProjectSettings.get_setting("application/config/name", "")), "GameSmithHost", "Godot application data identity has no space")
