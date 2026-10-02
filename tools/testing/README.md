@@ -12,10 +12,8 @@ The workflow performs, in order:
 2. `tools/windows-bootstrap` Go unit tests when Go is available;
 3. the fast headless Godot host/core/UI suite;
 4. the real-window hostile generated-input regression under `xvfb-run` when available;
-5. real globally installed Pi **Part 1** normal-agent acceptance;
-6. real Pi **Part 2** native-compaction acceptance;
-7. real Pi **Part 3** legacy-import/runtime-removal acceptance;
-8. a process-level migration check from the old `GameSmith Host` writable directory to `GameSmithHost`.
+5. one real globally installed Pi run covering Parts 1–4: normal-agent behavior, native compaction, migration/runtime removal, and packaging/discovery;
+6. a process-level migration check from the old `GameSmith Host` writable directory to `GameSmithHost`.
 
 ## Real Pi acceptance
 
@@ -23,19 +21,21 @@ The workflow performs, in order:
 
 CI pins `@earendil-works/pi-coding-agent@0.99.2`. For local runs you may point GameSmith at another explicit Pi executable with `GAMESMITH_PI_BIN`.
 
-The phased runner can be invoked directly:
+The release gate runs the Pi suite once with no phase selector:
 
 ```bash
-GAMESMITH_PI_TEST_PART=1 GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
-GAMESMITH_PI_TEST_PART=2 GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
-GAMESMITH_PI_TEST_PART=3 GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
+GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
 ```
+
+For focused development, `GAMESMITH_PI_TEST_PART=1`, `2`, `3`, or `4` still runs only that slice.
 
 Part 1 covers production controller selection, missing-Pi diagnostics, generation/edit/reload/Git behavior, streaming assistant/thinking events, false-completion recovery, native retry behavior, action limits, provider-call pacing, and Pi session restart/resume.
 
 Part 2 covers manual and threshold-triggered Pi-native compaction, `keepRecentTokens`, persisted native compaction entries, checkpoint delivery to the next provider request, normal no-op classification, and byte-stable session entries across GameSmith restart.
 
 Part 3 seeds a pre-Pi readable transcript and proves that it is imported into an empty Pi session exactly once, that the current request is not duplicated into the imported legacy block, that restart does not re-import it, and that production no longer contains the deleted homegrown agent/provider/compaction sources.
+
+Part 4 verifies the explicit `GAMESMITH_PI_BIN` path, automatic discovery of a globally npm-installed `pi` from `PATH`, Windows README install guidance, and launcher-level Pi preflight behavior.
 
 The production default Pi turn limit is 150. Runaway fixtures use a deliberately small test limit so acceptance does not waste provider round trips proving the same host-policy branch.
 

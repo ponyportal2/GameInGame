@@ -20,11 +20,13 @@ GameSmith-Windows/
 
 Clone/download the repository, open `GameSmith-Windows`, and double-click **`GameSmith.exe`**. The bundled Godot runtime means normal startup needs no Godot download. Git for Windows must be installed and available on `PATH` for generated-game repositories.
 
-GameSmith also expects a global `pi` executable. CI pins the integration target with:
+GameSmith also expects a global `pi` executable. Install the pinned build with:
 
 ```bash
 npm install -g @earendil-works/pi-coding-agent@0.99.2
 ```
+
+On Windows, `GameSmith.exe` checks for Pi at startup. If Pi is missing, it shows a non-blocking warning with this install command and still opens GameSmith; chat build/edit becomes available after Pi is installed and GameSmith is restarted. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
 
 For development on Linux:
 
@@ -148,9 +150,8 @@ The full workflow verifies:
 1. the self-contained Windows folder and Go launcher tests;
 2. fast Godot host/UI/storage behavior;
 3. real-window hostile generated-input ownership when `xvfb-run` is available;
-4. **real globally installed Pi** Part 1 normal-agent acceptance against a deterministic OpenAI-compatible streaming endpoint;
-5. Part 2 Pi-native compaction/restart acceptance;
-6. Part 3 one-time legacy transcript import and source-level removal of the old runtime;
-7. process-level migration from `GameSmith Host` to `GameSmithHost`.
+4. one real globally installed Pi acceptance run covering normal agent behavior, native compaction/restart, one-time legacy import/runtime deletion, and packaging/discovery;
+5. both explicit `GAMESMITH_PI_BIN` resolution and automatic global npm/`PATH` discovery;
+6. process-level migration from `GameSmith Host` to `GameSmithHost`.
 
 The deterministic Pi provider fixture is `tools/fake-openai-endpoint/pi-server.mjs`; it requires Node but no `npm install`.

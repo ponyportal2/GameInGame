@@ -136,7 +136,7 @@ Part 3 completion:
   - Windows folder build/refresh: pass.
 - Windows refresh commit: `7815186`.
 
-## Part 4 — packaging and release gate
+## Part 4 — packaging and release gate — COMPLETE
 
 Scope:
 
@@ -149,6 +149,28 @@ Scope:
 
 Acceptance boundary: complete CI green with no allowed/red migration tests.
 
+Part 4 completion:
+
+- Added launcher-level Pi preflight on Windows. Missing Pi is a non-blocking warning: GameSmith still opens so the library/settings remain usable, but the warning gives the pinned install command and explains that chat build/edit needs Pi.
+- The pinned Windows guidance is `npm install -g @earendil-works/pi-coding-agent@0.99.2`; `GAMESMITH_PI_BIN` remains the explicit escape hatch for a Pi executable outside `PATH`.
+- Added Go tests for explicit override resolution, a Windows-style global npm `pi.cmd` lookup, and actionable missing-Pi guidance.
+- Added real-Pi Part 4 acceptance that verifies both the explicit `GAMESMITH_PI_BIN` path and automatic globally installed `pi` discovery from `PATH`.
+- The committed/generated Windows README now includes the pinned Pi install command and override guidance.
+- Restored the release gate to one Pi invocation with no phase selector; the single process runs Parts 1–4 together, avoiding repeated setup while preserving the same real-Pi session/restart checks.
+- No Part 4 runtime change rewrites Pi history, session IDs, or compaction state. Cache-friendly append-only/resume behavior from Parts 1–3 remains unchanged.
+- Added workflow concurrency so stale Windows-package builds are cancelled instead of racing to push generated binaries.
+- TDD RED: commits `e6da241`, `542766b`, and `a8b05f8`; GitHub Actions run `37022883507` failed at the launcher unit-test step with `undefined: resolvePiExecutable`.
+- GREEN implementation: launcher preflight `48978b2`, runtime guidance `10f1c2c`, Windows package guidance `f66ca98`, and CI single-flight fix `4c172d4`.
+- Final green GitHub Actions run `37023404746`:
+  - Windows package structural verification: pass;
+  - fast host/core/UI: **125 passed / 0 failed**;
+  - windowed UI/input: **20 passed / 0 failed**;
+  - real Pi all-phases acceptance: **83 passed / 0 failed**;
+  - legacy app-data migration: pass;
+  - complete source verification: pass;
+  - Windows folder build/refresh and push: pass.
+- Final Windows refresh commit for the implementation slice: `c1d1280`.
+
 ## Stop rule
 
-For this execution, Part 3 is complete. Stop before **Part 4**: do not change Windows/Pi installation packaging or the final all-phases release-gate shape in this slice.
+All four migration parts are complete. Further work should be treated as normal product work, not as unfinished Pi feature-parity migration. Keep the established ownership boundary: Pi owns generic agent/session behavior; GameSmith owns game-specific host behavior.
