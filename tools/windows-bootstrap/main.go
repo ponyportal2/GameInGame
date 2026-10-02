@@ -64,6 +64,9 @@ func main() {
 	if _, err := exec.LookPath("git.exe"); err != nil {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
+	if _, err := resolvePiExecutable(os.Getenv("GAMESMITH_PI_BIN"), exec.LookPath); err != nil {
+		warningf("Pi coding agent was not found. GameSmith will open, but chat cannot build or edit games until Pi is available.\n\n%v", err)
+	}
 
 	args := append([]string{"--main-pack", packPath}, os.Args[1:]...)
 	cmd := exec.Command(enginePath, args...)
@@ -72,6 +75,22 @@ func main() {
 		fatalf("Unable to launch GameSmith:\n\n%v", err)
 		return
 	}
+}
+
+
+func resolvePiExecutable(configured string, lookPath func(string) (string, error)) (string, error) {
+	target := strings.TrimSpace(configured)
+	if target == "" {
+		target = "pi"
+	}
+	resolved, err := lookPath(target)
+	if err == nil {
+		return resolved, nil
+	}
+	if strings.TrimSpace(configured) != "" {
+		return "", fmt.Errorf("GAMESMITH_PI_BIN could not be resolved: %s\n\nSet it to a valid Pi executable, or install the pinned Pi build with:\n\nnpm install -g @earendil-works/pi-coding-agent@0.99.2", configured)
+	}
+	return "", errors.New("Install the pinned Pi coding agent with:\n\nnpm install -g @earendil-works/pi-coding-agent@0.99.2\n\nThen restart GameSmith. If Pi is installed outside PATH, set GAMESMITH_PI_BIN to the Pi executable.")
 }
 
 func ensureRuntime(ctx context.Context, runtimeDir string, cfg runtimeConfig) (string, error) {
