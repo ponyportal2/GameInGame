@@ -610,6 +610,8 @@ func _test_pi_request_has_no_host_deadline_or_fake_completion() -> void:
     var source = FileAccess.get_file_as_string("res://src/agent/pi_agent_controller.gd")
     assert_true(not "20 * 60 * 1000" in source and not "20 minute host deadline" in source, "Pi requests have no arbitrary host wall-clock deadline")
     assert_true(not 'final_text = "Done."' in source, "GameSmith never invents a fake assistant completion message")
+    var rpc_source = FileAccess.get_file_as_string("res://src/pi/pi_rpc_session.gd")
+    assert_true(not "timeout_sec" in rpc_source and not "Timed out waiting for Pi RPC response" in rpc_source, "Pi RPC commands wait for a response or process exit instead of an artificial timeout")
 
 func _write(path: String, content: String) -> void:
     var f = FileAccess.open(path, FileAccess.WRITE); f.store_string(content); f.close()
