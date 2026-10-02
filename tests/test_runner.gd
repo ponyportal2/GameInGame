@@ -612,6 +612,8 @@ func _test_pi_request_has_no_host_deadline_or_fake_completion() -> void:
     assert_true(not 'final_text = "Done."' in source, "GameSmith never invents a fake assistant completion message")
     var rpc_source = FileAccess.get_file_as_string("res://src/pi/pi_rpc_session.gd")
     assert_true(not "timeout_sec" in rpc_source and not "Timed out waiting for Pi RPC response" in rpc_source, "Pi RPC commands wait for a response or process exit instead of an artificial timeout")
+    var extension_source = FileAccess.get_file_as_string("res://tools/pi/gamesmith-extension.ts")
+    assert_true(not "Timed out waiting for GameSmith host tool" in extension_source and not "Date.now() + 60_000" in extension_source, "GameSmith Pi host tools wait for completion or abort instead of an artificial timeout")
 
 func _write(path: String, content: String) -> void:
     var f = FileAccess.open(path, FileAccess.WRITE); f.store_string(content); f.close()
