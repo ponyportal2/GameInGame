@@ -79,8 +79,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          .ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64 \
-            --headless --main-pack "$GITHUB_WORKSPACE/.ci-godot/GameSmith.pck" \
+          isolated="$RUNNER_TEMP/gamesmith-pck-test"
+          rm -rf "$isolated"
+          mkdir -p "$isolated"
+          cp .ci-godot/GameSmith.pck "$isolated/GameSmith.pck"
+          cd "$isolated"
+          "$GITHUB_WORKSPACE/.ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64" \
+            --headless --main-pack "$isolated/GameSmith.pck" \
             --script res://tests/package_contents_runner.gd
 
       - name: Assemble self-contained Windows folder
