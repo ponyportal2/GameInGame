@@ -67,7 +67,7 @@ func send_player_request(text: String) -> void:
 
     await _maybe_auto_compact("before_request")
     status_changed.emit("Pi is working…")
-    var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text)
+    var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text})
     if not bool(accepted.get("success", false)):
         _fail("Pi rejected the prompt: " + str(accepted.get("error", "unknown error")))
         return
@@ -85,7 +85,7 @@ func send_player_request(text: String) -> void:
         _fail(last_error)
         return
 
-    var last: Dictionary = await rpc.command({"type": "get_last_assistant_text")
+    var last: Dictionary = await rpc.command({"type": "get_last_assistant_text"})
     var final_text = ""
     if bool(last.get("success", false)):
         final_text = str(last.get("data", {}).get("text", "")).strip_edges()
