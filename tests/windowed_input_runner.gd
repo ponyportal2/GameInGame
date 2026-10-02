@@ -98,6 +98,28 @@ func _input(_event):
         assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_STOP, "closing chat restores generated GUI blocker")
         assert_eq(Input.mouse_mode, Input.MOUSE_MODE_CAPTURED, "closing chat restores gameplay mouse capture")
 
+    # Regression: returning from a generated game must leave New Game as host-canvas
+    # UI, not a modal Window that can own focus invisibly and make the main window
+    # appear frozen.
+    Input.action_press("toggle_chat")
+    await process_frame
+    Input.action_release("toggle_chat")
+    assert_true(app.chat_overlay.visible, "chat can reopen before returning to library")
+    app._return_to_library()
+    await process_frame; await process_frame
+    assert_eq(app.current_game, "", "returning from game clears current game")
+    assert_true(app.library_layer.visible, "library is visible after returning from game")
+    assert_true(not paused, "returning from game leaves SceneTree unpaused")
+
+    var new_game = _find_button(app.library_layer, "+ New Game")
+    assert_true(new_game != null, "library exposes New Game after returning from gameplay")
+    if new_game != null:
+        new_game.emit_signal("pressed")
+        await process_frame
+        assert_true(app.new_game_dialog.visible, "New Game UI opens after returning from gameplay")
+        assert_true(not (app.new_game_dialog is Window), "New Game UI is not a modal/native Window")
+        assert_true(app.new_game_dialog.get_parent() == app.host_ui_root, "New Game UI lives in the always-active host canvas")
+
     app.queue_free()
     paused = false
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
