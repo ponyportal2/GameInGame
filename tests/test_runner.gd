@@ -7,6 +7,7 @@ const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
+const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd")
@@ -109,6 +110,7 @@ func run() -> void:
     await _test_debug_logs_and_redaction()
     await _test_provider_settings_surface()
     await _test_pi_request_has_no_host_deadline_or_fake_completion()
+    await _test_stale_pi_settlement_does_not_finish_next_request()
     print("TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
 
@@ -614,6 +616,19 @@ func _test_pi_request_has_no_host_deadline_or_fake_completion() -> void:
     assert_true(not "timeout_sec" in rpc_source and not "Timed out waiting for Pi RPC response" in rpc_source, "Pi RPC commands wait for a response or process exit instead of an artificial timeout")
     var extension_source = FileAccess.get_file_as_string("res://tools/pi/gamesmith-extension.ts")
     assert_true(not "Timed out waiting for GameSmith host tool" in extension_source and not "Date.now() + 60_000" in extension_source, "GameSmith Pi host tools wait for completion or abort instead of an artificial timeout")
+
+func _test_stale_pi_settlement_does_not_finish_next_request() -> void:
+    var agent = PiAgentControllerScript.new()
+    root.add_child(agent)
+    agent.busy = true
+    agent.turn_count = 0
+    agent._on_pi_record({"type": "agent_settled"})
+    assert_true(not agent.has_meta("_pi_settled"), "settlement from a previous aborted run cannot settle a new request before its first Pi turn")
+    agent._on_pi_record({"type": "turn_start"})
+    agent._on_pi_record({"type": "agent_settled"})
+    assert_true(agent.has_meta("_pi_settled"), "settlement is accepted after the current request has actually started a Pi turn")
+    agent.queue_free()
+    await process_frame
 
 func _write(path: String, content: String) -> void:
     var f = FileAccess.open(path, FileAccess.WRITE); f.store_string(content); f.close()
