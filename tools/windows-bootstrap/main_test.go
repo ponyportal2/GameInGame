@@ -144,3 +144,58 @@ func TestExtractZipRejectsTraversal(t *testing.T) {
 		t.Fatal("expected zip traversal rejection")
 	}
 }
+
+
+func TestResolvePiExecutablePrefersExplicitOverride(t *testing.T) {
+	calls := []string{}
+	lookup := func(name string) (string, error) {
+		calls = append(calls, name)
+		if name == `C:\\tools\\pi.cmd` {
+			return name, nil
+		}
+		return "", os.ErrNotExist
+	}
+	got, err := resolvePiExecutable(`C:\\tools\\pi.cmd`, lookup)
+	if err != nil {
+		t.Fatalf("explicit GAMESMITH_PI_BIN should resolve: %v", err)
+	}
+	if got != `C:\\tools\\pi.cmd` {
+		t.Fatalf("unexpected explicit Pi path: %q", got)
+	}
+	if len(calls) != 1 || calls[0] != `C:\\tools\\pi.cmd` {
+		t.Fatalf("explicit override must be checked directly, calls=%v", calls)
+	}
+}
+
+func TestResolvePiExecutableUsesGlobalNpmPath(t *testing.T) {
+	lookup := func(name string) (string, error) {
+		if name == "pi" {
+			return `C:\\Users\\tester\\AppData\\Roaming\\npm\\pi.cmd`, nil
+		}
+		return "", os.ErrNotExist
+	}
+	got, err := resolvePiExecutable("", lookup)
+	if err != nil {
+		t.Fatalf("global npm Pi should resolve from PATH: %v", err)
+	}
+	if !strings.HasSuffix(strings.ToLower(got), `\\npm\\pi.cmd`) {
+		t.Fatalf("expected npm global shim, got %q", got)
+	}
+}
+
+func TestResolvePiExecutableMissingHasInstallGuidance(t *testing.T) {
+	lookup := func(string) (string, error) { return "", os.ErrNotExist }
+	_, err := resolvePiExecutable("", lookup)
+	if err == nil {
+		t.Fatal("missing Pi should produce startup guidance")
+	}
+	message := err.Error()
+	for _, want := range []string{
+		"npm install -g @earendil-works/pi-coding-agent@0.99.2",
+		"GAMESMITH_PI_BIN",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("missing Pi guidance should mention %q: %s", want, message)
+		}
+	}
+}
