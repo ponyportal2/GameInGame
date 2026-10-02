@@ -35,7 +35,7 @@ var chat_input: TextEdit
 var status_label: Label
 var game_title_label: Label
 var toast_label: Label
-var new_game_dialog: ConfirmationDialog
+var new_game_dialog: Control
 var rename_dialog: ConfirmationDialog
 var delete_dialog: ConfirmationDialog
 var settings_dialog: Control
@@ -112,7 +112,7 @@ func _build_library() -> void:
     var subtitle = Label.new(); subtitle.text = "Describe a game. Change it while it runs."; subtitle.add_theme_color_override("font_color", Color("93a1bd")); brand.add_child(subtitle)
     var logs_btn = Button.new(); logs_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; logs_btn.text = "Logs"; logs_btn.tooltip_text = "Open global GameSmith logs"; logs_btn.pressed.connect(_open_global_logs); header.add_child(logs_btn)
     var settings_btn = Button.new(); settings_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; settings_btn.text = "Settings"; settings_btn.tooltip_text = "Pi provider, model, and agent limits"; settings_btn.pressed.connect(_open_settings); header.add_child(settings_btn)
-    var new_btn = Button.new(); new_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; new_btn.text = "+ New Game"; new_btn.pressed.connect(func(): name_edit.text = ""; new_game_dialog.popup_centered(Vector2i(420, 170))); header.add_child(new_btn)
+    var new_btn = Button.new(); new_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; new_btn.text = "+ New Game"; new_btn.pressed.connect(_open_new_game); header.add_child(new_btn)
     var divider = HSeparator.new(); root.add_child(divider)
     var section = Label.new(); section.name = "SectionTitle"; section.text = "YOUR GAMES"; section.add_theme_color_override("font_color", Color("7f8eaa")); section.add_theme_font_size_override("font_size", 13); root.add_child(section)
     var scroll = ScrollContainer.new(); scroll.name = "GameScroll"; scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; root.add_child(scroll)
@@ -145,12 +145,80 @@ func _build_chat() -> void:
     send_button = Button.new(); send_button.text = "Send"; send_button.custom_minimum_size = Vector2(82, 64); send_button.pressed.connect(_send_chat); composer.add_child(send_button)
 
 func _build_dialogs() -> void:
-    new_game_dialog = ConfirmationDialog.new(); new_game_dialog.title = "Create a game"; new_game_dialog.dialog_text = "Name your game. The workspace starts empty with a baseline Git commit."; add_child(new_game_dialog)
-    name_edit = LineEdit.new(); name_edit.placeholder_text = "Neon Asteroids"; name_edit.custom_minimum_size.x = 360; new_game_dialog.add_child(name_edit); name_edit.position = Vector2(24, 72); new_game_dialog.confirmed.connect(_create_game)
+    _build_new_game_overlay()
     rename_dialog = ConfirmationDialog.new(); rename_dialog.title = "Rename game"; add_child(rename_dialog)
     rename_edit = LineEdit.new(); rename_edit.custom_minimum_size.x = 360; rename_dialog.add_child(rename_edit); rename_edit.position = Vector2(24, 58); rename_dialog.confirmed.connect(_rename_game)
     delete_dialog = ConfirmationDialog.new(); delete_dialog.title = "Delete game"; delete_dialog.confirmed.connect(_delete_game_confirmed); add_child(delete_dialog)
     _build_settings_overlay()
+
+func _build_new_game_overlay() -> void:
+    new_game_dialog = Control.new()
+    new_game_dialog.name = "NewGameOverlay"
+    new_game_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    new_game_dialog.visible = false
+    new_game_dialog.process_mode = Node.PROCESS_MODE_ALWAYS
+    new_game_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
+    host_ui_root.add_child(new_game_dialog)
+
+    var shade = ColorRect.new()
+    shade.color = Color(0.015, 0.02, 0.03, 0.88)
+    shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    new_game_dialog.add_child(shade)
+
+    var center = CenterContainer.new()
+    center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    new_game_dialog.add_child(center)
+
+    var panel = PanelContainer.new()
+    panel.custom_minimum_size = Vector2(460, 190)
+    center.add_child(panel)
+
+    var margin = MarginContainer.new()
+    margin.add_theme_constant_override("margin_left", 22)
+    margin.add_theme_constant_override("margin_right", 22)
+    margin.add_theme_constant_override("margin_top", 18)
+    margin.add_theme_constant_override("margin_bottom", 18)
+    panel.add_child(margin)
+
+    var box = VBoxContainer.new()
+    box.add_theme_constant_override("separation", 12)
+    margin.add_child(box)
+
+    var title = Label.new()
+    title.text = "Create a game"
+    title.add_theme_font_size_override("font_size", 22)
+    box.add_child(title)
+
+    var note = Label.new()
+    note.text = "Name your game. The workspace starts empty with a baseline Git commit."
+    note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    note.add_theme_color_override("font_color", Color("8492ad"))
+    box.add_child(note)
+
+    name_edit = LineEdit.new()
+    name_edit.placeholder_text = "Neon Asteroids"
+    box.add_child(name_edit)
+    name_edit.text_submitted.connect(func(_text): _create_game())
+
+    var actions = HBoxContainer.new()
+    actions.alignment = BoxContainer.ALIGNMENT_END
+    actions.add_theme_constant_override("separation", 8)
+    box.add_child(actions)
+
+    var cancel = Button.new()
+    cancel.text = "Cancel"
+    cancel.pressed.connect(func(): new_game_dialog.visible = false)
+    actions.add_child(cancel)
+
+    var create = Button.new()
+    create.text = "Create"
+    create.pressed.connect(_create_game)
+    actions.add_child(create)
+
+func _open_new_game() -> void:
+    name_edit.text = ""
+    new_game_dialog.visible = true
+    name_edit.grab_focus()
 
 func _build_settings_overlay() -> void:
     settings_dialog = Control.new()
@@ -369,8 +437,11 @@ func _show_library() -> void:
 
 func _create_game() -> void:
     var result = store.create_game(name_edit.text)
-    if result.ok: _open_game(result.name)
-    else: _toast(str(result.error))
+    if result.ok:
+        new_game_dialog.visible = false
+        _open_game(result.name)
+    else:
+        _toast(str(result.error))
 
 func _open_game(name: String) -> void:
     current_game = name
