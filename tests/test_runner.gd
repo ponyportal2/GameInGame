@@ -108,6 +108,7 @@ func run() -> void:
     await _test_legacy_user_data_migration()
     await _test_debug_logs_and_redaction()
     await _test_provider_settings_surface()
+    await _test_pi_request_has_no_host_deadline_or_fake_completion()
     print("TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
 
@@ -605,5 +606,10 @@ func _test_provider_settings_surface() -> void:
     assert_true(settings.has("custom_base_url"), "global settings include custom /v1 base address")
     assert_true(settings.has("reasoning_effort"), "global settings include Pi reasoning effort")
     assert_true(settings.has("llm_call_delay_sec"), "global settings include configurable delay between Pi provider calls")
+func _test_pi_request_has_no_host_deadline_or_fake_completion() -> void:
+    var source = FileAccess.get_file_as_string("res://src/agent/pi_agent_controller.gd")
+    assert_true(not "20 * 60 * 1000" in source and not "20 minute host deadline" in source, "Pi requests have no arbitrary host wall-clock deadline")
+    assert_true(not 'final_text = "Done."' in source, "GameSmith never invents a fake assistant completion message")
+
 func _write(path: String, content: String) -> void:
     var f = FileAccess.open(path, FileAccess.WRITE); f.store_string(content); f.close()
