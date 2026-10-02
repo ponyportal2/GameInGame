@@ -53,6 +53,8 @@ func send_player_request(text: String) -> void:
     turn_count = 0
     limit_abort_sent = false
     streamed_text = false
+    if has_meta("_pi_settled"):
+        remove_meta("_pi_settled")
     AppLoggerScript.game_event(game_name, "pi.request", "request=%s" % text.left(500))
     status_changed.emit("Starting Pi…")
 
@@ -326,9 +328,12 @@ func _on_pi_record(record: Dictionary) -> void:
             if str(entry.get("customType", "")) == "gamesmith-verifier-failed":
                 last_error = "The model repeatedly tried to finish without satisfying GameSmith's build/reload verification."
         "agent_settled":
-            if last_error == "" and pending_provider_error != "":
-                last_error = pending_provider_error
-            set_meta("_pi_settled", true)
+            # An abort can settle after its request has already failed. Ignore that
+            # late event until the current request has actually entered a Pi turn.
+            if busy and turn_count > 0:
+                if last_error == "" and pending_provider_error != "":
+                    last_error = pending_provider_error
+                set_meta("_pi_settled", true)
         _:
             pass
 
