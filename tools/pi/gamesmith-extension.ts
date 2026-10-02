@@ -62,8 +62,7 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
   await writeFile(requestPath + ".tmp", JSON.stringify({ id, command, args }), "utf8");
   await rename(requestPath + ".tmp", requestPath);
 
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
+  while (true) {
     if (signal?.aborted) throw new Error(`GameSmith host tool ${command} was aborted.`);
     try {
       const raw = await readFile(responsePath, "utf8");
@@ -74,7 +73,6 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   }
-  throw new Error(`Timed out waiting for GameSmith host tool ${command}.`);
 }
 
 function mutationPath(event: any): string {

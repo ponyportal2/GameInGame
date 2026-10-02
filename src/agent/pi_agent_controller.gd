@@ -67,17 +67,12 @@ func send_player_request(text: String) -> void:
 
     await _maybe_auto_compact("before_request")
     status_changed.emit("Pi is working…")
-    var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text}, 30.0)
+    var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text)
     if not bool(accepted.get("success", false)):
         _fail("Pi rejected the prompt: " + str(accepted.get("error", "unknown error")))
         return
 
-    var deadline = Time.get_ticks_msec() + 20 * 60 * 1000
     while busy and rpc != null and rpc.running:
-        if Time.get_ticks_msec() >= deadline:
-            await rpc.command({"type": "abort"}, 10.0)
-            _fail("Pi agent run exceeded the 20 minute host deadline.")
-            return
         if bool(get_meta("_pi_settled", false)):
             remove_meta("_pi_settled")
             break
@@ -90,15 +85,14 @@ func send_player_request(text: String) -> void:
         _fail(last_error)
         return
 
-    var last: Dictionary = await rpc.command({"type": "get_last_assistant_text"}, 15.0)
+    var last: Dictionary = await rpc.command({"type": "get_last_assistant_text")
     var final_text = ""
     if bool(last.get("success", false)):
         final_text = str(last.get("data", {}).get("text", "")).strip_edges()
-    if final_text == "":
-        final_text = "Done."
-    transcript.append(game_name, "assistant", final_text)
-    if not streamed_text:
-        assistant_message.emit(final_text)
+    if final_text != "":
+        transcript.append(game_name, "assistant", final_text)
+        if not streamed_text:
+            assistant_message.emit(final_text)
     await _refresh_context_usage()
     await _maybe_auto_compact("after_turn")
     status_changed.emit("Ready")
@@ -117,7 +111,7 @@ func compact_now() -> Dictionary:
         busy = false
         return ready
     status_changed.emit("Compacting Pi session…")
-    var response: Dictionary = await rpc.command({"type": "compact"}, 300.0)
+    var response: Dictionary = await rpc.command({"type": "compact"})
     busy = false
     status_changed.emit("Ready")
     if not bool(response.get("success", false)):
@@ -185,14 +179,14 @@ func _ensure_runtime() -> Dictionary:
     var synced = await _sync_runtime_state()
     if not bool(synced.get("ok", false)):
         return synced
-    var auto_off: Dictionary = await rpc.command({"type": "set_auto_compaction", "enabled": false}, 15.0)
+    var auto_off: Dictionary = await rpc.command({"type": "set_auto_compaction", "enabled": false})
     if not bool(auto_off.get("success", false)):
         return {"ok": false, "error": "Could not configure Pi compaction policy: " + str(auto_off.get("error", ""))}
     await _refresh_context_usage()
     return {"ok": true}
 
 func _sync_runtime_state() -> Dictionary:
-    var state: Dictionary = await rpc.command({"type": "get_state"}, 15.0)
+    var state: Dictionary = await rpc.command({"type": "get_state"})
     if not bool(state.get("success", false)):
         return {"ok": false, "error": "Could not read Pi session state: " + str(state.get("error", ""))}
     var data: Dictionary = state.get("data", {})
@@ -204,7 +198,7 @@ func _sync_runtime_state() -> Dictionary:
             "type": "set_model",
             "provider": str(runtime_config.provider),
             "modelId": str(runtime_config.model)
-        }, 30.0)
+        })
         if not bool(changed.get("success", false)):
             return {"ok": false, "error": "Could not select Pi model %s/%s: %s" % [str(runtime_config.provider), str(runtime_config.model), str(changed.get("error", ""))]}
         data["model"] = changed.get("data", {})
@@ -212,13 +206,13 @@ func _sync_runtime_state() -> Dictionary:
     if desired_thinking == "":
         desired_thinking = "medium"
     if str(data.get("thinkingLevel", "")) != desired_thinking:
-        var thinking_result: Dictionary = await rpc.command({"type": "set_thinking_level", "level": desired_thinking}, 15.0)
+        var thinking_result: Dictionary = await rpc.command({"type": "set_thinking_level", "level": desired_thinking})
         if not bool(thinking_result.get("success", false)):
             return {"ok": false, "error": "Could not set Pi thinking level %s: %s" % [desired_thinking, str(thinking_result.get("error", ""))]}
     var wanted_name = str(runtime_config.get("game_name", ""))
     var current_name = str(data.get("sessionName", ""))
     if wanted_name != "" and current_name != wanted_name:
-        var name_result: Dictionary = await rpc.command({"type": "set_session_name", "name": wanted_name}, 15.0)
+        var name_result: Dictionary = await rpc.command({"type": "set_session_name", "name": wanted_name})
         if not bool(name_result.get("success", false)):
             return {"ok": false, "error": "Could not name Pi session: " + str(name_result.get("error", ""))}
     return {"ok": true}
@@ -226,7 +220,7 @@ func _sync_runtime_state() -> Dictionary:
 func _refresh_context_usage() -> void:
     if rpc == null or not rpc.running:
         return
-    var stats: Dictionary = await rpc.command({"type": "get_session_stats"}, 15.0)
+    var stats: Dictionary = await rpc.command({"type": "get_session_stats"})
     if not bool(stats.get("success", false)):
         return
     var usage = stats.get("data", {}).get("contextUsage", null)
@@ -244,7 +238,7 @@ func _maybe_auto_compact(phase: String) -> void:
         return
     status_changed.emit("Auto-compacting Pi session…")
     AppLoggerScript.game_event(game_name, "pi.compaction.auto", "phase=%s context_tokens=%d threshold=%d" % [phase, last_context_tokens, threshold])
-    var response: Dictionary = await rpc.command({"type": "compact"}, 300.0)
+    var response: Dictionary = await rpc.command({"type": "compact"})
     if bool(response.get("success", false)):
         last_context_tokens = int(response.get("data", {}).get("estimatedTokensAfter", 0))
     else:
@@ -289,7 +283,7 @@ func _on_pi_record(record: Dictionary) -> void:
             if turn_count > limit and not limit_abort_sent:
                 limit_abort_sent = true
                 last_error = "Pi reached the GameSmith per-request turn limit (%d)." % limit
-                rpc.command({"type": "abort"}, 10.0)
+                rpc.command({"type": "abort"})
         "message_end":
             var message: Dictionary = record.get("message", {})
             if str(message.get("role", "")) == "assistant":

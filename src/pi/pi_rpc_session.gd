@@ -59,7 +59,7 @@ func start(config: Dictionary) -> Dictionary:
     process_mode = Node.PROCESS_MODE_ALWAYS
     return {"ok": true, "pid": pid}
 
-func command(record: Dictionary, timeout_sec: float = 300.0) -> Dictionary:
+func command(record: Dictionary) -> Dictionary:
     if not running:
         return {"success": false, "error": stop_message if stop_message != "" else "Pi RPC process is not running."}
     var id = "gs-%d" % next_id
@@ -70,10 +70,7 @@ func command(record: Dictionary, timeout_sec: float = 300.0) -> Dictionary:
     var err = _write_json(payload)
     if err != OK:
         return {"success": false, "error": "Could not write Pi RPC command (%d)." % err}
-    var deadline = Time.get_ticks_msec() + int(timeout_sec * 1000.0)
     while running and not responses.has(id):
-        if Time.get_ticks_msec() >= deadline:
-            return {"success": false, "error": "Timed out waiting for Pi RPC response to %s." % str(record.get("type", "command"))}
         await get_tree().process_frame
     if not responses.has(id):
         return {"success": false, "error": stop_message if stop_message != "" else "Pi stopped before responding."}

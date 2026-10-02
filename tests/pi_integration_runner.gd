@@ -151,11 +151,11 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     assert_true("var speed := 400.0" in main and not "var speed := 200.0" in main, "Pi built-in edit changes existing game safely")
     assert_true(str(streamed.text).contains("Player speed is now 400"), "second final response also streams")
 
-    var state = await agent.rpc.command({"type": "get_state"}, 15.0)
+    var state = await agent.rpc.command({"type": "get_state"})
     assert_true(bool(state.get("success", false)), "Pi RPC state is available")
     if bool(state.get("success", false)):
         assert_eq(str(state.get("data", {}).get("thinkingLevel", "")), "high", "GameSmith reasoning setting maps to Pi thinking level")
-    var before_entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
+    var before_entries = await agent.rpc.command({"type": "get_entries"})
     var before_json = JSON.stringify(before_entries.get("data", {}).get("entries", []))
     agent.restart_runtime()
     agent.queue_free()
@@ -164,7 +164,7 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     var agent2 = _controller(created.name, created.path, runner)
     var ready = await agent2._ensure_runtime()
     assert_true(bool(ready.get("ok", false)), "new GameSmith controller resumes persisted Pi session")
-    var after_entries = await agent2.rpc.command({"type": "get_entries"}, 15.0)
+    var after_entries = await agent2.rpc.command({"type": "get_entries"})
     assert_eq(JSON.stringify(after_entries.get("data", {}).get("entries", [])), before_json, "Pi session prefix is byte-stable across process restart before a new turn")
     agent2.send_player_request("what did I ask before?")
     ok = await agent2.finished
@@ -281,7 +281,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     var compacted = await agent.compact_now()
     assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction: %s" % str(compacted.get("error", "")))
     assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary: %s" % JSON.stringify(compacted))
-    var entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
+    var entries = await agent.rpc.command({"type": "get_entries"})
     var manual_entries: Array = entries.get("data", {}).get("entries", [])
     assert_true(manual_entries.any(func(entry): return typeof(entry) == TYPE_DICTIONARY and str(entry.get("type", "")) == "compaction"), "Pi session persists a native compaction entry")
 
@@ -292,7 +292,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     var resumed = _controller(created.name, created.path, runner)
     var ready = await resumed._ensure_runtime()
     assert_true(bool(ready.get("ok", false)), "Pi session restarts after native compaction")
-    var resumed_entries = await resumed.rpc.command({"type": "get_entries"}, 15.0)
+    var resumed_entries = await resumed.rpc.command({"type": "get_entries"})
     assert_eq(JSON.stringify(resumed_entries.get("data", {}).get("entries", [])), manual_entries_json, "compacted Pi session is byte-stable across GameSmith process restart")
     resumed.send_player_request("continue after manual compaction")
     ok = await resumed.finished
@@ -321,7 +321,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     ok = await agent.finished
     assert_true(bool(ok), "second Pi request gives threshold maintenance a compactable older span")
 
-    entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
+    entries = await agent.rpc.command({"type": "get_entries"})
     var auto_entries: Array = entries.get("data", {}).get("entries", [])
     assert_true(auto_entries.any(func(entry): return typeof(entry) == TYPE_DICTIONARY and str(entry.get("type", "")) == "compaction"), "configured GameSmith token threshold triggers a real Pi compaction entry")
 
@@ -384,7 +384,7 @@ func _test_legacy_transcript_import_is_one_time() -> void:
         assert_eq(str(after_turn[1].get("content", "")), "Built the blue square.", "legacy readable assistant entry remains unchanged")
         assert_eq(str(after_turn[2].get("content", "")), "What did we build?", "new user turn is appended after imported legacy dialogue")
 
-    var entries = await agent.rpc.command({"type": "get_entries"}, 15.0)
+    var entries = await agent.rpc.command({"type": "get_entries"})
     var before_restart_json = JSON.stringify(entries.get("data", {}).get("entries", []))
     assert_eq(before_restart_json.split("gamesmith-legacy-dialogue").size() - 1, 1, "Pi persists exactly one legacy-import checkpoint entry")
 
@@ -394,7 +394,7 @@ func _test_legacy_transcript_import_is_one_time() -> void:
     var resumed = _controller(created.name, created.path, runner)
     var ready = await resumed._ensure_runtime()
     assert_true(bool(ready.get("ok", false)), "Pi session with imported legacy dialogue restarts")
-    var resumed_entries = await resumed.rpc.command({"type": "get_entries"}, 15.0)
+    var resumed_entries = await resumed.rpc.command({"type": "get_entries"})
     assert_eq(JSON.stringify(resumed_entries.get("data", {}).get("entries", [])), before_restart_json, "restart does not import readable transcript a second time")
 
     resumed.restart_runtime()
