@@ -49,6 +49,10 @@ func run() -> void:
         await _test_legacy_transcript_import_is_one_time()
         _test_legacy_runtime_sources_are_removed()
 
+    if part == "" or part == "4":
+        _test_pi_binary_discovery_modes()
+        _test_windows_pi_install_guidance()
+
     var label = "ALL" if part == "" else "PART " + part
     print("PI %s INTEGRATION TESTS: %d passed, %d failed" % [label, passed, failures])
     quit(0 if failures == 0 else 1)
@@ -412,6 +416,24 @@ func _test_legacy_runtime_sources_are_removed() -> void:
     var runtime_source = FileAccess.get_file_as_string("res://src/pi/pi_runtime_config.gd")
     assert_true(not "res://src/providers/" in app_source, "production UI no longer preloads legacy provider adapters")
     assert_true(not "res://src/providers/" in runtime_source, "Pi runtime config no longer preloads legacy provider adapters")
+
+
+func _test_pi_binary_discovery_modes() -> void:
+    var explicit = OS.get_environment("GAMESMITH_PI_BIN").strip_edges()
+    assert_true(explicit != "", "Part 4 receives an explicit Pi executable fixture")
+    var session = PiRpcSessionScript.new()
+    var explicit_result = session._check_pi_available()
+    assert_true(bool(explicit_result.get("ok", false)), "explicit GAMESMITH_PI_BIN override resolves")
+
+    OS.unset_environment("GAMESMITH_PI_BIN")
+    var global_result = session._check_pi_available()
+    assert_true(bool(global_result.get("ok", false)), "globally npm-installed pi resolves from PATH without override: %s" % str(global_result.get("error", "")))
+    OS.set_environment("GAMESMITH_PI_BIN", explicit)
+
+func _test_windows_pi_install_guidance() -> void:
+    var readme = FileAccess.get_file_as_string("res://GameSmith-Windows/README.txt")
+    assert_true("npm install -g @earendil-works/pi-coding-agent@0.99.2" in readme, "Windows README gives the pinned global Pi install command")
+    assert_true("GAMESMITH_PI_BIN" in readme, "Windows README documents the explicit Pi executable override")
 
 func _fake_records(model: String) -> Array:
     var out: Array = []
