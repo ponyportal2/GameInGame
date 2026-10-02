@@ -75,6 +75,14 @@ jobs:
           .ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64 \
             --headless --path . --export-pack "Linux Pack" .ci-godot/GameSmith.pck
 
+      - name: Verify bundled Pi extension in exported PCK
+        shell: bash
+        run: |
+          set -euo pipefail
+          .ci-godot/linux/Godot_v4.7.2-stable_linux.x86_64 \
+            --headless --main-pack "$GITHUB_WORKSPACE/.ci-godot/GameSmith.pck" \
+            --script res://tests/package_contents_runner.gd
+
       - name: Assemble self-contained Windows folder
         shell: bash
         run: |
