@@ -77,6 +77,8 @@ Games always open in chat without executing generated code, so after a game cras
 
 Run is available only when workspace `main.gd` or a last working snapshot exists. Chat and gameplay show persistent execution status: **Not running**, **Running workspace**, or **Running last working snapshot**. This identifies the loaded source, without claiming it includes later file edits.
 
+**Allow Reload** gives GameSmith permission to attempt loading the game's current workspace, including any edits made while the request was waiting. A reload request does not freeze a revision. To cancel the waiting request, use **Stop**.
+
 ## Library/chat behavior
 
 - **F1** toggles chat.

@@ -143,7 +143,7 @@ func _build_play_hud() -> void:
     var execution_status = _add_execution_status(play_hud)
     execution_status.position = Vector2(20, 54)
     reload_notice = Label.new()
-    reload_notice.text = "Agent wants to reload. Shift+F5 to approve, or F1 for chat."
+    reload_notice.text = "Agent wants to reload the current workspace. Shift+F5 to allow, or F1 for chat."
     reload_notice.position = Vector2(20, 80)
     reload_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
     reload_notice.add_theme_color_override("font_color", Color("e5b978"))
@@ -171,6 +171,7 @@ func _build_chat() -> void:
     _add_execution_status(game_controls)
     approve_reload_button = Button.new()
     approve_reload_button.text = "Allow Reload  Shift+F5"
+    approve_reload_button.tooltip_text = "Allow GameSmith to try loading this game's workspace as it exists now, including edits made while waiting. Stop cancels the agent."
     approve_reload_button.visible = false
     approve_reload_button.pressed.connect(_approve_agent_reload)
     box.add_child(approve_reload_button)
