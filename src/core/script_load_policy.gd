@@ -10,14 +10,23 @@ static func first_violation(source: String) -> Dictionary:
     var tokens = _tokens(source)
     for i in range(tokens.size() - 1):
         var token: Dictionary = tokens[i]
-        if token.kind != "identifier" or token.value not in LOAD_METHODS or tokens[i + 1].value != "(":
+        if token.kind != "identifier" or token.value not in LOAD_METHODS or tokens[i + 1].kind != "symbol" or tokens[i + 1].value != "(":
             continue
-        if i > 0 and tokens[i - 1].value == "func":
+        if i > 0 and tokens[i - 1].kind == "identifier" and tokens[i - 1].value == "func":
+            continue
+        var qualified = i > 0 and tokens[i - 1].kind == "symbol" and tokens[i - 1].value == "."
+        if qualified:
+            # Match the ResourceLoader singleton, not unrelated .load() methods
+            # or a member named ResourceLoader on another object.
+            if i < 2 or tokens[i - 2].kind != "identifier" or tokens[i - 2].value != "ResourceLoader":
+                continue
+            if i >= 3 and tokens[i - 3].kind == "symbol" and tokens[i - 3].value == ".":
+                continue
+        elif token.value != "load":
             continue
         var args = _arguments(tokens, i + 1)
         if args.is_empty():
             continue # An incomplete call belongs to Godot's compiler.
-        var qualified = i > 0 and tokens[i - 1].value == "."
         var max_args = 4 if token.value == "load_threaded_request" else (3 if token.value == "load" and qualified else 1)
         if args.size() > max_args:
             continue # Invalid API arity also belongs to Godot.

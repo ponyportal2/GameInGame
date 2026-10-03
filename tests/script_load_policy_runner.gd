@@ -36,6 +36,20 @@ func run() -> void:
         "reload('helper.gd')",
         "load('asset(with,comma).png')",
         "ResourceLoader.load('texture.png', 'Texture2D', 1)",
+        "ConfigFile.new().load('user://settings.cfg')",
+        "config.load('user://settings.cfg')",
+        "image.load('user://capture.webp')",
+        "inventory.load('save.dat')",
+        "thing.load('scene.tres')",
+        "thing.load(path, 'GDScript')",
+        "thing.load_threaded_request('scene.tscn')",
+        "thing.load_threaded_get(path)",
+        "load_threaded_request('helper.gd')",
+        "load_threaded_get('helper.gd')",
+        "loader.load('helper.cs')",
+        "var loader = ResourceLoader\nloader.load('helper.gd')",
+        "owner.ResourceLoader.load('helper.gd')",
+        "'ResourceLoader'.load('helper.gd')",
     ]:
         check(Policy.first_violation(source).is_empty(), "allows: " + source)
     for source in [
@@ -44,7 +58,6 @@ func run() -> void:
         "ResourceLoader.load('helper.gdc')",
         "ResourceLoader.load_threaded_request('helper.gd')",
         "ResourceLoader.load_threaded_get('helper.gd')",
-        "loader.load('helper.cs')",
         "load(path)",
         "load('uid://unknown')",
         "load('extensionless')",
@@ -54,6 +67,9 @@ func run() -> void:
         "ResourceLoader.load('asset.dat', 'GDScript')",
         "load(r'helper.gd')",
         "ResourceLoader.load(make_path([1, 2]), 'Texture2D')",
+        "func f():\n    var marker = '.'\n    load('helper.gd')",
+        "func f():\n    var marker = 'func'\n    load('helper.gd')",
+        "func f():\n    var marker = '.'\n    ResourceLoader.load('helper.gd')",
     ]:
         check(not Policy.first_violation(source).is_empty(), "rejects: " + source)
     var multiline = "# example\nvar text = '''\nload('example.gd')\n'''\nResourceLoader.load(\n    'helper.gd'\n)"
@@ -88,6 +104,7 @@ func test_api_matrix() -> void:
         check(Policy.first_violation(source).is_empty(), "unsupported hint arity defers: " + source)
     check("statically known resource" in Policy.first_violation("load(path)").message, "computed path diagnostic offers a valid literal alternative")
     check("inheritance" not in Policy.first_violation("load('scene.tscn')").message, "structured resource diagnostic recommends preload without inheritance")
+    check(not Policy.first_violation("ResourceLoader.\n    load('helper.gd')").is_empty(), "multiline direct singleton receiver remains checked")
 
 func test_reload_gate() -> void:
     var ws = "user://script-policy-%d" % Time.get_ticks_usec()
@@ -119,6 +136,8 @@ func test_reload_gate() -> void:
     write_text(ws.path_join(".git/ignored.gd"), "load('ignored.gd')")
     write_text(ws.path_join(".godot/ignored.gd"), "load('ignored.gd')")
     check(runner.load_game(ws).ok and runner.active_game.probe() == 99, "fixed candidate refreshes helper and ignores metadata directories")
+    write_text(main, "extends Node\nconst H = preload('helper.gd')\nvar answer = 0\nfunc _ready():\n    var config = ConfigFile.new()\n    config.set_value('game', 'answer', H.new().value())\n    config.save('%s')\n    var restored = ConfigFile.new()\n    restored.load('%s')\n    answer = restored.get_value('game', 'answer')\n" % [ws.path_join("settings.cfg"), ws.path_join("settings.cfg")])
+    check(runner.load_game(ws).ok and runner.active_game.answer == 99, "production reload accepts ConfigFile save/load and restores ordinary file data")
     runner.queue_free()
     await process_frame
     await process_frame
