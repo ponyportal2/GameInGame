@@ -130,6 +130,8 @@ func test_startup_and_dependencies() -> void:
     old = runner.active_game
     put(helper, "extends RefCounted\nfunc broken(:\n")
     check(not runner.load_game(created.path).ok and runner.active_game == old, "broken dependency preserves previous game")
+    put(main, "extends Node\nvar answer = 456\n")
+    check(runner.load_game(created.path).ok and runner.active_game.answer == 456, "formerly used broken helper does not reject a candidate that no longer uses it")
     runner.queue_free()
     await process_frame
     store.delete_game(created.name)
@@ -143,6 +145,7 @@ func test_rename() -> void:
     await process_frame
     app._open_game(created.name)
     var rpc = PendingRpc.new()
+    var diagnostic_session = app.runner.runtime_log.session_id
     app.agent.add_child(rpc)
     app.agent.rpc = rpc
     rpc.record_received.connect(app.agent._on_pi_record)
@@ -159,10 +162,19 @@ func test_rename() -> void:
     check(app.current_game == "Renamed Runtime Regression", "idle game rename succeeds")
     check(app.agent.rpc == null and app.agent.bridge_dir == "" and not rpc.running, "rename shuts down runtime and clears stale bridge")
     check(app.agent.game_name == app.current_game and app.tools.workspace == store.game_path(app.current_game), "rename rebinds controller and workspace")
+    app.runner.runtime_log.capture("warning", "godot_error", "production rename diagnostic")
+    check(app.runner.runtime_log.session_id == diagnostic_session and app.runner.runtime_log.read_text().contains("production rename diagnostic"), "production rename handler preserves and rebinds the diagnostic session")
+    var collision = store.create_game("Rename Collision")
+    app.rename_target = app.current_game
+    app.rename_edit.text = collision.name
+    app._rename_game()
+    app.runner.runtime_log.capture("warning", "godot_error", "after failed rename")
+    check(app.current_game == "Renamed Runtime Regression" and app.runner.runtime_log.session_id == diagnostic_session and app.runner.runtime_log.read_text().contains("after failed rename"), "failed production rename resumes the existing writer")
     var new_name = app.current_game
     app.queue_free()
     await process_frame
     store.delete_game(new_name)
+    store.delete_game(collision.name)
 
 func test_cancel() -> void:
     var store = Store.new()

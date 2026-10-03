@@ -24,7 +24,11 @@ var notification_counts = {"error": 0, "warning": 0}
 var notification_high = 0
 var last_notified_loss = 0
 var last_notified_persistence_error = ""
-var pending_notice: Array[Dictionary] = []
+const MAX_NOTICE_RANGES = 1024
+const MAX_RECEIPTS = 16
+var pending_ranges = {"error": [], "warning": []}
+var delivery_receipts: Dictionary = {}
+var notification_tracking_compacted = false
 var startup_errors: Array[String] = []
 var startup_error_count = 0
 var capturing_startup = false
@@ -38,6 +42,7 @@ var segments: Array[Dictionary] = []
 var expired_segments = 0
 var oldest_seq = 1
 var index: Dictionary = {}
+var recovered_sessions = 0
 var closed = false
 var stopping = false
 var mutex = Mutex.new()
@@ -91,7 +96,7 @@ func start(name: String, workspace: String, options: Dictionary = {}) -> void:
                     index.sessions.append(meta)
     index.sessions = index.sessions.filter(func(entry): return typeof(entry) == TYPE_DICTIONARY and _safe_session(str(entry.get("session_id", ""))))
     for entry in index.sessions:
-        if entry.get("status", "") != "expired":
+        if entry.get("status", "") != "expired" and not _closed_session_matches(entry):
             _recover_segments(entry)
     _save_index()
     _start_worker()
@@ -99,6 +104,7 @@ func start(name: String, workspace: String, options: Dictionary = {}) -> void:
     add("session_open", "Opened game " + name)
 
 func _recover_segments(meta: Dictionary) -> void:
+    recovered_sessions += 1
     var path = root_path.path_join(str(meta.session_id))
     var dir = DirAccess.open(path)
     if dir == null:
@@ -136,6 +142,32 @@ func _recover_segments(meta: Dictionary) -> void:
         meta.oldest_seq = int(recovered[0].first_seq)
         meta.persisted_seq = int(recovered[-1].last_seq)
         meta.newest_seq = maxi(int(meta.get("newest_seq", 0)), int(meta.persisted_seq))
+
+func _closed_session_matches(meta: Dictionary) -> bool:
+    if meta.get("status", "") != "closed" or str(meta.get("closed_utc", "")) == "":
+        return false
+    var path = root_path.path_join(str(meta.session_id))
+    var disk_meta = JsonStore.read_dict(path.path_join("session.json"), {})
+    if disk_meta.get("status", "") != "closed" or disk_meta.get("segments", []) != meta.get("segments", []):
+        return false
+    var expected: Dictionary = {}
+    for segment_meta in meta.get("segments", []):
+        var name = str(segment_meta.get("file", ""))
+        var file = FileAccess.open(path.path_join(name), FileAccess.READ)
+        if file == null:
+            return false
+        var size = file.get_length()
+        file.close()
+        if size != int(segment_meta.get("bytes", -1)):
+            return false
+        expected[name] = true
+    var dir = DirAccess.open(path)
+    if dir == null:
+        return false
+    for name in dir.get_files():
+        if name.begins_with("events-") and name.ends_with(".jsonl") and not expected.has(name):
+            return false
+    return true
 
 func _register() -> void:
     collector = CaptureLogger.new()
@@ -286,9 +318,10 @@ func capture(severity: String, kind: String, message: String, file: String = "",
     if severity in ["error", "warning"]:
         notification_counts[severity] += 1
         notification_high = seq
-        pending_notice.append(record)
-        if pending_notice.size() > 128:
-            pending_notice.pop_front()
+        _append_range(pending_ranges[severity], seq)
+        if pending_ranges[severity].size() > MAX_NOTICE_RANGES:
+            pending_ranges[severity].pop_front()
+            notification_tracking_compacted = true
     if queue.size() >= int(policy.queue_records):
         var removed = -1
         if severity != "info":
@@ -543,6 +576,7 @@ func read(options: Dictionary = {}, delivered_to_pi: bool = false) -> Dictionary
     var limit = clampi(int(options.get("limit", 30)), 1, 100)
     var raw = bool(options.get("raw", false)) or options.has("cursor")
     var output: Array = []
+    var members: Dictionary = {}
     var more = false
     if raw:
         output = records.slice(0, limit)
@@ -557,12 +591,14 @@ func read(options: Dictionary = {}, delivered_to_pi: bool = false) -> Dictionary
                 groups[key].count += 1
                 groups[key].last_seq = record.seq
                 groups[key].last_elapsed_ms = record.elapsed_ms
+                _append_range(members[int(groups[key].seq)], int(record.seq))
             else:
                 var group = record.duplicate(true)
                 group.count = 1
                 group.last_seq = record.seq
                 group.last_elapsed_ms = record.elapsed_ms
                 groups[key] = group
+                members[int(group.seq)] = [[int(record.seq), int(record.seq)]]
         output = groups.values()
         output.sort_custom(func(a, b):
             var rank_a = 0 if a.kind in ["compile", "startup", "instantiate", "load"] and _number(a.get("origin_attempt")) == int(meta.latest_attempt) else (1 if a.severity == "error" else 2)
@@ -598,50 +634,118 @@ func read(options: Dictionary = {}, delivered_to_pi: bool = false) -> Dictionary
         result.sessions = result.sessions.slice(maxi(0, result.sessions.size() - 16))
         result.bookkeeping_truncated = true
     # Preserve the response budget including bookkeeping and the text view.
-    while JSON.stringify(result).length() > MAX_RESPONSE_CHARS and not result.records.is_empty():
+    while JSON.stringify(result).length() > MAX_RESPONSE_CHARS - 128 and not result.records.is_empty():
         result.records.pop_back()
         result.has_more = true
         result.log = "\n".join(lines.slice(0, result.records.size() + 1))
         result.next_cursor = (cursor if result.records.is_empty() else int(result.records[-1].seq)) if raw else null
     if selected == session_id and delivered_to_pi:
-        acknowledge_delivery(result.records)
+        var ranges = {"error": [], "warning": []}
+        for record in result.records:
+            if record.severity not in ranges:
+                continue
+            var exact: Array = members.get(int(record.seq), [[int(record.seq), int(record.seq)]])
+            for interval in exact:
+                if ranges[record.severity].size() < MAX_NOTICE_RANGES:
+                    ranges[record.severity].append(interval)
+        result.delivery_id = _receipt({"kind": "records", "ranges": ranges})
     return result
 
 func read_text() -> String:
     return str(read().get("log", ""))
 
-func take_notification() -> String:
+func prepare_notification() -> Dictionary:
     mutex.lock()
     var errors = int(notification_counts.error)
     var warnings = int(notification_counts.warning)
     var result = ""
     if errors + warnings > 0:
         result = "GameSmith diagnostics: %d new errors and %d new warnings in session %s through seq %d (active attempt %d, latest attempt %d). This notice covers counts, not contents. Use read_runtime_log for evidence." % [errors, warnings, session_id, notification_high, active_attempt_id, attempt_id]
-        notification_counts = {"error": 0, "warning": 0}
-        pending_notice.clear()
-        last_notified_seq = notification_high
+        if notification_tracking_compacted:
+            result += " Some delivery tracking was compacted; counts may conservatively include previously returned evidence."
     var lost = int(loss_totals.queue_overflow) + int(loss_totals.write_failure)
     if lost > last_notified_loss:
         result += "\nDiagnostics evidence has gaps: %d queue-overflow records and %d failed writes in this session. Use read_runtime_log for loss ranges and persistence status." % [loss_totals.queue_overflow, loss_totals.write_failure]
-        last_notified_loss = lost
     if persistence_error != "" and persistence_error != last_notified_persistence_error:
         result += "\nDiagnostics persistence degraded: " + persistence_error
-        last_notified_persistence_error = persistence_error
+    var receipt = {"kind": "notice", "counts": notification_counts.duplicate(), "high": notification_high, "lost": lost, "persistence_error": persistence_error}
     mutex.unlock()
-    return result
+    return {"ok": true, "notice": result, "delivery_id": _receipt(receipt)}
 
-func acknowledge_delivery(records: Array) -> void:
+func take_notification() -> String:
+    var result = prepare_notification()
+    commit_delivery(result.delivery_id)
+    return result.notice
+
+func _receipt(value: Dictionary) -> String:
+    var id = Crypto.new().generate_random_bytes(12).hex_encode()
     mutex.lock()
-    for i in range(pending_notice.size() - 1, -1, -1):
-        var pending: Dictionary = pending_notice[i]
-        for delivered in records:
-            if int(pending.seq) < int(delivered.seq) or int(pending.seq) > int(delivered.get("last_seq", delivered.seq)):
-                continue
-            if pending.kind == delivered.kind and pending.severity == delivered.severity and pending.file == delivered.file and int(pending.line) == int(delivered.line) and pending.message == delivered.message and _number(pending.evaluating_attempt) == _number(delivered.evaluating_attempt) and int(pending.active_attempt) == int(delivered.active_attempt) and _number(pending.origin_attempt) == _number(delivered.origin_attempt):
-                notification_counts[pending.severity] = maxi(0, int(notification_counts[pending.severity]) - 1)
-                pending_notice.remove_at(i)
-                break
+    delivery_receipts[id] = value
+    if delivery_receipts.size() > MAX_RECEIPTS:
+        delivery_receipts.erase(delivery_receipts.keys()[0])
     mutex.unlock()
+    return id
+
+func commit_delivery(id: String) -> void:
+    mutex.lock()
+    var receipt: Dictionary = delivery_receipts.get(id, {})
+    delivery_receipts.erase(id)
+    if receipt.is_empty():
+        mutex.unlock()
+        return
+    if receipt.kind == "notice":
+        if int(receipt.high) >= last_notified_seq:
+            for severity in pending_ranges:
+                _remove_delivered(severity, [[0, int(receipt.high)]], false)
+                var count = mini(int(notification_counts[severity]), int(receipt.counts[severity]))
+                notification_counts[severity] -= count
+                _adjust_notice_receipts(severity, count, int(receipt.high))
+            last_notified_seq = int(receipt.high)
+            notification_tracking_compacted = false
+        last_notified_loss = maxi(last_notified_loss, int(receipt.lost))
+        last_notified_persistence_error = receipt.persistence_error
+    else:
+        for severity in pending_ranges:
+            for removed in _remove_delivered(severity, receipt.ranges[severity], true):
+                for pending in delivery_receipts.values():
+                    if pending.kind == "notice":
+                        var count = maxi(0, mini(int(removed[1]), int(pending.high)) - int(removed[0]) + 1)
+                        pending.counts[severity] = maxi(0, int(pending.counts[severity]) - count)
+    mutex.unlock()
+
+func _adjust_notice_receipts(severity: String, count: int, high: int) -> void:
+    for pending in delivery_receipts.values():
+        if pending.kind == "notice" and int(pending.high) >= high:
+            pending.counts[severity] = maxi(0, int(pending.counts[severity]) - count)
+
+func _remove_delivered(severity: String, delivered: Array, decrement: bool) -> Array:
+    var removed: Array = []
+    for exact in delivered:
+        var remaining: Array = []
+        for interval in pending_ranges[severity]:
+            var first = maxi(int(interval[0]), int(exact[0]))
+            var last = mini(int(interval[1]), int(exact[1]))
+            if first > last:
+                remaining.append(interval)
+                continue
+            removed.append([first, last])
+            if decrement:
+                notification_counts[severity] -= last - first + 1
+            if int(interval[0]) < first:
+                remaining.append([int(interval[0]), first - 1])
+            if last < int(interval[1]):
+                remaining.append([last + 1, int(interval[1])])
+        while remaining.size() > MAX_NOTICE_RANGES:
+            remaining.pop_front()
+            notification_tracking_compacted = true
+        pending_ranges[severity] = remaining
+    return removed
+
+static func _append_range(ranges: Array, value: int) -> void:
+    if not ranges.is_empty() and int(ranges[-1][1]) + 1 == value:
+        ranges[-1][1] = value
+    else:
+        ranges.append([value, value])
 
 static func _bytes(items: Array) -> int:
     var total = 0

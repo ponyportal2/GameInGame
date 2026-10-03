@@ -51,12 +51,20 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
 
   while (true) {
     if (signal?.aborted) throw new Error(`GameSmith host tool ${command} was aborted.`);
+    let result;
     try {
       const raw = await readFile(responsePath, "utf8");
       await rm(responsePath, { force: true });
-      return JSON.parse(raw);
+      result = JSON.parse(raw);
     } catch {
       // Host has not answered yet.
+    }
+    if (result !== undefined) {
+      if (result.delivery_id) {
+        await callHost(toolCallId + "-receipt", "diagnostic_delivery", { delivery_id: result.delivery_id }, signal);
+        delete result.delivery_id;
+      }
+      return result;
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   }

@@ -132,7 +132,9 @@ func git_commit(message: String) -> Dictionary: return git.commit(workspace, mes
 func reload_game() -> Dictionary:
     if runner == null: return {"ok": false, "error": "Runner unavailable."}
     var result: Dictionary = runner.load_game(workspace)
-    runner.runtime_log.acknowledge_delivery(result.get("diagnostics", {}).get("records", []))
+    result.diagnostics = runner.runtime_log.read({"attempt": result.attempt_id, "limit": 20}, true)
+    result.delivery_id = result.diagnostics.get("delivery_id", "")
+    result.diagnostics.erase("delivery_id")
     return result
 
 func read_runtime_log(args: Dictionary = {}) -> Dictionary:

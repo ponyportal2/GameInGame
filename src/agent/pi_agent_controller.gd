@@ -424,7 +424,10 @@ func _service_host_bridge() -> void:
         if command in ["reload_game", "read_runtime_log"]:
             result = tools.execute(command, request.get("args", {}))
         elif command == "diagnostic_notice":
-            result = {"ok": true, "notice": tools.runner.runtime_log.take_notification() if tools != null and tools.runner != null else ""}
+            result = tools.runner.runtime_log.prepare_notification() if tools != null and tools.runner != null else {"ok": true, "notice": ""}
+        elif command == "diagnostic_delivery":
+            tools.runner.runtime_log.commit_delivery(str(request.get("args", {}).get("delivery_id", "")))
+            result = {"ok": true}
         else:
             result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
         var response_path = bridge_dir.path_join("response-%s.json" % str(request.get("id", "")))

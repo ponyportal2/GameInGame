@@ -41,7 +41,9 @@ For focused development, `GAMESMITH_PI_TEST_PART=1`, `2`, `3`, or `4` still runs
 
 Part 1 covers production controller selection, missing-Pi diagnostics, generation/edit/reload/Git behavior, streaming assistant/thinking events, false-completion recovery, native retry behavior, action limits, provider-call pacing, Pi session restart/resume, hidden diagnostic notices, and filtered runtime-log reads through real Pi.
 
-`diagnostics_runner.gd` checks persistent startup/live capture, timestamps and attempt identities, unchanged startup rejection, session lifecycle, filtering and notification suppression, raw pagination, queue overflow, segment/session retention, write failures, interrupted JSONL tails, Windows rename, and snapshot fallback. The portable host runner and full verification workflow include this suite.
+`diagnostics_runner.gd` checks persistent startup/live capture, timestamps and attempt identities, unchanged startup rejection, session lifecycle, exact delivery receipts beyond 128 diagnostics, sparse grouped membership, filters, raw pagination, repeated reads, response trimming, cancellation before delivery, bounded acknowledgement state, queue overflow, retention, write failures, interrupted JSONL tails, recovery fast paths, Windows rename, and snapshot fallback. The reliability suite also exercises the production rename handler on success/failure and the formerly-used broken-helper cache regression. Both the portable host runner and full verification workflow include these suites.
+
+`.github/workflows/verify-windows.yml` runs the host, reliability, diagnostics, Node, and real Pi acceptance tests natively on Windows using the bundled Godot runtime and pinned Pi. The existing Ubuntu packaging/verification job remains separate.
 
 Part 2 covers manual and threshold-triggered Pi-native compaction, `keepRecentTokens`, persisted native compaction entries, checkpoint delivery to the next provider request, normal no-op classification, and byte-stable session entries across GameSmith restart.
 

@@ -33,6 +33,7 @@ func has_message(result: Dictionary, message: String) -> bool:
 func run() -> void:
     await test_capture()
     test_overflow()
+    test_exact_delivery()
     test_concurrent_capture()
     test_retention_failure_recovery()
     await test_rename_fallback()
@@ -80,6 +81,7 @@ func test_capture() -> void:
     check(Json.read_dict(directory.path_join("session.json")).status == "closed", "closing runner drains writer and closes session")
     var reopened = Log.new()
     reopened.start(created.name, created.path)
+    check(reopened.recovered_sessions == 0, "clean closed sessions open without parsing event history")
     check(reopened.session_id != id, "reopening creates new session")
     var history = reopened.read({"session_id": id, "severity": "error", "raw": true})
     check(history.ok and not history.records.is_empty(), "earlier session evidence stays readable")
@@ -94,12 +96,12 @@ func test_overflow() -> void:
         log.capture("info", "print", "noise %d" % i)
     log.capture("error", "script_error", "important error", "enemy.gd", 42)
     log.capture("warning", "godot_error", "important warning")
-    var data = log.read({"raw": true, "limit": 100}, true)
+    var data = deliver(log, {"raw": true, "limit": 100})
     check(int(data.loss_totals.queue_overflow) > 0 and not data.loss.is_empty(), "queue overflow reports capture-time sequence gaps")
     check(has_message(data, "important error") and has_message(data, "important warning"), "pressure drops ordinary output before important diagnostics")
     log.capture("error", "script_error", "unread error")
     log.capture("warning", "godot_error", "read warning")
-    log.read({"severity": "warning", "raw": true}, true)
+    deliver(log, {"severity": "warning", "raw": true})
     var notice = log.take_notification()
     check("1 new errors and 0 new warnings" in notice, "filtered warning read cannot suppress an omitted error: " + notice)
     check(log.take_notification() == "", "aggregate notification occurs once")
@@ -124,6 +126,55 @@ func test_overflow() -> void:
     check(uncertain.records[0].origin_attempt == null and uncertain.records[0].attribution == "source_path", "old active instance cannot be misattributed to a new candidate")
     log.close()
     Store.new().metadata.delete_game("Diagnostics Overflow")
+
+func deliver(log, options: Dictionary) -> Dictionary:
+    var result = log.read(options, true)
+    log.commit_delivery(str(result.get("delivery_id", "")))
+    return result
+
+func test_exact_delivery() -> void:
+    var log = Log.new()
+    log.start("Exact Delivery", "user://games/Exact Delivery", {"queue_records": 4096})
+    log.pause_writer()
+    for i in range(200):
+        log.capture("error", "script_error", "grouped error")
+        log.capture("warning", "godot_error", "interleaved warning")
+    var grouped = deliver(log, {"severity": "error", "limit": 1})
+    check(grouped.records[0].count == 200 and log.notification_counts.error == 0 and log.notification_counts.warning == 200, "over 128 grouped occurrences acknowledge exact sparse members only")
+    var cursor = 0
+    while true:
+        var page = deliver(log, {"severity": "warning", "raw": true, "cursor": cursor, "limit": 50})
+        cursor = int(page.next_cursor)
+        if not page.has_more:
+            break
+    check(log.take_notification() == "", "paginated filtered reads clear all 200 warnings without stale counts")
+    deliver(log, {"severity": "error"})
+    log.capture("warning", "godot_error", "new after repeated read")
+    check("0 new errors and 1 new warnings" in log.take_notification(), "repeated delivery is idempotent and cannot consume a newer warning")
+    for i in range(4):
+        log.capture("error", "script_error", "%d " % i + "x".repeat(4000))
+    var trimmed = log.read({"severity": "error", "cursor": cursor, "raw": true, "limit": 100}, true)
+    var before = int(log.notification_counts.error)
+    log.commit_delivery(trimmed.delivery_id)
+    check(trimmed.records.size() < 4 and log.notification_counts.error == before - trimmed.records.size(), "size trimming acknowledges only records in the final response")
+    log.take_notification()
+    log.capture("error", "script_error", "response never delivered")
+    log.read({"severity": "error"}, true)
+    check("1 new errors" in log.take_notification(), "constructing a response without a receipt leaves errors unacknowledged")
+    log.capture("warning", "godot_error", "notice pending")
+    var notice = log.prepare_notification()
+    var readback = log.read({"severity": "warning"}, true)
+    log.commit_delivery(readback.delivery_id)
+    log.capture("error", "script_error", "new after notice preparation")
+    log.commit_delivery(notice.delivery_id)
+    check("1 new errors and 0 new warnings" in log.take_notification(), "notice/read receipt ordering preserves diagnostics captured after the notice")
+    for i in range(Log.MAX_NOTICE_RANGES + 5):
+        log.capture("error", "script_error", "bounded state error")
+        log.capture("info", "print", "gap")
+    deliver(log, {"severity": "error", "limit": 1})
+    check(log.pending_ranges.error.size() <= Log.MAX_NOTICE_RANGES and log.notification_counts.error >= 5, "bounded tracking forgets acknowledgements conservatively rather than hiding evidence")
+    log.close()
+    Store.new().metadata.delete_game("Exact Delivery")
 
 func emit_records(log, prefix: String) -> void:
     for i in range(30):
@@ -204,6 +255,7 @@ func test_retention_failure_recovery() -> void:
     f.close()
     var reopened = Log.new()
     reopened.start("Diagnostics Recovery", "user://games/Diagnostics Recovery")
+    check(reopened.recovered_sessions == 1, "changed segment size triggers recovery of a closed session")
     var readback = reopened.read({"session_id": recovery.session_id, "raw": true})
     check(readback.ok and has_message(readback, "recover me") and not readback.read_errors.is_empty(), "interrupted JSONL tail reports damage and preserves intact evidence")
     reopened.close()

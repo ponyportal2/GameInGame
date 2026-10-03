@@ -1,0 +1,35 @@
+name: Verify native Windows runtime
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['GameSmith-Windows/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Install pinned Pi
+        run: npm install -g @earendil-works/pi-coding-agent@0.99.2
+      - name: Host, cache, diagnostics and production rename regressions
+        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
+      - name: Native Pi lifecycle and diagnostic delivery
+        run: node tools/testing/run-pi-e2e.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
+      - name: Workspace and model metadata tests
+        run: node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs
