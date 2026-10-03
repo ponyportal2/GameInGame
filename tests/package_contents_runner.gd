@@ -6,7 +6,7 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
-    if not FileAccess.file_exists("res://src/core/runtime_log_reader.gd"):
+    if not ResourceLoader.exists("res://src/core/runtime_log_reader.gd"):
         push_error("FAIL: exported GameSmith.pck is missing the runtime diagnostics reader")
         quit(1)
         return
