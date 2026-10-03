@@ -117,6 +117,10 @@ export default async function (pi: ExtensionAPI) {
     successfulReload = false;
     pendingCodeChanges = false;
     verifierRetries = 0;
+    const diagnostics = await callHost("diagnostic-notice", "diagnostic_notice", {});
+    if (diagnostics?.notice) {
+      return { message: { customType: "gamesmith-diagnostics", content: String(diagnostics.notice), display: false } };
+    }
   });
 
   pi.on("tool_result", async (event) => {
@@ -313,7 +317,7 @@ export default async function (pi: ExtensionAPI) {
     executionMode: "sequential",
     async execute(id, _params, signal) {
       const result = await callHost(id, "reload_game", {}, signal);
-      if (!result?.ok) throw new Error(String(result?.error || "Game reload failed."));
+      if (!result?.ok) throw new Error(JSON.stringify(result));
       return textResult(JSON.stringify(result), result);
     },
   });
@@ -321,13 +325,20 @@ export default async function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "read_runtime_log",
     label: "read_runtime_log",
-    description: "Read the GameSmith generated-game runtime/load log after a failed reload or reported runtime problem.",
+    description: "Read durable per-game runtime diagnostics. Default summarizes errors, warnings and latest load outcome. Use raw=true with cursor=0 for chronological records; next_cursor is exclusive and session-scoped. Reports retention, overflow and persistence failures. session_id selects earlier sessions.",
     promptSnippet: "read_runtime_log: Inspect generated-game load/runtime diagnostics",
-    parameters: Type.Object({}),
+    parameters: Type.Object({
+      session_id: Type.Optional(Type.String()),
+      attempt: Type.Optional(Type.Integer({ minimum: 1 })),
+      severity: Type.Optional(Type.Union([Type.Literal("error"), Type.Literal("warning"), Type.Literal("info")])),
+      cursor: Type.Optional(Type.Integer({ minimum: 0 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+      raw: Type.Optional(Type.Boolean()),
+    }),
     annotations: { readOnlyHint: true, openWorldHint: false },
-    async execute(id, _params, signal) {
-      const result = await callHost(id, "read_runtime_log", {}, signal);
-      if (!result?.ok) throw new Error(String(result?.error || "Could not read runtime log."));
+    async execute(id, params, signal) {
+      const result = await callHost(id, "read_runtime_log", params, signal);
+      if (!result?.ok) throw new Error(JSON.stringify(result));
       return textResult(String(result?.content || JSON.stringify(result)), result);
     },
   });

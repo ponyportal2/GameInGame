@@ -131,11 +131,13 @@ func git_commit(message: String) -> Dictionary: return git.commit(workspace, mes
 
 func reload_game() -> Dictionary:
     if runner == null: return {"ok": false, "error": "Runner unavailable."}
-    return runner.load_game(workspace)
+    var result: Dictionary = runner.load_game(workspace)
+    runner.runtime_log.acknowledge_delivery(result.get("diagnostics", {}).get("records", []))
+    return result
 
-func read_runtime_log() -> Dictionary:
+func read_runtime_log(args: Dictionary = {}) -> Dictionary:
     if runner == null: return {"ok": false, "error": "Runner unavailable."}
-    return {"ok": true, "log": runner.runtime_log.read_text()}
+    return runner.runtime_log.read(args, true)
 
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
@@ -151,7 +153,7 @@ func execute(name: String, args: Dictionary) -> Dictionary:
         "git_log": return git_log(int(args.get("limit", 12)))
         "git_commit": return git_commit(str(args.get("message", "Update generated game")))
         "reload_game": return reload_game()
-        "read_runtime_log": return read_runtime_log()
+        "read_runtime_log": return read_runtime_log(args)
         _: return {"ok": false, "error": "Unknown tool: " + name}
 
 func _path(relative_path: String) -> String:

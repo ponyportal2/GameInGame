@@ -144,6 +144,10 @@ const server = http.createServer((req, res) => {
       return;
     }
     if (model === "pi-gamesmith-cancel") {
+      if (st.calls === 2) {
+        tool(res, model, "diagnostics-read", "read_runtime_log", { severity: "error", raw: true, cursor: 0, limit: 2 });
+        return;
+      }
       answer(res, model, "Resumed after cancellation.");
       return;
     }

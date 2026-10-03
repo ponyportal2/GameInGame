@@ -434,7 +434,9 @@ func _show_library() -> void:
     current_game = ""
     generated_input_states.clear()
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-    if is_instance_valid(runner): runner.queue_free()
+    if is_instance_valid(runner):
+        runner.runtime_log.close()
+        runner.queue_free()
     runner = null
     if is_instance_valid(agent): agent.queue_free()
     agent = null
@@ -464,6 +466,7 @@ func _open_game(name: String) -> void:
     elif bool(git_state.get("recovered", false)):
         AppLoggerScript.game_event(name, "git.recovered", "missing Git metadata was recreated and current workspace captured as baseline", "WARN")
     runner = GameRunnerScript.new(); runner.name = "GeneratedGameRunner"; runner.process_mode = Node.PROCESS_MODE_PAUSABLE; add_child(runner); move_child(runner, 2)
+    runner.runtime_log.start(name, store.game_path(name))
     runner.load_succeeded.connect(_on_load_success)
     runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _toast(msg))
     tools = GameToolsScript.new(store.game_path(name), runner)
@@ -669,13 +672,19 @@ func _rename_game() -> void:
     if current_game == old:
         # Release Pi's cwd and session handles before moving their directories.
         agent.restart_runtime()
+        runner.runtime_log.pause_writer()
     var result: Dictionary = store.rename_game(old, rename_edit.text)
-    if not result.get("ok", false): _toast(str(result.get("error", "Rename failed."))); return
+    if not result.get("ok", false):
+        if current_game == old:
+            runner.runtime_log.rebind(old, store.game_path(old))
+        _toast(str(result.get("error", "Rename failed.")))
+        return
     var new_name = str(result.get("name", old))
     if current_game == old:
         current_game = new_name
         game_title_label.text = current_game
         tools.workspace = store.game_path(current_game)
+        runner.runtime_log.rebind(current_game, tools.workspace)
         agent.configure(current_game, tools)
     else:
         _refresh_library()
@@ -692,6 +701,8 @@ func _delete_game_confirmed() -> void:
     var target = pending_delete
     pending_delete = ""
     if current_game == target:
+        if is_instance_valid(runner):
+            runner.runtime_log.close()
         current_game = ""
     store.delete_game(target)
     _show_library()

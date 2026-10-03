@@ -11,7 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const data = mkdtempSync(join(tmpdir(), "gamesmith-tests-"));
 const env = { ...process.env, APPDATA: data, HOME: data, XDG_DATA_HOME: join(data, "data") };
 console.log(`Test data: ${data}`);
-const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd"];
+const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd"];
 for (const [index, script] of scripts.entries()) {
   const result = spawnSync(resolve(godot), ["--headless", "--path", root,
     "--log-file", join(data, `engine-${index}.log`), "--script", `res://tests/${script}`],

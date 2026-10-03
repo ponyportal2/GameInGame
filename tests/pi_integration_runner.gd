@@ -307,11 +307,16 @@ func _test_real_pi_cancel_and_rename() -> void:
     while not _fake_records("pi-gamesmith-cancel").any(func(record): return record.get("event", "") == "cancelled-connection") and Time.get_ticks_msec() < deadline:
         await process_frame
     assert_true(_fake_records("pi-gamesmith-cancel").any(func(record): return record.get("event", "") == "cancelled-connection"), "Stop terminates the actual provider connection")
+    app.runner.runtime_log.capture("error", "script_error", "Pi diagnostic integration marker")
     app.chat_input.text = "tell me if you can resume"
     app._send_chat()
     var ok = await app.agent.finished
     assert_true(bool(ok), "real Pi resumes its session after cancellation")
     var before = await app.agent.rpc.command({"type": "get_entries"})
+    var entries: Array = before.get("data", {}).get("entries", [])
+    assert_true(entries.any(func(entry): return entry.get("type", "") == "custom_message" and entry.get("customType", "") == "gamesmith-diagnostics" and not bool(entry.get("display", true))), "new diagnostic notice enters Pi as a hidden message")
+    assert_true(entries.any(func(entry): return entry.get("type", "") == "message" and entry.get("message", {}).get("toolName", "") == "read_runtime_log" and "Pi diagnostic integration marker" in JSON.stringify(entry)), "real Pi filtered runtime-log tool receives durable diagnostic evidence")
+    assert_true(app.runner.runtime_log.take_notification() == "", "delivered diagnostic notice is not announced again")
     app.rename_target = created.name
     var new_name = created.name + " Renamed"
     app.rename_edit.text = new_name

@@ -139,6 +139,14 @@ GameSmith logs Pi process lifecycle, retries, tool execution, compaction, stderr
 
 The Pi process owns provider transport and retry behavior. For debugging a game turn, the useful artifacts are the per-game `gamesmith.log`, its Pi session directory, and the generated workspace/Git history. The readable transcript is useful for the player-visible conversation but is not the full provider trace.
 
+Runtime diagnostics live outside the generated workspace and Git, under `user://host/games/<game>/runtime/`. Each game open creates a timestamped session containing `session.json` and rotating `events-0001.jsonl` segments; the game-level `retention.json` records retained/expired sessions. Rename closes the writer before moving metadata, then continues the same session at its new path. Closing and reopening starts a new session.
+
+Each captured error, warning, print, or host load event has a UTC timestamp with milliseconds, elapsed time, capture sequence, phase, evaluating attempt, active attempt, and origin/attribution when known. Every load attempt gets an ID before compilation, including failed loads and snapshot fallback. Unknown message origins stay unknown. Godot supplies file/line and available stack frames; local variables and live game state are not captured. Startup acceptance policy is unchanged.
+
+`read_runtime_log()` summarizes important diagnostics and the latest attempt outcome. Optional `session_id`, `attempt`, `severity`, `limit`, `raw`, and exclusive `cursor` parameters expose earlier sessions and chronological pages. Begin raw pagination with `cursor=0`; continue using `next_cursor` in the same session. Expired cursors fail explicitly. The full response is bounded to 12,000 characters; raw files retain individual occurrences, while summaries group repetitions. Reload results include attempt diagnostics, and the next player turn receives a hidden notice of new errors/warnings not already delivered. Filtered reads never acknowledge omitted diagnostics. Ordinary prints do not trigger notices.
+
+Defaults are 256 KiB segments, 8 MiB per session, 32 MiB per game, 64 indexed sessions, and a 1,024-record capture queue. A background writer batches writes; callbacks do no disk I/O. Queue pressure discards ordinary output first. Retention expiration, queue overflow, and failed writes are reported separately, with bounded recent loss ranges and lifetime totals. Messages over 4,096 characters and traces over 32 frames are explicitly marked truncated. Previous session segments are scanned on reopen to recover evidence beyond a stale index; damaged JSONL records are reported. A hard crash can still lose buffered records, and a frozen main thread remains outside this diagnostics system's scope.
+
 ## Verification
 
 Fast host/core/UI suite:
@@ -147,7 +155,7 @@ Fast host/core/UI suite:
 ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
 ```
 
-Portable host and reliability suites with isolated application data (Windows or Linux):
+Portable host, reliability, and diagnostics suites with isolated application data (Windows or Linux):
 
 ```bash
 node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe

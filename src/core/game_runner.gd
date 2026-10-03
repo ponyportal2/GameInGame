@@ -9,29 +9,17 @@ var active_source_path = ""
 var runtime_log = RuntimeLog.new()
 var dependency_paths: Array[String] = []
 
-class StartupErrors:
-    extends Logger
-    var errors: Array[String] = []
-    var mutex = Mutex.new()
-    func _log_error(_function: String, file: String, line: int, code: String, rationale: String, _editor_notify: bool, error_type: int, _backtraces: Array[ScriptBacktrace]) -> void:
-        if error_type == Logger.ERROR_TYPE_WARNING:
-            return
-        mutex.lock()
-        errors.append("%s:%d: %s" % [file, line, rationale if rationale != "" else code])
-        mutex.unlock()
-    func message() -> String:
-        mutex.lock()
-        var result = "\n".join(errors)
-        mutex.unlock()
-        return result
+func _exit_tree() -> void:
+    runtime_log.close()
 
 func load_game(workspace: String) -> Dictionary:
+    if runtime_log.session_id == "":
+        runtime_log.start(workspace.get_file(), workspace)
+    runtime_log.begin_attempt(workspace)
     var main_path = workspace.path_join("main.gd")
     if not FileAccess.file_exists(main_path):
         var msg = "No main.gd exists yet. Ask the agent to create the game first."
-        runtime_log.add("load", msg)
-        load_failed.emit(msg)
-        return {"ok": false, "error": msg}
+        return _reject("load", msg)
 
     # Install fresh dependency resources without mutating scripts used by the
     # active game. On rejection, restore the old resource cache as well as the game.
@@ -55,25 +43,23 @@ func load_game(workspace: String) -> Dictionary:
         dependency.take_over_path(path)
         dependencies.append(dependency)
 
-    var startup_errors = StartupErrors.new()
-    OS.add_logger(startup_errors)
     for dependency in dependencies:
         if dependency.reload() != OK:
             break
     var source = FileAccess.get_file_as_string(main_path)
     var script = GDScript.new()
     script.resource_path = "%s#candidate-%d" % [main_path, Time.get_ticks_usec()]
+    runtime_log.set_candidate_path(script.resource_path)
     script.source_code = source
     var compile_error = script.reload()
-    if compile_error != OK or startup_errors.message() != "":
-        OS.remove_logger(startup_errors)
+    if compile_error != OK or runtime_log.startup_message() != "":
         _restore_cache(previous, dependencies)
-        return _reject("compile", "Game failed to compile. Previous game kept running.\n" + startup_errors.message())
+        return _reject("compile", "Game failed to compile. Previous game kept running.\n" + runtime_log.startup_message())
 
     var previous_mouse_mode = Input.mouse_mode
+    runtime_log.set_phase("startup")
     var candidate = script.new()
     if candidate == null or not (candidate is Node):
-        OS.remove_logger(startup_errors)
         if candidate is Object and not candidate is RefCounted:
             candidate.free()
         _restore_cache(previous, dependencies)
@@ -83,15 +69,14 @@ func load_game(workspace: String) -> Dictionary:
     # _enter_tree/_ready run synchronously. Keep the active game until startup
     # completes, and reject candidates that logged script/runtime errors.
     add_child(candidate)
-    OS.remove_logger(startup_errors)
-    if startup_errors.message() != "" or not is_instance_valid(candidate) or candidate.is_queued_for_deletion():
+    if runtime_log.startup_message() != "" or not is_instance_valid(candidate) or candidate.is_queued_for_deletion():
         if is_instance_valid(candidate):
             if candidate.get_parent() == self:
                 remove_child(candidate)
             candidate.queue_free()
         Input.mouse_mode = previous_mouse_mode
         _restore_cache(previous, dependencies)
-        return _reject("startup", "Game failed during startup. Previous game kept running.\n" + startup_errors.message())
+        return _reject("startup", "Game failed during startup. Previous game kept running.\n" + runtime_log.startup_message())
 
     if is_instance_valid(active_game):
         active_game.get_parent().remove_child(active_game)
@@ -99,15 +84,17 @@ func load_game(workspace: String) -> Dictionary:
     active_game = candidate
     active_source_path = main_path
     dependency_paths = paths
-    var version = runtime_log.next_version()
-    runtime_log.add("load", "Loaded %s" % main_path)
+    var result = runtime_log.finish_attempt(true, "load", "Loaded %s" % main_path)
+    var version = runtime_log.load_version
     load_succeeded.emit(version)
-    return {"ok": true, "version": version}
+    result.merge({"ok": true, "version": version})
+    return result
 
 func _reject(kind: String, message: String) -> Dictionary:
-    runtime_log.add(kind, message)
+    var result = runtime_log.finish_attempt(false, kind, message)
     load_failed.emit(message)
-    return {"ok": false, "error": message}
+    result.merge({"ok": false, "error": message})
+    return result
 
 func _restore_cache(previous: Dictionary, dependencies: Array[GDScript]) -> void:
     for dependency in dependencies:
