@@ -1,6 +1,8 @@
 class_name GameRunner
 extends Node
 
+const ScriptLoadPolicy = preload("res://src/core/script_load_policy.gd")
+
 signal load_succeeded(version: int)
 signal load_failed(message: String)
 
@@ -27,6 +29,11 @@ func load_game(workspace: String) -> Dictionary:
     # active game. On rejection, restore the old resource cache as well as the game.
     var paths: Array[String] = []
     _collect_scripts(workspace, paths)
+    for path in paths:
+        var violation = ScriptLoadPolicy.first_violation(FileAccess.get_file_as_string(path))
+        if not violation.is_empty():
+            runtime_log.capture("error", "script_load_policy", violation.message, path, int(violation.line), [], "", false, "host_event", runtime_log.attempt_id)
+            return _reject("policy", "%s:%d: %s Previous game kept running." % [path, int(violation.line), violation.message])
     paths.erase(main_path)
     var previous: Dictionary = {}
     for path in dependency_paths + paths:
@@ -35,7 +42,7 @@ func load_game(workspace: String) -> Dictionary:
             if previous[path] != null:
                 previous[path].resource_path = ""
     # Leave these paths uncached. Godot loads/compiles only dependencies the
-    # candidate actually requests, including preload, extends and dynamic load.
+    # candidate actually requests through preload or script inheritance.
     var source = FileAccess.get_file_as_string(main_path)
     var script = GDScript.new()
     script.resource_path = "%s#candidate-%d" % [main_path, Time.get_ticks_usec()]
@@ -95,8 +102,8 @@ func _restore_cache(previous: Dictionary) -> void:
     for path in previous:
         if previous[path] != null:
             previous[path].take_over_path(path)
-    # Godot's resource cache does not keep resources alive. Dynamic load() calls
-    # in the old game need these restored scripts after this function returns.
+    # Godot's resource cache does not keep resources alive. Retain restored
+    # resources until the accepted game is replaced or unloaded.
     restored_dependencies.clear()
     if is_instance_valid(active_game):
         for path in previous:
@@ -108,7 +115,7 @@ func _collect_scripts(directory: String, paths: Array[String]) -> void:
     if dir == null:
         return
     for file in dir.get_files():
-        if file.get_extension() == "gd":
+        if file.get_extension().to_lower() == "gd":
             paths.append(directory.path_join(file))
     for child in dir.get_directories():
         if child not in [".git", ".godot"] and not dir.is_link(child):

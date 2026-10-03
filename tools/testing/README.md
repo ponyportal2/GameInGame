@@ -14,7 +14,15 @@ node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tes
 node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
 ```
 
-The usual host tests include `cache_regression_runner.gd`, covering changed dependencies, nested/shared preloads, repeated edits, dynamic loads after rejected reloads, retained-resource cleanup and unused broken helpers. The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
+The usual host tests include `cache_regression_runner.gd` and `cache_edge_regression_runner.gd`, covering changed dependencies, nested/shared preloads, repeated edits, first helper instantiation after rejected reloads, inheritance rollback, rejected-candidate cache cleanup, retained-resource cleanup and unused broken helpers. The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
+
+## Generated script loading policy
+
+Helper scripts must use `preload()` or script inheritance. Before touching the dependency cache, each load/reload checks all workspace `.gd` files (excluding `.git` and `.godot`) for direct runtime script loading calls and reports the offending file and line. A rejection keeps the accepted game and its preloaded dependencies intact. Comments and strings containing example code are ignored.
+
+Lazy assets remain supported: `load("texture.png")` or, for computed paths, `ResourceLoader.load(path, "Texture2D")` with an explicit non-script resource type. Computed paths, UID paths and extensionless paths require that explicit type because they could identify a script. This static convention check is not containment; indirect calls and script dependencies embedded in lazily loaded scene/resource assets are outside its guarantees.
+
+`script_load_policy_runner.gd` tests the scanner, file/line reporting, nested unused scripts, metadata exclusions, cache preservation, corrected reloads and model instructions. Both cache suites and the policy suite run in the usual portable and Linux verification commands.
 
 The workflow performs, in order:
 

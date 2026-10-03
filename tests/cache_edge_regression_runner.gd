@@ -75,18 +75,20 @@ func test_never_loaded_dynamic_dependency_after_rejection() -> void:
     write_text(helper, "extends RefCounted\nfunc value(): return 12\n")
     write_text(main, "extends Node\nfunc probe():\n    var H = load('%s')\n    return H.new().value()\n" % helper)
     var runner = new_runner()
-    check(runner.load_game(ws).ok, "accepted game can contain a dynamic dependency that has not been loaded yet")
-    check(ResourceLoader.get_cached_ref(helper) == null, "late dynamic dependency is not cached before first probe")
+    var lazy = runner.load_game(ws)
+    check(not lazy.ok and "preload()" in lazy.error, "late runtime script loading is rejected before game acceptance")
+    check(ResourceLoader.get_cached_ref(helper) == null, "policy rejection does not compile or cache the lazy dependency")
+    write_text(main, "extends Node\nconst H = preload('%s')\nfunc probe(): return H.new().value()\n" % helper)
+    check(runner.load_game(ws).ok, "preloaded helper is accepted even before its first instance is created")
     var old_game = runner.active_game
 
-    # RED: the edited helper was never cached by the accepted game, so rollback has
-    # no old Resource to restore. The preserved old game must not start executing
-    # source that belonged only to the rejected workspace state.
+    # The former RED case is prevented by rejecting lazy script loading. The
+    # accepted preload-only version retains the original helper before first use.
     write_text(helper, "extends RefCounted\nfunc value(): return 99\n")
     write_text(main, "extends Node\nfunc broken(:\n")
     var rejected = runner.load_game(ws)
     check(not rejected.ok and runner.active_game == old_game, "unrelated compile failure preserves the previous active game")
-    check(old_game.probe() == 12, "rejected reload preserves never-before-loaded dynamic dependency semantics")
+    check(old_game.probe() == 12, "first helper instance after a rejected reload still uses accepted code")
 
     await dispose_runner(runner)
     remove_tree(ws)
@@ -124,7 +126,7 @@ func test_rejected_candidate_does_not_pollute_new_dependency_cache() -> void:
     check(runner.load_game(ws).ok and runner.active_game.answer == 1, "new-dependency pollution fixture starts cleanly")
 
     write_text(new_dependency, "extends RefCounted\nfunc value(): return 77\n")
-    write_text(main, "extends Node\nfunc _ready():\n    var H = load('%s')\n    var values = []\n    print(values[123])\n" % new_dependency)
+    write_text(main, "extends Node\nconst H = preload('%s')\nfunc _ready():\n    var values = []\n    print(values[123])\n" % new_dependency)
     var rejected = runner.load_game(ws)
     check(not rejected.ok, "candidate that loaded a brand-new dependency can still be rejected during startup")
     check(ResourceLoader.get_cached_ref(new_dependency) == null, "rejected candidate removes its brand-new dependency from ResourceLoader cache")

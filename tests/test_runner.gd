@@ -219,7 +219,7 @@ func _test_runner_multifile_and_failed_candidate() -> void:
     var dir = "user://games/runtime-test"
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
     _write(dir.path_join("helper.gd"), "extends RefCounted\nfunc value(): return 41\n")
-    _write(dir.path_join("main.gd"), "extends Node\nvar answer = 0\nfunc _ready():\n    var H = load(get_script().resource_path.get_base_dir() + '/helper.gd')\n    answer = H.new().value() + 1\n")
+    _write(dir.path_join("main.gd"), "extends Node\nconst H = preload('helper.gd')\nvar answer = 0\nfunc _ready(): answer = H.new().value() + 1\n")
     var runner = GameRunnerScript.new(); root.add_child(runner)
     var good: Dictionary = runner.load_game(dir)
     await process_frame

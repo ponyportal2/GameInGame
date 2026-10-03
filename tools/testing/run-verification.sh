@@ -21,6 +21,8 @@ HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://test
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/reliability_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/diagnostics_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/cache_regression_runner.gd
+HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/cache_edge_regression_runner.gd
+HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/script_load_policy_runner.gd
 node --test "$ROOT/tests/workspace-paths.test.mjs" "$ROOT/tests/model-capabilities.test.mjs" "$ROOT/tests/diagnostic-delivery.test.mjs"
 if command -v xvfb-run >/dev/null 2>&1; then
   mkdir -p "$TMP/windowed-home"

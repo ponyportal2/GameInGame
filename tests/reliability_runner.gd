@@ -104,7 +104,7 @@ func test_startup_and_dependencies() -> void:
     var main = created.path.path_join("main.gd")
     var helper = created.path.path_join("helper.gd")
     put(helper, "extends RefCounted\nfunc value(): return 41\n")
-    var source = "extends Node\nvar answer = 0\nfunc _ready():\n    var H = load(get_script().resource_path.get_base_dir() + '/helper.gd')\n    answer = H.new().value()\n"
+    var source = "extends Node\nconst H = preload('helper.gd')\nvar answer = 0\nfunc _ready(): answer = H.new().value()\n"
     put(main, source)
     put(created.path.path_join("unused-draft.gd"), "extends Node\nfunc broken(:\n")
     var runner = Runner.new()
