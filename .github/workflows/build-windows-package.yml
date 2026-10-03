@@ -1,10 +1,11 @@
 name: Build Windows folder
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'GameSmith-Windows/**'
+  # Automatic CI is temporarily disabled. Uncomment to re-enable it.
+  # push:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - 'GameSmith-Windows/**'
   workflow_dispatch:
 
 permissions:
