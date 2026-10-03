@@ -58,6 +58,8 @@ var stop_button: Button
 var rename_button: Button
 var run_game_button: Button
 var reload_game_buttons: Array[Button] = []
+var execution_status_labels: Array[Label] = []
+var running_source_status := "Running workspace"
 var reload_notice: Label
 var approve_reload_button: Button
 var game_override_provider: OptionButton
@@ -138,9 +140,11 @@ func _build_play_hud() -> void:
     var spacer = Control.new(); spacer.custom_minimum_size.x = 12; top.add_child(spacer)
     var chat_btn = Button.new(); chat_btn.text = "Chat  F1"; chat_btn.mouse_filter = Control.MOUSE_FILTER_STOP; chat_btn.pressed.connect(func(): _set_chat_visible(true)); top.add_child(chat_btn)
     _add_reload_button(top)
+    var execution_status = _add_execution_status(play_hud)
+    execution_status.position = Vector2(20, 54)
     reload_notice = Label.new()
     reload_notice.text = "Agent wants to reload. Shift+F5 to approve, or F1 for chat."
-    reload_notice.position = Vector2(20, 58)
+    reload_notice.position = Vector2(20, 80)
     reload_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
     reload_notice.add_theme_color_override("font_color", Color("e5b978"))
     reload_notice.visible = false
@@ -164,6 +168,7 @@ func _build_chat() -> void:
     var game_controls = HBoxContainer.new(); game_controls.add_theme_constant_override("separation", 10); box.add_child(game_controls)
     run_game_button = Button.new(); run_game_button.text = "Run Game"; run_game_button.pressed.connect(_run_game); game_controls.add_child(run_game_button)
     _add_reload_button(game_controls)
+    _add_execution_status(game_controls)
     approve_reload_button = Button.new()
     approve_reload_button.text = "Allow Reload  Shift+F5"
     approve_reload_button.visible = false
@@ -188,8 +193,31 @@ func _add_reload_button(parent: Control) -> void:
     parent.add_child(button)
     reload_game_buttons.append(button)
 
+func _add_execution_status(parent: Control) -> Label:
+    var label = Label.new()
+    label.text = "Not running"
+    label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    label.add_theme_color_override("font_color", Color("8393b2"))
+    parent.add_child(label)
+    execution_status_labels.append(label)
+    return label
+
+func _has_runnable_game() -> bool:
+    return current_game != "" and (FileAccess.file_exists(store.game_path(current_game).path_join("main.gd")) or store.has_working_snapshot(current_game))
+
+func _update_execution_status() -> void:
+    var text = "Not running"
+    if is_instance_valid(runner) and runner.has_active_game():
+        text = running_source_status
+    for label in execution_status_labels:
+        label.text = text
+
 func _run_game() -> void:
-    if not is_instance_valid(runner) or (is_instance_valid(agent) and agent.busy):
+    if not is_instance_valid(runner) or runner.has_active_game() or (is_instance_valid(agent) and agent.busy):
+        return
+    if not _has_runnable_game():
+        _set_chat_busy_controls(false)
+        _toast("No game to run yet. Ask the agent to create main.gd.")
         return
     var result: Dictionary = runner.load_game(store.game_path(current_game))
     if not result.ok and not runner.has_active_game() and store.has_working_snapshot(current_game):
@@ -552,6 +580,7 @@ func _open_game(name: String) -> void:
 
 func _on_load_success(_version: int) -> void:
     if current_game != "":
+        running_source_status = "Running workspace" if runner.active_source_path == store.game_path(current_game).path_join("main.gd") else "Running last working snapshot"
         _reserve_host_canvas_layers()
         # A fallback load must preserve the snapshot that rescued this game.
         if runner.active_source_path == store.game_path(current_game).path_join("main.gd"):
@@ -600,9 +629,10 @@ func _set_chat_busy_controls(is_busy: bool) -> void:
     if is_instance_valid(rename_button):
         rename_button.disabled = is_busy
     if is_instance_valid(run_game_button):
-        run_game_button.disabled = is_busy or not is_instance_valid(runner) or runner.has_active_game()
+        run_game_button.disabled = is_busy or not is_instance_valid(runner) or runner.has_active_game() or not _has_runnable_game()
     for button in reload_game_buttons:
         button.disabled = is_busy or not is_instance_valid(runner) or not runner.has_active_game()
+    _update_execution_status()
     if not is_busy and chat_overlay.visible and not settings_dialog.visible and is_instance_valid(chat_input):
         chat_input.grab_focus()
 

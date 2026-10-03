@@ -20,6 +20,8 @@ The usual host tests include `cache_regression_runner.gd` and `cache_edge_regres
 
 The reliability suite also checks chat-first opening without executing crash-prone code, idle-only manual Run/Reload controls, and agent-triggered startup from chat.
 
+Run availability checks include empty workspaces, completion without creating `main.gd`, deletion after button enabling, and snapshot-only recovery. Execution status checks cover fallback/workspace transitions, failed reloads, and reopening without execution.
+
 Agent reload approval regressions cover deferred bridge responses, continued gameplay and mouse ownership, Shift+F5 and chat-button approval, one approval per request, failed candidates and Stop cancellation. Real Pi acceptance verifies that generation/edit reloads wait for approval before the tool returns; other test turns explicitly approve through the same controller method.
 
 Helper scripts must use `preload()` or script inheritance. Before touching the dependency cache, each load/reload checks all workspace `.gd` files (excluding `.git` and `.godot`) for direct runtime script loading calls and reports the offending file and line. A rejection keeps the accepted game and its preloaded dependencies intact. Comments and strings containing example code are ignored.

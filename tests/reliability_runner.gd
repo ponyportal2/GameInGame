@@ -57,6 +57,7 @@ func put(path: String, text: String) -> void:
     file.close()
 
 func run() -> void:
+    await test_empty_run_state()
     await test_manual_execution()
     await test_reload_approval()
     await test_fallback()
@@ -67,6 +68,50 @@ func run() -> void:
     await test_capabilities()
     print("RELIABILITY TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
+
+func test_empty_run_state() -> void:
+    var store = Store.new()
+    var created = store.create_game("Empty Run Regression")
+    var main = created.path.path_join("main.gd")
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app._open_game(created.name)
+    check(app.run_game_button.disabled and app.execution_status_labels.all(func(label): return label.text == "Not running"), "empty workspace disables Run and shows Not running in chat and HUD")
+    app._run_game()
+    check(app.runner.runtime_log.attempt_id == 0, "empty Run handler rechecks availability without attempting a load")
+    app.agent.busy = true
+    app._set_chat_busy_controls(true)
+    app.agent.busy = false
+    app._on_agent_finished(true)
+    check(app.run_game_button.disabled, "agent completion without main.gd leaves Run disabled")
+    put(main, "extends Node\nvar answer = 1\n")
+    app._on_agent_finished(true)
+    check(not app.run_game_button.disabled, "agent completion after creating main.gd enables Run")
+    DirAccess.remove_absolute(ProjectSettings.globalize_path(main))
+    app._run_game()
+    check(app.run_game_button.disabled and app.runner.runtime_log.attempt_id == 0, "Run handler rejects a file deleted after controls were enabled")
+    put(main, "extends Node\nvar answer = 1\n")
+    check(store.save_working_snapshot(created.name), "creates snapshot-only Run fixture")
+    DirAccess.remove_absolute(ProjectSettings.globalize_path(main))
+    app._on_agent_finished(true)
+    check(not app.run_game_button.disabled, "working snapshot enables Run when workspace main.gd is missing")
+    app._run_game()
+    check(app.runner.has_active_game() and app.execution_status_labels.all(func(label): return label.text == "Running last working snapshot"), "snapshot-only Run succeeds and persistently identifies fallback source")
+    put(main, "extends Node\nvar answer = 2\n")
+    app._reload_game()
+    check(app.runner.active_game.answer == 2 and app.execution_status_labels.all(func(label): return label.text == "Running workspace"), "workspace reload replaces fallback source status")
+    put(main, "extends Node\nfunc broken(:\n")
+    app._reload_game()
+    check(app.runner.active_game.answer == 2 and app.execution_status_labels.all(func(label): return label.text == "Running workspace"), "failed reload retains the actual running source status")
+    app._show_library()
+    await process_frame
+    app._open_game(created.name)
+    check(app.execution_status_labels.all(func(label): return label.text == "Not running"), "reopening resets execution status without running code")
+    app._show_library()
+    app.queue_free()
+    await process_frame
+    store.delete_game(created.name)
 
 func test_manual_execution() -> void:
     var store = Store.new()
