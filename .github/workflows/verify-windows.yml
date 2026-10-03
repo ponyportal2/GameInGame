@@ -26,10 +26,10 @@ jobs:
         with:
           node-version: '22.19.0'
       - name: Install pinned Pi
-        run: npm install -g @earendil-works/pi-coding-agent@0.99.2
+        run: npm install -g @earendil-works/pi-coding-agent@1.0.0
       - name: Host, cache, diagnostics and production rename regressions
         run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
       - name: Native Pi lifecycle and diagnostic delivery
         run: node tools/testing/run-pi-e2e.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
       - name: Workspace and model metadata tests
-        run: node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs
+        run: node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs

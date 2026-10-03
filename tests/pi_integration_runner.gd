@@ -163,6 +163,9 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     var main = FileAccess.get_file_as_string(created.path.path_join("main.gd"))
     assert_true("var speed := 200.0" in main, "Pi built-in write created main.gd")
     assert_true(runner.has_active_game(), "Pi custom reload_game round-tripped into GameRunner")
+    var delivered_entries = await agent.rpc.command({"type": "get_entries"})
+    assert_true(delivered_entries.get("data", {}).get("entries", []).any(func(entry): return entry.get("type", "") == "message" and entry.get("message", {}).get("toolName", "") == "reload_game" and "reload delivery integration marker" in JSON.stringify(entry)), "reload diagnostics are persisted in Pi's tool result")
+    assert_true(runner.runtime_log.take_notification() == "", "persisted reload diagnostics are acknowledged at the session boundary")
     assert_true(tool_events.any(func(v): return "write" in v), "real Pi tool events reach GameSmith")
     assert_true(tool_events.any(func(v): return "reload_game" in v), "custom GameSmith tool event reaches UI stream")
     assert_true(str(streamed.text).contains("Built the initial"), "real Pi text deltas stream to GameSmith")
@@ -520,7 +523,7 @@ func _test_pi_binary_discovery_modes() -> void:
 
 func _test_windows_pi_install_guidance() -> void:
     var readme = FileAccess.get_file_as_string("res://GameSmith-Windows/README.txt")
-    assert_true("npm install -g @earendil-works/pi-coding-agent@0.99.2" in readme, "Windows README gives the pinned global Pi install command")
+    assert_true("npm install -g @earendil-works/pi-coding-agent@1.0.0" in readme, "Windows README gives the pinned global Pi install command")
     assert_true("GAMESMITH_PI_BIN" in readme, "Windows README documents the explicit Pi executable override")
 
 func _fake_records(model: String) -> Array:

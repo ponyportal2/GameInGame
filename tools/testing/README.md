@@ -10,7 +10,7 @@ For Windows or Linux, the portable runners isolate application data under a temp
 
 ```bash
 node tools/testing/run-host-tests.mjs /path/to/godot
-node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs
+node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs
 node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
 ```
 
@@ -29,7 +29,9 @@ The workflow performs, in order:
 
 `run-pi-e2e.sh` starts `../fake-openai-endpoint/pi-server.mjs` and drives the actual globally installed `pi` executable over GameSmith's production JSONL RPC path. The deterministic server speaks streaming OpenAI-compatible `/v1/chat/completions` and requires only Node's standard library.
 
-CI pins `@earendil-works/pi-coding-agent@0.99.2`. For local runs you may point GameSmith at another explicit Pi executable with `GAMESMITH_PI_BIN`.
+CI pins `@earendil-works/pi-coding-agent@1.0.0`. Pi 1.0.0 is the supported integration baseline; older releases are not supported. For local runs you may point GameSmith at another explicit Pi executable with `GAMESMITH_PI_BIN`.
+
+The portable host runner imports the project with the headless editor before launching suites, using the same isolated application data. Diagnostic delivery tests verify that receipts remain pending until an exact tool result or hidden notice appears in the current Pi session branch, including errors, altered responses, branch changes and bounded receipt eviction.
 
 The release gate runs the Pi suite once with no phase selector:
 

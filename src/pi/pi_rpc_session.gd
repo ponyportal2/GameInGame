@@ -191,12 +191,12 @@ func _check_pi_available() -> Dictionary:
         if configured.contains("/") or configured.contains("\\"):
             if FileAccess.file_exists(configured):
                 return {"ok": true}
-            return {"ok": false, "error": "Configured Pi executable does not exist: %s. Set GAMESMITH_PI_BIN to a valid executable, or install with: npm install -g @earendil-works/pi-coding-agent@0.99.2" % configured}
+            return {"ok": false, "error": "Configured Pi executable does not exist: %s. Set GAMESMITH_PI_BIN to a valid executable, or install with: npm install -g @earendil-works/pi-coding-agent@1.0.0" % configured}
         var configured_out: Array = []
         var configured_code = OS.execute("/bin/sh", PackedStringArray(["-lc", "command -v " + configured]), configured_out, true) if OS.get_name() != "Windows" else OS.execute("cmd.exe", PackedStringArray(["/D", "/S", "/C", "where " + configured]), configured_out, true)
         if configured_code == 0:
             return {"ok": true}
-        return {"ok": false, "error": "Configured Pi command was not found on PATH: %s. Set GAMESMITH_PI_BIN to a valid command, or install with: npm install -g @earendil-works/pi-coding-agent@0.99.2" % configured}
+        return {"ok": false, "error": "Configured Pi command was not found on PATH: %s. Set GAMESMITH_PI_BIN to a valid command, or install with: npm install -g @earendil-works/pi-coding-agent@1.0.0" % configured}
 
     var output: Array = []
     var code: int
@@ -206,7 +206,7 @@ func _check_pi_available() -> Dictionary:
         code = OS.execute("/bin/sh", PackedStringArray(["-lc", "command -v pi"]), output, true)
     if code == 0:
         return {"ok": true}
-    return {"ok": false, "error": "Global Pi executable was not found on PATH. Install with: npm install -g @earendil-works/pi-coding-agent@0.99.2. If Pi is installed elsewhere, set GAMESMITH_PI_BIN."}
+    return {"ok": false, "error": "Global Pi executable was not found on PATH. Install with: npm install -g @earendil-works/pi-coding-agent@1.0.0. If Pi is installed elsewhere, set GAMESMITH_PI_BIN."}
 
 func _command_line(config: Dictionary) -> String:
     var pi_bin = OS.get_environment("GAMESMITH_PI_BIN").strip_edges()

@@ -41,7 +41,7 @@ added beside that upstream source for deterministic real-Pi acceptance tests.
 
 Production GameSmith integrates with a globally installed Pi coding agent rather
 than shipping a separate homegrown provider/agent/compaction implementation.
-The verification target is `@earendil-works/pi-coding-agent@0.99.2`, licensed MIT.
+The verification target is `@earendil-works/pi-coding-agent@1.0.0`, licensed MIT.
 GameSmith supplies its own extension and host bridge, while Pi owns generic agent
 history, streaming, retries, coding tools, provider calls, persistence, and compaction.
 

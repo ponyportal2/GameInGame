@@ -88,9 +88,9 @@ func resolvePiExecutable(configured string, lookPath func(string) (string, error
 		return resolved, nil
 	}
 	if strings.TrimSpace(configured) != "" {
-		return "", fmt.Errorf("GAMESMITH_PI_BIN could not be resolved: %s\n\nSet it to a valid Pi executable, or install the pinned Pi build with:\n\nnpm install -g @earendil-works/pi-coding-agent@0.99.2", configured)
+		return "", fmt.Errorf("GAMESMITH_PI_BIN could not be resolved: %s\n\nSet it to a valid Pi executable, or install the pinned Pi build with:\n\nnpm install -g @earendil-works/pi-coding-agent@1.0.0", configured)
 	}
-	return "", errors.New("Install the pinned Pi coding agent with:\n\nnpm install -g @earendil-works/pi-coding-agent@0.99.2\n\nThen restart GameSmith. If Pi is installed outside PATH, set GAMESMITH_PI_BIN to the Pi executable.")
+	return "", errors.New("Install the pinned Pi coding agent with:\n\nnpm install -g @earendil-works/pi-coding-agent@1.0.0\n\nThen restart GameSmith. If Pi is installed outside PATH, set GAMESMITH_PI_BIN to the Pi executable.")
 }
 
 func ensureRuntime(ctx context.Context, runtimeDir string, cfg runtimeConfig) (string, error) {

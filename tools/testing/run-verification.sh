@@ -20,7 +20,7 @@ HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --editor --quit >/d
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/test_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/reliability_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/diagnostics_runner.gd
-node --test "$ROOT/tests/workspace-paths.test.mjs" "$ROOT/tests/model-capabilities.test.mjs"
+node --test "$ROOT/tests/workspace-paths.test.mjs" "$ROOT/tests/model-capabilities.test.mjs" "$ROOT/tests/diagnostic-delivery.test.mjs"
 if command -v xvfb-run >/dev/null 2>&1; then
   mkdir -p "$TMP/windowed-home"
   xvfb-run -a env HOME="$TMP/windowed-home" GODOT_SILENCE_ROOT_WARNING=1 \

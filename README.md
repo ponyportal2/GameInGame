@@ -2,7 +2,7 @@
 
 GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Production agent behavior is provided by a globally installed **Pi coding agent** process; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls.
 
-The integration/test target is `@earendil-works/pi-coding-agent@0.99.2`.
+The integration/test target is `@earendil-works/pi-coding-agent@1.0.0`.
 
 ## Windows
 
@@ -23,7 +23,7 @@ Clone/download the repository, open `GameSmith-Windows`, and double-click **`Gam
 GameSmith also expects a global `pi` executable. Install the pinned build with:
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent@0.99.2
+npm install -g @earendil-works/pi-coding-agent@1.0.0
 ```
 
 On Windows, `GameSmith.exe` checks for Pi at startup. If Pi is missing, it shows a non-blocking warning with this install command and still opens GameSmith; chat build/edit becomes available after Pi is installed and GameSmith is restarted. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).

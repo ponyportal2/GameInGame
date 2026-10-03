@@ -6,6 +6,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { workspacePath } from "./workspace-paths.mjs";
 import { modelCapabilities } from "./model-capabilities.mjs";
+import { DiagnosticDelivery } from "./diagnostic-delivery.mjs";
 
 const execFileAsync = promisify(execFile);
 const bridgeDir = process.env.GAMESMITH_HOST_BRIDGE_DIR || "";
@@ -60,10 +61,6 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
       // Host has not answered yet.
     }
     if (result !== undefined) {
-      if (result.delivery_id) {
-        await callHost(toolCallId + "-receipt", "diagnostic_delivery", { delivery_id: result.delivery_id }, signal);
-        delete result.delivery_id;
-      }
       return result;
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
@@ -76,17 +73,16 @@ function mutationPath(event: any): string {
 }
 
 export default async function (pi: ExtensionAPI) {
+  const delivery = new DiagnosticDelivery();
+  const confirmDelivery = (ctx: any) => delivery.confirm(ctx.sessionManager,
+    (id: string) => callHost("diagnostic-receipt", "diagnostic_delivery", { delivery_id: id }));
   if (process.env.GAMESMITH_MODEL_PROVIDER !== "openai_subscription") {
     let lookup = () => undefined;
     try {
       const catalog = await import("@earendil-works/pi-ai/providers/all");
       lookup = (provider, id) => catalog.getBuiltinModel(provider, id);
     } catch {
-      // Older Pi releases expose their built-in catalog on the main module.
-      try {
-        const catalog = await import("@earendil-works/pi-ai");
-        if (typeof catalog.getModel === "function") lookup = (provider, id) => catalog.getModel(provider, id);
-      } catch { /* Retain explicit conservative budgets. */ }
+      // An unavailable catalog leaves explicit conservative budgets.
     }
     const config = JSON.parse(await readFile(join(process.env.PI_CODING_AGENT_DIR!, "models.json"), "utf8"));
     const provider = config.providers.gamesmith;
@@ -127,6 +123,7 @@ export default async function (pi: ExtensionAPI) {
     verifierRetries = 0;
     const diagnostics = await callHost("diagnostic-notice", "diagnostic_notice", {});
     if (diagnostics?.notice) {
+      delivery.retain(diagnostics, ctx.sessionManager, { customType: "gamesmith-diagnostics" }, String(diagnostics.notice));
       return { message: { customType: "gamesmith-diagnostics", content: String(diagnostics.notice), display: false } };
     }
   });
@@ -148,7 +145,8 @@ export default async function (pi: ExtensionAPI) {
 
   let lastProviderResponseAt = 0;
 
-  pi.on("before_provider_request", async () => {
+  pi.on("before_provider_request", async (_event, ctx) => {
+    await confirmDelivery(ctx);
     if (delayMs <= 0 || lastProviderResponseAt <= 0) return;
     const remaining = delayMs - (Date.now() - lastProviderResponseAt);
     if (remaining > 0) {
@@ -161,6 +159,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_before_settle", async (_event, ctx) => {
+    await confirmDelivery(ctx);
     const hasMain = await stat(join(ctx.cwd, "main.gd")).then(() => true).catch(() => false);
     let reason = "";
     if (startedWithoutMain && !hasMain) reason = "new game still has no main.gd";
@@ -323,8 +322,11 @@ export default async function (pi: ExtensionAPI) {
     parameters: Type.Object({}),
     annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
     executionMode: "sequential",
-    async execute(id, _params, signal) {
+    async execute(id, _params, signal, _onUpdate, ctx) {
       const result = await callHost(id, "reload_game", {}, signal);
+      const receipt = result.delivery_id;
+      delete result.delivery_id;
+      delivery.retain({ delivery_id: receipt }, ctx.sessionManager, { toolCallId: id }, JSON.stringify(result));
       if (!result?.ok) throw new Error(JSON.stringify(result));
       return textResult(JSON.stringify(result), result);
     },
@@ -344,8 +346,12 @@ export default async function (pi: ExtensionAPI) {
       raw: Type.Optional(Type.Boolean()),
     }),
     annotations: { readOnlyHint: true, openWorldHint: false },
-    async execute(id, params, signal) {
+    async execute(id, params, signal, _onUpdate, ctx) {
       const result = await callHost(id, "read_runtime_log", params, signal);
+      const receipt = result.delivery_id;
+      delete result.delivery_id;
+      const text = result?.ok ? String(result?.content || JSON.stringify(result)) : JSON.stringify(result);
+      delivery.retain({ delivery_id: receipt }, ctx.sessionManager, { toolCallId: id }, text);
       if (!result?.ok) throw new Error(JSON.stringify(result));
       return textResult(String(result?.content || JSON.stringify(result)), result);
     },

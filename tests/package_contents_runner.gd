@@ -6,7 +6,7 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
-    for module in ["workspace-paths.mjs", "model-capabilities.mjs"]:
+    for module in ["workspace-paths.mjs", "model-capabilities.mjs", "diagnostic-delivery.mjs"]:
         if not FileAccess.file_exists("res://tools/pi/" + module):
             push_error("FAIL: exported GameSmith.pck is missing " + module)
             quit(1)

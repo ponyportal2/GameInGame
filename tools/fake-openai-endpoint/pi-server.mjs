@@ -162,7 +162,7 @@ const server = http.createServer((req, res) => {
       if (st.calls === 1) {
         tool(res, model, "write-main", "write", {
           path: "main.gd",
-          content: "extends Node3D\n\nvar speed := 200.0\nvar frames := 0\n\nfunc _process(_delta):\n    frames += 1\n"
+          content: "extends Node3D\n\nvar speed := 200.0\nvar frames := 0\n\nfunc _ready():\n    push_warning(\"reload delivery integration marker\")\n\nfunc _process(_delta):\n    frames += 1\n"
         }, { prompt_tokens: 1200, completion_tokens: 120, total_tokens: 1320 });
       } else if (st.calls === 2) {
         if (st.lastResponseAt && now - st.lastResponseAt < 35) answer(res, model, "RATE_DELAY_MISSING");
