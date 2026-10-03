@@ -138,6 +138,16 @@ const server = http.createServer((req, res) => {
       "connection": "close"
     });
 
+    if (model === "pi-gamesmith-cancel" && st.calls === 1) {
+      res.write(": waiting for cancellation\n\n");
+      res.on("close", () => appendLog({ model, event: "cancelled-connection", time: Date.now() }));
+      return;
+    }
+    if (model === "pi-gamesmith-cancel") {
+      answer(res, model, "Resumed after cancellation.");
+      return;
+    }
+
     // Pi native compaction requests do not expose the coding tool loadout.
     if (tools.length === 0) {
       summary(res, model);
@@ -218,4 +228,4 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(port, "127.0.0.1", () => process.stdout.write("READY " + port + "\n"));
+server.listen(port, "127.0.0.1", () => process.stdout.write("READY " + server.address().port + "\n"));

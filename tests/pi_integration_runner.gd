@@ -37,10 +37,12 @@ func run() -> void:
 
     if part == "" or part == "1":
         await _test_missing_global_pi_error()
+        await _test_known_model_capabilities()
         await _test_production_app_uses_pi()
         await _test_real_pi_generation_edit_stream_and_restart()
         await _test_real_pi_false_done_verifier()
         await _test_real_pi_retry_and_action_limit()
+        await _test_real_pi_cancel_and_rename()
 
     if part == "" or part == "2":
         await _test_real_pi_manual_and_auto_compaction()
@@ -64,10 +66,34 @@ func _test_missing_global_pi_error() -> void:
     var result: Dictionary = session._check_pi_available()
     assert_true(not bool(result.get("ok", false)), "missing configured Pi executable is rejected before process launch")
     assert_true("does not exist" in str(result.get("error", "")).to_lower(), "missing Pi error explains that the configured executable does not exist")
+    session.free()
     if old == "":
         OS.unset_environment("GAMESMITH_PI_BIN")
     else:
         OS.set_environment("GAMESMITH_PI_BIN", old)
+
+func _test_known_model_capabilities() -> void:
+    var created = _new_game("Pi Catalog")
+    assert_true(bool(created.get("ok", false)), "creates Pi catalog capability fixture")
+    if not created.get("ok", false):
+        return
+    var config = preload("res://src/pi/pi_runtime_config.gd").prepare(created.name, created.path, {"provider": "custom", "model": "openai/gpt-4o-mini", "custom_base_url": base_url}, {"custom": "pi-test-key"}, {})
+    # Exercise catalog registration through real Pi without making a paid call.
+    config.source_provider = "openrouter"
+    var rpc = PiRpcSessionScript.new()
+    root.add_child(rpc)
+    var started = rpc.start(config)
+    assert_true(bool(started.get("ok", false)), "starts real Pi for known catalog model")
+    if bool(started.get("ok", false)):
+        var selected = await rpc.command({"type": "set_model", "provider": "gamesmith", "modelId": "openai/gpt-4o-mini"})
+        assert_true(bool(selected.get("success", false)), "selects catalog-backed GameSmith model")
+        var model: Dictionary = selected.get("data", {})
+        assert_eq(int(model.get("contextWindow", 0)), 128000, "known model uses Pi catalog context window")
+        assert_eq(int(model.get("maxTokens", 0)), 16384, "known model uses Pi catalog output limit")
+        assert_true(not bool(model.get("reasoning", true)), "known nonreasoning model retains its actual capability")
+    rpc.retire()
+    await process_frame
+    WorkspaceStoreScript.new().delete_game(created.name)
 
 func _settings(model: String, delay_sec: float = 0.0, max_steps: int = 150, auto_tokens: int = 100000, keep_tokens: int = 20000, reasoning: String = "high") -> void:
     var meta = MetadataStoreScript.new()
@@ -154,7 +180,7 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     var state = await agent.rpc.command({"type": "get_state"})
     assert_true(bool(state.get("success", false)), "Pi RPC state is available")
     if bool(state.get("success", false)):
-        assert_eq(str(state.get("data", {}).get("thinkingLevel", "")), "high", "GameSmith reasoning setting maps to Pi thinking level")
+        assert_eq(str(state.get("data", {}).get("thinkingLevel", "")), "off", "unknown custom model does not receive unsupported reasoning settings")
     var before_entries = await agent.rpc.command({"type": "get_entries"})
     var before_json = JSON.stringify(before_entries.get("data", {}).get("entries", []))
     agent.restart_runtime()
@@ -255,6 +281,62 @@ func _test_real_pi_retry_and_action_limit() -> void:
     runner.queue_free()
     await process_frame
     WorkspaceStoreScript.new().delete_game(created.name)
+
+func _test_real_pi_cancel_and_rename() -> void:
+    _settings("pi-gamesmith-cancel", 0.0, 150, 0)
+    var created = _new_game("Pi Cancel Rename")
+    assert_true(bool(created.get("ok", false)), "creates real Pi cancellation fixture")
+    if not created.get("ok", false):
+        return
+    _write(created.path.path_join("main.gd"), "extends Node\n")
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app._open_game(created.name)
+    app._set_chat_visible(true)
+    app.chat_input.text = "tell me something slowly"
+    app._send_chat()
+    # A test-only deadline keeps a broken cancellation regression from hanging CI.
+    var deadline = Time.get_ticks_msec() + 30000
+    while _fake_records("pi-gamesmith-cancel").is_empty() and Time.get_ticks_msec() < deadline:
+        await process_frame
+    assert_true(not _fake_records("pi-gamesmith-cancel").is_empty(), "real Pi reaches a deliberately stalled provider")
+    app._stop_agent()
+    assert_true(not app.agent.busy and app.chat_input.editable and not app.library_button.disabled, "Stop releases real Pi request and UI controls")
+    deadline = Time.get_ticks_msec() + 5000
+    while not _fake_records("pi-gamesmith-cancel").any(func(record): return record.get("event", "") == "cancelled-connection") and Time.get_ticks_msec() < deadline:
+        await process_frame
+    assert_true(_fake_records("pi-gamesmith-cancel").any(func(record): return record.get("event", "") == "cancelled-connection"), "Stop terminates the actual provider connection")
+    app.chat_input.text = "tell me if you can resume"
+    app._send_chat()
+    var ok = await app.agent.finished
+    assert_true(bool(ok), "real Pi resumes its session after cancellation")
+    var before = await app.agent.rpc.command({"type": "get_entries"})
+    app.rename_target = created.name
+    var new_name = created.name + " Renamed"
+    app.rename_edit.text = new_name
+    app._rename_game()
+    assert_eq(app.current_game, new_name, "renames a game with a real open Pi runtime")
+    assert_true(app.agent.rpc == null, "rename retires real Pi runtime")
+    var ready = await app.agent._ensure_runtime()
+    assert_true(bool(ready.get("ok", false)), "renamed game starts Pi with new paths: " + str(ready.get("error", "")))
+    if not bool(ready.get("ok", false)):
+        app.queue_free()
+        await process_frame
+        return
+    assert_true(str(app.agent.runtime_config.workspace).ends_with(new_name), "renamed Pi cwd uses new workspace")
+    assert_true(str(app.agent.runtime_config.bridge_dir).contains(new_name), "renamed Pi bridge uses new metadata directory")
+    var after = await app.agent.rpc.command({"type": "get_entries"})
+    var old_messages: Array = before.get("data", {}).get("entries", []).filter(func(entry): return entry.get("type", "") == "message")
+    var new_messages: Array = after.get("data", {}).get("entries", []).filter(func(entry): return entry.get("type", "") == "message")
+    assert_eq(JSON.stringify(new_messages), JSON.stringify(old_messages), "rename preserves Pi conversation history")
+    app.chat_input.text = "tell me something after rename"
+    app._send_chat()
+    ok = await app.agent.finished
+    assert_true(bool(ok), "renamed real Pi session accepts another request")
+    app.queue_free()
+    await process_frame
+    WorkspaceStoreScript.new().delete_game(new_name)
 
 func _test_real_pi_manual_and_auto_compaction() -> void:
     _settings("pi-gamesmith-compact-manual", 0.0, 150, 0, 1000)
@@ -429,6 +511,7 @@ func _test_pi_binary_discovery_modes() -> void:
     var global_result = session._check_pi_available()
     assert_true(bool(global_result.get("ok", false)), "globally npm-installed pi resolves from PATH without override: %s" % str(global_result.get("error", "")))
     OS.set_environment("GAMESMITH_PI_BIN", explicit)
+    session.free()
 
 func _test_windows_pi_install_guidance() -> void:
     var readme = FileAccess.get_file_as_string("res://GameSmith-Windows/README.txt")

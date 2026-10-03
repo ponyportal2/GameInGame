@@ -54,6 +54,10 @@ OpenRouter, OpenCode Go, Command Code, and Custom OpenAI-compatible routes are m
 
 Per-game provider/model overrides remain available. Saving provider/model/thinking settings restarts only that game's Pi runtime; the generated game itself is not restarted.
 
+Model capabilities come from Pi's installed catalog for exact provider/model matches. Unknown models, including arbitrary Custom endpoints, use conservative budgets of **8,192 context tokens** and **1,024 output tokens**, with reasoning disabled. These budgets are not claims about the server's actual limits. Compaction settings never change model capabilities; automatic compaction and retained context are capped to the available budgets.
+
+Important JSON files are replaced through a flushed temporary file. Settings reports any failed writes and stays open so you can retry; a partial save is reported explicitly.
+
 ## Agent activity and tools
 
 Pi streams assistant text and provider-exposed thinking to GameSmith while a turn is running. GameSmith also shows short ephemeral **TOOL** activity snippets. Intermediate activity is not written to the human-readable transcript.
@@ -76,9 +80,13 @@ GameSmith verifies completion at Pi's settlement boundary. A text-only `Done` is
 - **Shift+Enter** inserts a newline.
 - **Escape** closes chat.
 - **Return to Library** is disabled and programmatically blocked while Pi is working.
+- **Stop** cancels a request or manual compaction, shuts down the Pi process, and restores chat/navigation controls. Workspace edits already made are kept; the next request resumes the saved Pi session.
+- Rename is blocked while Pi is working. Renaming an open game retires Pi before moving its directories, rebinds its persisted session header to the new workspace, and preserves conversation entries.
 - While chat is open, GameSmith owns input: generated processing and generated `Control` mouse interception are suspended, captured mouse mode is released, and the prior gameplay input state is restored when chat closes.
 
 Settings is rendered as a host-owned in-canvas overlay above generated-game CanvasLayers.
+
+Reload rejects compile errors and synchronous startup errors while keeping the previous game. Cached GDScript dependencies are replaced with current source for the candidate and restored if it fails. Loading the last working snapshot never promotes the broken workspace over that snapshot.
 
 ## Data, sessions, and logs
 
@@ -137,6 +145,13 @@ Fast host/core/UI suite:
 
 ```bash
 ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+```
+
+Portable host and reliability suites with isolated application data (Windows or Linux):
+
+```bash
+node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
+node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs
 ```
 
 Full source verification:

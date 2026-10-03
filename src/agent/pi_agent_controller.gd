@@ -38,6 +38,7 @@ var current_streamed_text := false
 var current_streamed_thinking := false
 var bridge_dir := ""
 var restart_after_finish := false
+var operation_id := 0
 
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
@@ -48,6 +49,8 @@ func send_player_request(text: String) -> void:
     if busy:
         return
     busy = true
+    operation_id += 1
+    var operation = operation_id
     last_error = ""
     pending_provider_error = ""
     turn_count = 0
@@ -62,24 +65,32 @@ func send_player_request(text: String) -> void:
     # On a brand-new session, Pi may import pre-existing readable dialogue once;
     # the current request must not be mistaken for legacy history.
     var ready = await _ensure_runtime()
+    if operation != operation_id:
+        return
     transcript.append(game_name, "user", text)
     if not bool(ready.get("ok", false)):
         _fail(str(ready.get("error", "Pi is unavailable.")))
         return
 
     await _maybe_auto_compact("before_request")
+    if operation != operation_id:
+        return
     status_changed.emit("Pi is working…")
     var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text})
+    if operation != operation_id:
+        return
     if not bool(accepted.get("success", false)):
         _fail("Pi rejected the prompt: " + str(accepted.get("error", "unknown error")))
         return
 
-    while busy and rpc != null and rpc.running:
+    while operation == operation_id and busy and rpc != null and rpc.running:
         if bool(get_meta("_pi_settled", false)):
             remove_meta("_pi_settled")
             break
         await get_tree().process_frame
 
+    if operation != operation_id:
+        return
     if rpc == null or not rpc.running:
         _fail(last_error if last_error != "" else "Pi process stopped unexpectedly.")
         return
@@ -88,6 +99,8 @@ func send_player_request(text: String) -> void:
         return
 
     var last: Dictionary = await rpc.command({"type": "get_last_assistant_text"})
+    if operation != operation_id:
+        return
     var final_text = ""
     if bool(last.get("success", false)):
         final_text = str(last.get("data", {}).get("text", "")).strip_edges()
@@ -96,7 +109,11 @@ func send_player_request(text: String) -> void:
         if not streamed_text:
             assistant_message.emit(final_text)
     await _refresh_context_usage()
+    if operation != operation_id:
+        return
     await _maybe_auto_compact("after_turn")
+    if operation != operation_id:
+        return
     status_changed.emit("Ready")
     busy = false
     if restart_after_finish:
@@ -108,12 +125,18 @@ func compact_now() -> Dictionary:
     if busy:
         return {"ok": false, "error": "Agent is busy."}
     busy = true
+    operation_id += 1
+    var operation = operation_id
     var ready = await _ensure_runtime()
+    if operation != operation_id:
+        return {"ok": false, "cancelled": true, "error": "Compaction cancelled."}
     if not bool(ready.get("ok", false)):
         busy = false
         return ready
     status_changed.emit("Compacting Pi session…")
     var response: Dictionary = await rpc.command({"type": "compact"})
+    if operation != operation_id:
+        return {"ok": false, "cancelled": true, "error": "Compaction cancelled."}
     busy = false
     status_changed.emit("Ready")
     if not bool(response.get("success", false)):
@@ -130,13 +153,29 @@ func compact_now() -> Dictionary:
         "tokens_after": int(data.get("estimatedTokensAfter", 0))
     }
 
+func cancel() -> void:
+    if not busy:
+        return
+    operation_id += 1
+    restart_after_finish = false
+    AppLoggerScript.game_event(game_name, "pi.cancel", "Cancelled by the player; existing file edits are kept.")
+    restart_runtime()
+    busy = false
+    last_error = ""
+    pending_provider_error = ""
+    llm_stream_end.emit("assistant")
+    llm_stream_end.emit("thinking")
+    assistant_message.emit("Cancelled. File edits already made were kept.")
+    status_changed.emit("Ready")
+    finished.emit(false)
+
 func restart_runtime() -> void:
     if rpc != null:
-        rpc.shutdown()
-        rpc.queue_free()
+        rpc.retire()
     rpc = null
     runtime_config = {}
     bridge_dir = ""
+    last_context_tokens = 0
 
 func settings_changed() -> void:
     if busy:
@@ -178,7 +217,10 @@ func _ensure_runtime() -> Dictionary:
         return started
     AppLoggerScript.game_event(game_name, "pi.started", "pid=%d model=%s session_dir=%s" % [int(started.get("pid", -1)), str(runtime_config.model), str(runtime_config.session_dir)])
 
-    var synced = await _sync_runtime_state()
+    var session = rpc
+    var synced = await _sync_runtime_state(session)
+    if session != rpc:
+        return {"ok": false, "error": "Pi runtime was cancelled or replaced."}
     if not bool(synced.get("ok", false)):
         return synced
     var auto_off: Dictionary = await rpc.command({"type": "set_auto_compaction", "enabled": false})
@@ -187,8 +229,8 @@ func _ensure_runtime() -> Dictionary:
     await _refresh_context_usage()
     return {"ok": true}
 
-func _sync_runtime_state() -> Dictionary:
-    var state: Dictionary = await rpc.command({"type": "get_state"})
+func _sync_runtime_state(session) -> Dictionary:
+    var state: Dictionary = await session.command({"type": "get_state"})
     if not bool(state.get("success", false)):
         return {"ok": false, "error": "Could not read Pi session state: " + str(state.get("error", ""))}
     var data: Dictionary = state.get("data", {})
@@ -196,7 +238,7 @@ func _sync_runtime_state() -> Dictionary:
     var current_provider = str(current_model.get("provider", "")) if typeof(current_model) == TYPE_DICTIONARY else ""
     var current_model_id = str(current_model.get("id", "")) if typeof(current_model) == TYPE_DICTIONARY else ""
     if current_provider != str(runtime_config.provider) or current_model_id != str(runtime_config.model):
-        var changed: Dictionary = await rpc.command({
+        var changed: Dictionary = await session.command({
             "type": "set_model",
             "provider": str(runtime_config.provider),
             "modelId": str(runtime_config.model)
@@ -204,17 +246,22 @@ func _sync_runtime_state() -> Dictionary:
         if not bool(changed.get("success", false)):
             return {"ok": false, "error": "Could not select Pi model %s/%s: %s" % [str(runtime_config.provider), str(runtime_config.model), str(changed.get("error", ""))]}
         data["model"] = changed.get("data", {})
+    var selected_model = data.get("model", {})
+    runtime_config["context_window"] = int(selected_model.get("contextWindow", 0))
+    runtime_config["max_tokens"] = int(selected_model.get("maxTokens", 0))
     var desired_thinking = str(runtime_config.get("thinking", "medium"))
+    if not bool(selected_model.get("reasoning", false)):
+        desired_thinking = "off"
     if desired_thinking == "":
         desired_thinking = "medium"
     if str(data.get("thinkingLevel", "")) != desired_thinking:
-        var thinking_result: Dictionary = await rpc.command({"type": "set_thinking_level", "level": desired_thinking})
+        var thinking_result: Dictionary = await session.command({"type": "set_thinking_level", "level": desired_thinking})
         if not bool(thinking_result.get("success", false)):
             return {"ok": false, "error": "Could not set Pi thinking level %s: %s" % [desired_thinking, str(thinking_result.get("error", ""))]}
     var wanted_name = str(runtime_config.get("game_name", ""))
     var current_name = str(data.get("sessionName", ""))
     if wanted_name != "" and current_name != wanted_name:
-        var name_result: Dictionary = await rpc.command({"type": "set_session_name", "name": wanted_name})
+        var name_result: Dictionary = await session.command({"type": "set_session_name", "name": wanted_name})
         if not bool(name_result.get("success", false)):
             return {"ok": false, "error": "Could not name Pi session: " + str(name_result.get("error", ""))}
     return {"ok": true}
@@ -222,7 +269,10 @@ func _sync_runtime_state() -> Dictionary:
 func _refresh_context_usage() -> void:
     if rpc == null or not rpc.running:
         return
-    var stats: Dictionary = await rpc.command({"type": "get_session_stats"})
+    var session = rpc
+    var stats: Dictionary = await session.command({"type": "get_session_stats"})
+    if session != rpc or rpc == null or not rpc.running:
+        return
     if not bool(stats.get("success", false)):
         return
     var usage = stats.get("data", {}).get("contextUsage", null)
@@ -232,15 +282,23 @@ func _refresh_context_usage() -> void:
             last_context_tokens = int(tokens)
 
 func _maybe_auto_compact(phase: String) -> void:
+    var session = rpc
     var threshold = maxi(0, int(metadata.global_settings().get("compaction_auto_tokens", 100000)))
     if threshold <= 0:
         return
     await _refresh_context_usage()
+    if session != rpc or rpc == null or not rpc.running:
+        return
+    var context_window = int(runtime_config.get("context_window", 0))
+    if context_window > 0:
+        threshold = mini(threshold, maxi(1, int(context_window * 0.75) - int(runtime_config.get("max_tokens", 0))))
     if last_context_tokens <= 0 or last_context_tokens < threshold:
         return
     status_changed.emit("Auto-compacting Pi session…")
     AppLoggerScript.game_event(game_name, "pi.compaction.auto", "phase=%s context_tokens=%d threshold=%d" % [phase, last_context_tokens, threshold])
-    var response: Dictionary = await rpc.command({"type": "compact"})
+    var response: Dictionary = await session.command({"type": "compact"})
+    if session != rpc or rpc == null or not rpc.running:
+        return
     if bool(response.get("success", false)):
         last_context_tokens = int(response.get("data", {}).get("estimatedTokensAfter", 0))
     else:

@@ -6,8 +6,10 @@ const JsonStoreScript = preload("res://src/core/json_store.gd")
 const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
 
 const PI_PROVIDER_ID = "gamesmith"
-const DEFAULT_CONTEXT_WINDOW = 200000
-const DEFAULT_MAX_TOKENS = 32768
+# Pi requires numeric limits for custom model definitions. These are conservative
+# budgets for unknown models, not claims about provider capabilities.
+const UNKNOWN_CONTEXT_BUDGET = 8192
+const UNKNOWN_OUTPUT_BUDGET = 1024
 
 static func prepare(game_name: String, workspace: String, settings: Dictionary, credentials: Dictionary, game_meta: Dictionary) -> Dictionary:
     var metadata = MetadataStoreScript.new()
@@ -29,6 +31,14 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
         return {"ok": false, "error": "Could not write Pi extension."}
     extension_file.store_string(extension_source)
     extension_file.close()
+
+    for module in ["workspace-paths.mjs", "model-capabilities.mjs"]:
+        var module_source = FileAccess.get_file_as_string("res://tools/pi/" + module)
+        var module_file = FileAccess.open(agent_dir.path_join(module), FileAccess.WRITE)
+        if module_source == "" or module_file == null:
+            return {"ok": false, "error": "Could not prepare Pi module: " + module}
+        module_file.store_string(module_source)
+        module_file.close()
 
     var prompt_file = FileAccess.open(agent_dir.path_join("APPEND_SYSTEM.md"), FileAccess.WRITE)
     if prompt_file == null:
@@ -65,7 +75,6 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
         _:
             pass
 
-    var context_window = maxi(DEFAULT_CONTEXT_WINDOW, int(settings.get("compaction_auto_tokens", 100000)) + int(settings.get("compaction_keep_recent_tokens", 20000)) + DEFAULT_MAX_TOKENS)
     var pi_provider = "openai-codex" if subscription_mode else PI_PROVIDER_ID
     var model_config = {"providers": {}}
     if not subscription_mode:
@@ -76,9 +85,9 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
             "models": [{
                 "id": model,
                 "name": model,
-                "reasoning": true,
-                "contextWindow": context_window,
-                "maxTokens": DEFAULT_MAX_TOKENS
+                "reasoning": false,
+                "contextWindow": UNKNOWN_CONTEXT_BUDGET,
+                "maxTokens": UNKNOWN_OUTPUT_BUDGET
             }]
         }
         if not headers.is_empty():
@@ -90,7 +99,7 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
     var pi_settings = {
         "compaction": {
             "enabled": false,
-            "keepRecentTokens": maxi(1000, int(settings.get("compaction_keep_recent_tokens", 20000)))
+            "keepRecentTokens": clampi(int(settings.get("compaction_keep_recent_tokens", 20000)), 1000, UNKNOWN_CONTEXT_BUDGET / 4) if not subscription_mode else maxi(1000, int(settings.get("compaction_keep_recent_tokens", 20000)))
         },
         "retry": {
             "enabled": true,
@@ -113,6 +122,7 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
         "prompt_path": ProjectSettings.globalize_path(agent_dir.path_join("APPEND_SYSTEM.md")),
         "legacy_transcript": ProjectSettings.globalize_path(metadata.transcript_path(game_name)),
         "provider": pi_provider,
+        "source_provider": provider_id,
         "model": model,
         "api_key": key if not subscription_mode else "",
         "use_global_pi_auth": subscription_mode,

@@ -55,7 +55,7 @@ func rename_game(old_name: String, raw_new_name: String) -> Dictionary:
     var err = DirAccess.rename_absolute(ProjectSettings.globalize_path(game_path(old_name)), ProjectSettings.globalize_path(game_path(new_name)))
     if err != OK:
         return {"ok": false, "error": "Could not rename workspace."}
-    if not metadata.rename_game(old_name, new_name):
+    if not metadata.rename_game(old_name, new_name, game_path(new_name)):
         DirAccess.rename_absolute(ProjectSettings.globalize_path(game_path(new_name)), ProjectSettings.globalize_path(game_path(old_name)))
         return {"ok": false, "error": "Could not migrate host metadata."}
     return {"ok": true, "name": new_name}
@@ -72,18 +72,42 @@ func ensure_game_repo(name: String) -> Dictionary:
 
 func save_working_snapshot(name: String) -> bool:
     var dest = metadata.snapshot_dir(name)
-    _remove_tree(dest)
-    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dest))
-    var ok = _copy_tree(game_path(name), dest, true)
-    if ok:
-        var meta = metadata.read_game(name)
-        meta.last_working_commit = git.head(game_path(name))
-        meta.last_loaded_at = Time.get_datetime_string_from_system(true)
-        metadata.write_game(name, meta)
-    return ok
+    _recover_snapshot(name)
+    var staging = dest + ".%d.tmp" % Time.get_ticks_usec()
+    var previous = dest + ".previous"
+    if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(staging)) != OK:
+        return false
+    if not _copy_tree(game_path(name), staging, true):
+        _remove_tree(staging)
+        return false
+    if FileAccess.file_exists(previous):
+        _remove_tree(staging)
+        return false
+    var had_snapshot = DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(dest))
+    if not _remove_tree(previous):
+        _remove_tree(staging)
+        return false
+    if had_snapshot and DirAccess.rename_absolute(ProjectSettings.globalize_path(dest), ProjectSettings.globalize_path(previous)) != OK:
+        _remove_tree(staging)
+        return false
+    if DirAccess.rename_absolute(ProjectSettings.globalize_path(staging), ProjectSettings.globalize_path(dest)) != OK:
+        _recover_snapshot(name)
+        _remove_tree(staging)
+        return false
+    _remove_tree(previous)
+    var meta = metadata.read_game(name)
+    meta.last_working_commit = git.head(game_path(name))
+    meta.last_loaded_at = Time.get_datetime_string_from_system(true)
+    return metadata.write_game(name, meta)
 
 func has_working_snapshot(name: String) -> bool:
+    _recover_snapshot(name)
     return FileAccess.file_exists(metadata.snapshot_dir(name).path_join("main.gd"))
+
+func _recover_snapshot(name: String) -> void:
+    var dest = ProjectSettings.globalize_path(metadata.snapshot_dir(name))
+    if not DirAccess.dir_exists_absolute(dest) and DirAccess.dir_exists_absolute(dest + ".previous"):
+        DirAccess.rename_absolute(dest + ".previous", dest)
 
 func _copy_tree(src: String, dst: String, skip_git: bool = false) -> bool:
     var src_abs = ProjectSettings.globalize_path(src)

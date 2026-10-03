@@ -3,7 +3,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, join } from "node:path";
+import { workspacePath } from "./workspace-paths.mjs";
+import { modelCapabilities } from "./model-capabilities.mjs";
 
 const execFileAsync = promisify(execFile);
 const bridgeDir = process.env.GAMESMITH_HOST_BRIDGE_DIR || "";
@@ -19,21 +21,6 @@ let verifierRetries = 0;
 
 function textResult(text: string, details: unknown = undefined) {
   return { content: [{ type: "text" as const, text }], details };
-}
-
-function safePath(cwd: string, value: string): string | null {
-  if (!value || isAbsolute(value)) return null;
-  const abs = resolve(cwd, value);
-  const rel = relative(cwd, abs);
-  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return abs;
-  return null;
-}
-
-function touchesGitMetadata(cwd: string, value: string): boolean {
-  const abs = safePath(cwd, value);
-  if (!abs) return false;
-  const rel = relative(cwd, abs).replaceAll("\\", "/");
-  return rel === ".git" || rel.startsWith(".git/");
 }
 
 function requestLooksLikeChange(text: string): boolean {
@@ -80,7 +67,27 @@ function mutationPath(event: any): string {
   return String(event.input?.path || "");
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
+  if (process.env.GAMESMITH_MODEL_PROVIDER !== "openai_subscription") {
+    let lookup = () => undefined;
+    try {
+      const catalog = await import("@earendil-works/pi-ai/providers/all");
+      lookup = (provider, id) => catalog.getBuiltinModel(provider, id);
+    } catch {
+      // Older Pi releases expose their built-in catalog on the main module.
+      try {
+        const catalog = await import("@earendil-works/pi-ai");
+        if (typeof catalog.getModel === "function") lookup = (provider, id) => catalog.getModel(provider, id);
+      } catch { /* Retain explicit conservative budgets. */ }
+    }
+    const config = JSON.parse(await readFile(join(process.env.PI_CODING_AGENT_DIR!, "models.json"), "utf8"));
+    const provider = config.providers.gamesmith;
+    const model = provider.models[0];
+    Object.assign(model, modelCapabilities(process.env.GAMESMITH_MODEL_PROVIDER || "", model.id, lookup));
+    model.input ??= ["text"];
+    model.cost ??= { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    pi.registerProvider("gamesmith", provider);
+  }
   pi.on("tool_call", async (event, ctx) => {
     const pathKeys: Record<string, string[]> = {
       read: ["path"],
@@ -95,11 +102,10 @@ export default function (pi: ExtensionAPI) {
     for (const key of pathKeys[event.toolName] || []) {
       const value = (event.input as any)?.[key];
       if (typeof value !== "string") continue;
-      if (safePath(ctx.cwd, value) === null) {
-        return { block: true, reason: `Path "${value}" is outside the current game workspace.` };
-      }
-      if (["edit", "write", "delete_path", "move_path"].includes(event.toolName) && touchesGitMetadata(ctx.cwd, value)) {
-        return { block: true, reason: "GameSmith reserves .git metadata; use the Git tools instead." };
+      try {
+        await workspacePath(ctx.cwd, value, { destructive: ["edit", "write", "delete_path", "move_path"].includes(event.toolName) });
+      } catch (error) {
+        return { block: true, reason: String(error) };
       }
     }
   });
@@ -209,8 +215,7 @@ export default function (pi: ExtensionAPI) {
     annotations: { destructiveHint: true, openWorldHint: false },
     executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
-      const path = safePath(ctx.cwd, params.path);
-      if (!path) throw new Error("Unsafe path.");
+      const path = await workspacePath(ctx.cwd, params.path, { destructive: true });
       await rm(path, { recursive: true, force: false });
       return textResult(`Deleted ${params.path}`);
     },
@@ -228,9 +233,8 @@ export default function (pi: ExtensionAPI) {
     annotations: { destructiveHint: true, openWorldHint: false },
     executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
-      const from = safePath(ctx.cwd, params.from);
-      const to = safePath(ctx.cwd, params.to);
-      if (!from || !to) throw new Error("Unsafe path.");
+      const from = await workspacePath(ctx.cwd, params.from, { destructive: true });
+      const to = await workspacePath(ctx.cwd, params.to, { destructive: true });
       await mkdir(dirname(to), { recursive: true });
       await rename(from, to);
       return textResult(`Moved ${params.from} -> ${params.to}`);

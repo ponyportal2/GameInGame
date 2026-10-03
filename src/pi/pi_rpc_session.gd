@@ -14,6 +14,7 @@ var stderr_buffer := ""
 var responses: Dictionary = {}
 var next_id := 1
 var stop_message := ""
+var writing := false
 
 func start(config: Dictionary) -> Dictionary:
     if running:
@@ -25,7 +26,8 @@ func start(config: Dictionary) -> Dictionary:
     var env_changes = {
         "GAMESMITH_HOST_BRIDGE_DIR": str(config.bridge_dir),
         "GAMESMITH_LEGACY_TRANSCRIPT": str(config.legacy_transcript),
-        "GAMESMITH_LLM_DELAY_MS": str(config.llm_delay_ms)
+        "GAMESMITH_LLM_DELAY_MS": str(config.llm_delay_ms),
+        "GAMESMITH_MODEL_PROVIDER": str(config.get("source_provider", "custom"))
     }
     if not bool(config.get("use_global_pi_auth", false)):
         env_changes["PI_CODING_AGENT_DIR"] = str(config.agent_dir)
@@ -67,7 +69,7 @@ func command(record: Dictionary) -> Dictionary:
     var payload = record.duplicate(true)
     payload["id"] = id
     responses.erase(id)
-    var err = _write_json(payload)
+    var err = await _write_json(payload)
     if err != OK:
         return {"success": false, "error": "Could not write Pi RPC command (%d)." % err}
     while running and not responses.has(id):
@@ -79,16 +81,30 @@ func command(record: Dictionary) -> Dictionary:
     return response
 
 func shutdown() -> void:
+    running = false
+    stop_message = "Pi runtime stopped."
     if stdio != null:
         stdio.close()
     if stderr != null:
         stderr.close()
     if pid > 0 and OS.is_process_running(pid):
-        OS.kill(pid)
+        if OS.get_name() == "Windows":
+            # cmd.exe launches npm's Pi shim, so killing only cmd leaves Node alive.
+            var output: Array = []
+            OS.execute("taskkill", ["/PID", str(pid), "/T", "/F"], output, true)
+        if OS.is_process_running(pid):
+            OS.kill(pid)
     stdio = null
     stderr = null
     pid = -1
     running = false
+
+func retire() -> void:
+    shutdown()
+    # Let pending command coroutines observe shutdown before freeing their node.
+    if is_inside_tree():
+        await get_tree().process_frame
+    queue_free()
 
 func _exit_tree() -> void:
     shutdown()
@@ -146,11 +162,28 @@ func _consume_lines(buffer: String, is_stderr: bool) -> String:
     return remaining
 
 func _write_json(record: Dictionary) -> Error:
-    if stdio == null:
+    while writing and running:
+        await get_tree().process_frame
+    if stdio == null or not running:
         return ERR_UNAVAILABLE
-    stdio.store_string(JSON.stringify(record) + "\n")
+    writing = true
+    var bytes = (JSON.stringify(record) + "\n").to_utf8_buffer()
+    # Nonblocking Windows pipes can reject a single large prompt write. Send
+    # bounded chunks and let Pi drain between them; serialize complete records.
+    for offset in range(0, bytes.size(), 1024):
+        await get_tree().process_frame
+        if stdio == null or not running:
+            writing = false
+            return ERR_UNAVAILABLE
+        stdio.store_buffer(bytes.slice(offset, mini(offset + 1024, bytes.size())))
+        var error = stdio.get_error()
+        if error != OK:
+            writing = false
+            return error
     stdio.flush()
-    return stdio.get_error()
+    var error = stdio.get_error()
+    writing = false
+    return error
 
 func _check_pi_available() -> Dictionary:
     var configured = OS.get_environment("GAMESMITH_PI_BIN").strip_edges()
@@ -182,7 +215,6 @@ func _command_line(config: Dictionary) -> String:
     var args: Array[String] = [
         "--mode", "rpc",
         "--session-dir", str(config.session_dir),
-        "--session-id", "gamesmith",
         "--no-extensions",
         "--no-skills",
         "--no-prompt-templates",
@@ -194,6 +226,13 @@ func _command_line(config: Dictionary) -> String:
         "--extension", str(config.extension_path),
         "--approve"
     ]
+    var session_file = _resume_session_file(str(config.session_dir))
+    if session_file != "":
+        # Pi's session-id lookup is scoped to the original cwd in its header.
+        # Explicitly open the persisted file so a workspace rename keeps history.
+        args.append_array(["--session", session_file])
+    else:
+        args.append_array(["--session-id", "gamesmith"])
 
     if OS.get_name() == "Windows":
         var command = "cd /D " + _quote_windows(str(config.workspace)) + " && " + _quote_windows(pi_bin)
@@ -205,6 +244,29 @@ func _command_line(config: Dictionary) -> String:
     for arg in args:
         command += " " + _quote_unix(arg)
     return command
+
+func _resume_session_file(session_dir: String) -> String:
+    var dir = DirAccess.open(session_dir)
+    if dir == null:
+        return ""
+    var latest = ""
+    var latest_time = -1
+    for name in dir.get_files():
+        if not name.ends_with(".jsonl"):
+            continue
+        var path = session_dir.path_join(name)
+        var file = FileAccess.open(path, FileAccess.READ)
+        if file == null:
+            continue
+        var header = JSON.parse_string(file.get_line())
+        file.close()
+        if typeof(header) != TYPE_DICTIONARY or str(header.get("type", "")) != "session":
+            continue
+        var modified = FileAccess.get_modified_time(path)
+        if modified > latest_time or (modified == latest_time and path > latest):
+            latest = path
+            latest_time = modified
+    return latest
 
 func _quote_windows(value: String) -> String:
     return "\"" + value.replace("\"", "\"\"") + "\""

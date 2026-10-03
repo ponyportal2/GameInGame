@@ -54,6 +54,8 @@ var compact_now_button: Button
 var compaction_status_label: Label
 var library_button: Button
 var send_button: Button
+var stop_button: Button
+var rename_button: Button
 var game_override_provider: OptionButton
 var game_override_model: LineEdit
 var gameplay_mouse_mode := Input.MOUSE_MODE_VISIBLE
@@ -136,13 +138,19 @@ func _build_chat() -> void:
     var folder = Button.new(); folder.size_flags_vertical = Control.SIZE_SHRINK_CENTER; folder.text = "Folder"; folder.tooltip_text = "Open generated game workspace"; folder.pressed.connect(_open_folder); head.add_child(folder)
     var logs = Button.new(); logs.size_flags_vertical = Control.SIZE_SHRINK_CENTER; logs.text = "Logs"; logs.tooltip_text = "Open this game's host debug logs"; logs.pressed.connect(_open_game_logs); head.add_child(logs)
     var game_settings = Button.new(); game_settings.size_flags_vertical = Control.SIZE_SHRINK_CENTER; game_settings.text = "Settings"; game_settings.pressed.connect(_open_settings); head.add_child(game_settings)
-    var rename = Button.new(); rename.size_flags_vertical = Control.SIZE_SHRINK_CENTER; rename.text = "Rename"; rename.pressed.connect(_open_rename); head.add_child(rename)
+    rename_button = Button.new(); rename_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER; rename_button.text = "Rename"; rename_button.pressed.connect(_open_rename); head.add_child(rename_button)
     var close = Button.new(); close.size_flags_vertical = Control.SIZE_SHRINK_CENTER; close.text = "Close  Esc"; close.pressed.connect(func(): _set_chat_visible(false)); head.add_child(close)
     status_label = Label.new(); status_label.text = "Ready"; status_label.add_theme_color_override("font_color", Color("8393b2")); box.add_child(status_label)
     transcript_view = RichTextLabel.new(); transcript_view.bbcode_enabled = true; transcript_view.fit_content = false; transcript_view.scroll_active = true; transcript_view.size_flags_vertical = Control.SIZE_EXPAND_FILL; transcript_view.custom_minimum_size.y = 350; box.add_child(transcript_view)
     var composer = HBoxContainer.new(); composer.add_theme_constant_override("separation", 10); box.add_child(composer)
     chat_input = TextEdit.new(); chat_input.placeholder_text = "Describe what to build or change…  Enter sends · Shift+Enter adds a line"; chat_input.custom_minimum_size.y = 64; chat_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL; chat_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY; composer.add_child(chat_input)
     send_button = Button.new(); send_button.text = "Send"; send_button.custom_minimum_size = Vector2(82, 64); send_button.pressed.connect(_send_chat); composer.add_child(send_button)
+    stop_button = Button.new()
+    stop_button.text = "Stop"
+    stop_button.tooltip_text = "Cancel the current request or compaction. File edits already made are kept."
+    stop_button.disabled = true
+    stop_button.pressed.connect(_stop_agent)
+    composer.add_child(stop_button)
 
 func _build_dialogs() -> void:
     _build_new_game_overlay()
@@ -360,7 +368,7 @@ func _build_settings_overlay() -> void:
     custom_base_edit.placeholder_text = "http://127.0.0.1:1234/v1"
     sv.add_child(custom_base_edit)
     var note = Label.new()
-    note.text = "GameSmith writes this provider/model config into Pi. Custom can omit an API key; OpenAI subscription delegates authentication to Pi global auth."
+    note.text = "Known model capabilities come from Pi's catalog. Unknown/custom models use conservative budgets (8,192 context tokens, 1,024 output tokens) with reasoning off. Custom can omit an API key; OpenAI subscription uses Pi global auth."
     note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     note.add_theme_color_override("font_color", Color("8492ad"))
     sv.add_child(note)
@@ -481,7 +489,11 @@ func _open_game(name: String) -> void:
 func _on_load_success(_version: int) -> void:
     if current_game != "":
         _reserve_host_canvas_layers()
-        store.save_working_snapshot(current_game)
+        # A fallback load must preserve the snapshot that rescued this game.
+        if runner.active_source_path == store.game_path(current_game).path_join("main.gd"):
+            if not store.save_working_snapshot(current_game):
+                AppLoggerScript.game_event(current_game, "snapshot.failed", "Could not save the working snapshot.", "WARN")
+                _append_chat("system", "Game loaded, but its working snapshot could not be saved.")
         if chat_overlay.visible:
             # A freshly loaded game may capture the mouse or add full-screen Controls in _ready().
             # Remember its intended gameplay mouse mode, then reassert host-chat input ownership.
@@ -518,8 +530,16 @@ func _set_chat_busy_controls(is_busy: bool) -> void:
         send_button.disabled = is_busy
     if is_instance_valid(library_button):
         library_button.disabled = is_busy
+    if is_instance_valid(stop_button):
+        stop_button.disabled = not is_busy
+    if is_instance_valid(rename_button):
+        rename_button.disabled = is_busy
     if not is_busy and chat_overlay.visible and not settings_dialog.visible and is_instance_valid(chat_input):
         chat_input.grab_focus()
+
+func _stop_agent() -> void:
+    if is_instance_valid(agent) and agent.busy:
+        agent.cancel()
 
 func _append_chat(role: String, text: String) -> void:
     var label = {"user": "YOU", "assistant": "AGENT", "thinking": "THINK", "tool": "TOOL"}.get(role, "HOST")
@@ -632,14 +652,23 @@ func _open_game_folder_named(name: String) -> void:
     OS.shell_open(ProjectSettings.globalize_path(store.game_path(name)))
 
 func _open_rename(name: String = "") -> void:
+    if is_instance_valid(agent) and agent.busy:
+        _toast("Stop the agent or wait for it to finish before renaming.")
+        return
     rename_target = name if name != "" else current_game
     if rename_target == "": return
     rename_edit.text = rename_target
     rename_dialog.popup_centered(Vector2i(430, 150))
 
 func _rename_game() -> void:
+    if is_instance_valid(agent) and agent.busy:
+        _toast("Stop the agent or wait for it to finish before renaming.")
+        return
     var old = rename_target
     if old == "": return
+    if current_game == old:
+        # Release Pi's cwd and session handles before moving their directories.
+        agent.restart_runtime()
     var result: Dictionary = store.rename_game(old, rename_edit.text)
     if not result.get("ok", false): _toast(str(result.get("error", "Rename failed."))); return
     var new_name = str(result.get("name", old))
@@ -716,6 +745,8 @@ func _compact_now_from_settings() -> void:
     _append_chat("system", "Compacting conversation…")
 
     var result: Dictionary = await agent.compact_now()
+    if not is_inside_tree():
+        return
     var chat_result = ""
     if bool(result.get("ok", false)):
         chat_result = "Compaction finished: ~%d → ~%d estimated tokens." % [int(result.get("tokens_before", 0)), int(result.get("tokens_after", 0))]
@@ -723,13 +754,16 @@ func _compact_now_from_settings() -> void:
     elif bool(result.get("no_op", false)):
         chat_result = "Compaction skipped: " + str(result.get("error", "Nothing to compact."))
         compaction_status_label.text = chat_result
+    elif bool(result.get("cancelled", false)):
+        chat_result = "Compaction cancelled."
+        compaction_status_label.text = chat_result
     else:
         chat_result = "Compaction failed: " + str(result.get("error", "Unknown error."))
         compaction_status_label.text = chat_result
 
     _append_chat("system", chat_result)
     compact_now_button.disabled = false
-    _set_chat_busy_controls(false)
+    _set_chat_busy_controls(is_instance_valid(agent) and agent.busy)
 
 
 func _provider_changed(index: int) -> void:
@@ -748,16 +782,28 @@ func _save_settings() -> void:
     settings.llm_call_delay_sec = float(llm_delay_spin.value)
     settings.compaction_auto_tokens = int(compaction_auto_spin.value)
     settings.compaction_keep_recent_tokens = int(compaction_keep_spin.value)
-    metadata.save_global_settings(settings)
+    var failures: Array[String] = []
+    if not metadata.save_global_settings(settings):
+        failures.append("global settings")
     AppLoggerScript.global_event("settings.save", "provider=%s model=%s reasoning_effort=%s max_agent_steps=%d llm_call_delay_sec=%.1f compaction_auto_tokens=%d compaction_keep_recent_tokens=%d" % [id, settings.model, settings.reasoning_effort, int(settings.max_agent_steps), float(settings.llm_call_delay_sec), int(settings.compaction_auto_tokens), int(settings.compaction_keep_recent_tokens)])
-    var creds = metadata.credentials(); creds[id] = key_edit.text.strip_edges(); metadata.save_credentials(creds)
+    var creds = metadata.credentials()
+    creds[id] = key_edit.text.strip_edges()
+    if not metadata.save_credentials(creds):
+        failures.append("provider credentials")
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
         game_meta.provider_override = str(game_override_provider.get_item_metadata(game_override_provider.selected))
         game_meta.model_override = game_override_model.text.strip_edges()
-        metadata.write_game(current_game, game_meta)
+        if not metadata.write_game(current_game, game_meta):
+            failures.append("game settings")
         if is_instance_valid(agent) and agent.has_method("settings_changed"):
             agent.settings_changed()
+    if not failures.is_empty():
+        var message = "Could not save %s. Some other changes may have been saved; retry after fixing storage access." % ", ".join(failures)
+        AppLoggerScript.global_event("settings.save_failed", message, "ERROR")
+        compaction_status_label.text = message
+        _toast(message)
+        return
     settings_dialog.visible = false
     _toast("Settings saved.")
 

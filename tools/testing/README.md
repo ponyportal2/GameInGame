@@ -6,6 +6,16 @@ Run the whole source verification stack with Godot 4.7.2:
 GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64 tools/testing/run-verification.sh
 ```
 
+For Windows or Linux, the portable runners isolate application data under a temporary directory and print its location:
+
+```bash
+node tools/testing/run-host-tests.mjs /path/to/godot
+node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs
+node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
+```
+
+The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
+
 The workflow performs, in order:
 
 1. deterministic verification of the root Windows folder;
