@@ -93,6 +93,7 @@ func global_settings() -> Dictionary:
         "llm_call_delay_sec": 6.0,
         "compaction_auto_tokens": 100000,
         "compaction_keep_recent_tokens": 20000,
+        "allow_rendered_tests": false,
     })
 
 func save_global_settings(data: Dictionary) -> bool:

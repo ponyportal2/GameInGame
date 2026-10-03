@@ -50,6 +50,7 @@ var agent_steps_spin: SpinBox
 var llm_delay_spin: SpinBox
 var compaction_auto_spin: SpinBox
 var compaction_keep_spin: SpinBox
+var rendered_tests_check: CheckBox
 var compact_now_button: Button
 var compaction_status_label: Label
 var library_button: Button
@@ -479,6 +480,11 @@ func _build_settings_overlay() -> void:
     game_override_model.placeholder_text = "Blank = use global model"
     sv.add_child(game_override_model)
 
+    rendered_tests_check = CheckBox.new()
+    rendered_tests_check.text = "Allow rendered agent tests (minimized window)"
+    rendered_tests_check.tooltip_text = "Headless tests are always available. Rendered tests use the GPU in a minimized window that does not take focus."
+    sv.add_child(rendered_tests_check)
+
     var actions = HBoxContainer.new()
     actions.add_theme_constant_override("separation", 8)
     root_box.add_child(actions)
@@ -766,6 +772,10 @@ func _rename_game() -> void:
     if is_instance_valid(agent) and agent.busy:
         _toast("Stop the agent or wait for it to finish before renaming.")
         return
+    if tools != null and is_instance_valid(tools.test_supervisor) and tools.test_supervisor.has_running():
+        tools.test_supervisor.stop_all()
+        _toast("Stopping the separate test game. Rename again after it exits.")
+        return
     var old = rename_target
     if old == "": return
     if current_game == old:
@@ -783,6 +793,8 @@ func _rename_game() -> void:
         current_game = new_name
         game_title_label.text = current_game
         tools.workspace = store.game_path(current_game)
+        if is_instance_valid(tools.test_supervisor):
+            tools.test_supervisor.rebind(tools.workspace)
         runner.runtime_log.rebind(current_game, tools.workspace)
         agent.configure(current_game, tools)
     else:
@@ -819,6 +831,7 @@ func _open_settings() -> void:
     llm_delay_spin.value = clampf(float(settings.get("llm_call_delay_sec", PiAgentControllerScript.DEFAULT_LLM_CALL_DELAY_SEC)), PiAgentControllerScript.MIN_LLM_CALL_DELAY_SEC, PiAgentControllerScript.MAX_LLM_CALL_DELAY_SEC)
     compaction_auto_spin.value = clampi(int(settings.get("compaction_auto_tokens", 100000)), 0, 2000000)
     compaction_keep_spin.value = clampi(int(settings.get("compaction_keep_recent_tokens", 20000)), 1000, 500000)
+    rendered_tests_check.button_pressed = bool(settings.get("allow_rendered_tests", false))
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
         _select_game_provider_id(str(game_meta.get("provider_override", "")))
@@ -892,6 +905,7 @@ func _save_settings() -> void:
     settings.llm_call_delay_sec = float(llm_delay_spin.value)
     settings.compaction_auto_tokens = int(compaction_auto_spin.value)
     settings.compaction_keep_recent_tokens = int(compaction_keep_spin.value)
+    settings.allow_rendered_tests = rendered_tests_check.button_pressed
     var failures: Array[String] = []
     if not metadata.save_global_settings(settings):
         failures.append("global settings")

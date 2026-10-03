@@ -158,6 +158,35 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (model === "pi-gamesmith-test-process") {
+      if (!["start_test_game", "read_test_log", "stop_test_game", "test_game_action"].every((name) => tools.includes(name))) {
+        answer(res, model, "SEPARATE_TOOLS_MISSING");
+        return;
+      }
+      const last = [...messages].reverse().find((m) => m.role === "tool");
+      let result = {};
+      try { result = JSON.parse(textOf(last?.content)); } catch {}
+      if (!st.testPhase) {
+        st.testPhase = "starting";
+        tool(res, model, "test-start", "start_test_game", { mode: "headless" });
+      } else if (st.testPhase === "starting") {
+        st.runId ||= result.run_id;
+        if (result.state === "running") {
+          st.testPhase = "inspecting";
+          tool(res, model, "test-inspect", "test_game_action", { run_id: st.runId, action: "inspect", properties: ["marker"] });
+        } else {
+          tool(res, model, `test-log-${st.calls}`, "read_test_log", { run_id: st.runId });
+        }
+      } else if (st.testPhase === "inspecting") {
+        st.inspected = result.properties?.marker === "99";
+        st.testPhase = "stopping";
+        tool(res, model, "test-stop", "stop_test_game", { run_id: st.runId });
+      } else {
+        answer(res, model, st.inspected && result.state === "exited" && result.stop_method === "graceful" ? "SEPARATE_TEST_VERIFIED" : "SEPARATE_TEST_FAILED");
+      }
+      return;
+    }
+
     if (model === "pi-gamesmith-e2e") {
       if (st.calls === 1) {
         tool(res, model, "write-main", "write", {

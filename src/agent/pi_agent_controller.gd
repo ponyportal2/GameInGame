@@ -41,6 +41,7 @@ var bridge_dir := ""
 var restart_after_finish := false
 var operation_id := 0
 var pending_reload: Dictionary = {}
+var pending_test_commands: Array[Dictionary] = []
 
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
@@ -173,6 +174,9 @@ func cancel() -> void:
 
 func restart_runtime() -> void:
     _clear_pending_reload()
+    pending_test_commands.clear()
+    if tools != null and is_instance_valid(tools.test_supervisor):
+        tools.test_supervisor.stop_all()
     if rpc != null:
         rpc.retire()
     rpc = null
@@ -400,6 +404,7 @@ func _on_pi_stderr(text: String) -> void:
 func _service_host_bridge() -> void:
     if bridge_dir == "":
         return
+    _service_pending_test_commands()
     var dir = DirAccess.open(bridge_dir)
     if dir == null:
         return
@@ -429,6 +434,11 @@ func _service_host_bridge() -> void:
             result = {"ok": false, "error": "Another reload is already waiting for player approval."}
         elif command == "read_runtime_log":
             result = tools.execute(command, request.get("args", {}))
+        elif command in ["start_test_game", "read_test_log", "stop_test_game", "test_game_action"]:
+            result = tools.execute(command, request.get("args", {}))
+            if result.get("ok", false) and command in ["stop_test_game", "test_game_action"] and result.get("state", "") != "exited":
+                pending_test_commands.append({"request": request, "run_id": request.get("args", {}).get("run_id", ""), "command": command, "bridge_dir": bridge_dir, "operation_id": operation_id})
+                continue
         elif command == "diagnostic_notice":
             result = tools.runner.runtime_log.prepare_notification() if tools != null and tools.runner != null else {"ok": true, "notice": ""}
         elif command == "diagnostic_delivery":
@@ -437,6 +447,24 @@ func _service_host_bridge() -> void:
         else:
             result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
         _write_host_response(bridge_dir, request, result)
+
+func _service_pending_test_commands() -> void:
+    for pending in pending_test_commands.duplicate():
+        if pending.operation_id != operation_id or pending.bridge_dir != bridge_dir:
+            pending_test_commands.erase(pending)
+            continue
+        var state: Dictionary = tools.tests().status(pending.run_id)
+        var result: Dictionary = {}
+        if pending.command == "stop_test_game" and state.get("state") == "exited":
+            result = state
+        elif pending.command == "test_game_action":
+            if state.has("action_result"):
+                result = state.action_result
+            elif state.get("state") == "exited":
+                result = {"ok": false, "error": "Test process exited before completing the action.", "process": state}
+        if not result.is_empty():
+            pending_test_commands.erase(pending)
+            _write_host_response(bridge_dir, pending.request, result)
 
 func approve_reload() -> void:
     if pending_reload.is_empty():

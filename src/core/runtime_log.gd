@@ -9,6 +9,7 @@ var policy = DEFAULT_POLICY.duplicate()
 var game_name = ""
 var session_id = ""
 var root_path = ""
+var execution: Dictionary = {}
 var session_path = ""
 var source_roots: Array[String] = []
 var opened_utc = ""
@@ -75,7 +76,8 @@ func start(name: String, workspace: String, options: Dictionary = {}) -> void:
         return
     policy.merge(options, true)
     game_name = name
-    root_path = "user://host/games".path_join(name).path_join("runtime")
+    root_path = str(options.get("root_path", "user://host/games".path_join(name).path_join("runtime")))
+    execution = options.get("execution", {}).duplicate()
     source_roots.append(workspace.trim_suffix("/") + "/")
     opened_utc = _utc()
     start_ticks = Time.get_ticks_msec()
@@ -312,6 +314,8 @@ func capture(severity: String, kind: String, message: String, file: String = "",
     for frame in trace.slice(0, 32):
         bounded_trace.append({"file": str(frame.get("file", "")).left(512), "line": int(frame.get("line", 0)), "function": str(frame.get("function", "")).left(128)})
     var record = {"seq": seq, "utc": _utc(), "elapsed_ms": Time.get_ticks_msec() - start_ticks, "session_id": session_id, "game": game_name, "evaluating_attempt": attempt_id if capturing_startup else null, "active_attempt": active_attempt_id, "origin_attempt": origin, "attribution": attribution, "phase": phase, "severity": severity, "kind": kind, "file": source.left(1024), "source_file": _relative_source(source).left(1024), "line": source_line, "function": function.left(256), "message": message.left(4096), "message_truncated": message.length() > 4096, "trace": bounded_trace, "trace_truncated": trace.size() > 32}
+    if not execution.is_empty():
+        record.execution = execution
     # Keep synchronous startup acceptance identical to the previous collector.
     if engine_error and capturing_startup and severity == "error":
         startup_error_count += 1
@@ -469,6 +473,8 @@ func _session_meta() -> Dictionary:
     for item in loss:
         range_count += int(item.count)
     var result = {"format": 1, "session_id": session_id, "game": game_name, "opened_utc": opened_utc, "closed_utc": _utc() if closed else "", "status": "closed" if closed else "open", "oldest_seq": oldest_seq, "newest_seq": seq, "persisted_seq": persisted_seq, "latest_attempt": attempt_id, "active_attempt": active_attempt_id, "latest_outcome": latest_outcome, "segments": segments.duplicate(true), "expired_segments": expired_segments, "retention_reason": "session_storage_budget" if expired_segments > 0 else "", "loss": loss.duplicate(true), "loss_totals": loss_totals.duplicate(), "loss_ranges_complete": range_count == int(loss_totals.queue_overflow) + int(loss_totals.write_failure), "persistence_error": persistence_error}
+    if not execution.is_empty():
+        result.execution = execution
     mutex.unlock()
     return result
 

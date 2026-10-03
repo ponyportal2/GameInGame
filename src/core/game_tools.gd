@@ -7,6 +7,14 @@ const MAX_READ_LINES = 1000
 var workspace = ""
 var git = GitService.new()
 var runner: GameRunner
+var test_supervisor: Node
+
+func tests() -> Node:
+    if not is_instance_valid(test_supervisor):
+        test_supervisor = preload("res://src/core/test_game_supervisor.gd").new()
+        test_supervisor.rebind(workspace)
+        runner.add_child(test_supervisor)
+    return test_supervisor
 
 func _init(p_workspace: String = "", p_runner: GameRunner = null):
     workspace = p_workspace
@@ -156,6 +164,10 @@ func execute(name: String, args: Dictionary) -> Dictionary:
         "git_commit": return git_commit(str(args.get("message", "Update generated game")))
         "reload_game": return reload_game()
         "read_runtime_log": return read_runtime_log(args)
+        "start_test_game": return tests().start(workspace, str(args.get("mode", "headless")))
+        "read_test_log": return tests().read_log(str(args.get("run_id", "")), args)
+        "stop_test_game": return tests().request_stop(str(args.get("run_id", "")))
+        "test_game_action": return tests().request_action(str(args.get("run_id", "")), args)
         _: return {"ok": false, "error": "Unknown tool: " + name}
 
 func _path(relative_path: String) -> String:

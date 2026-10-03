@@ -253,6 +253,25 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
+  for (const tool of [
+    { name: "start_test_game", description: "Start a separate Godot test process for the current workspace. Headless is always available; rendered requires user Settings permission. Returns immediately with run_id; read_test_log reports startup progress. Does not interrupt the player or promote the working snapshot. One test at a time.", parameters: Type.Object({ mode: Type.Optional(Type.Union([Type.Literal("headless"), Type.Literal("rendered")])) }) },
+    { name: "read_test_log", description: "Read separate test-process status, shared runtime diagnostics and raw engine/stdout/stderr tails. Includes mode, exit code, graceful/forced stop and reason. Use cursor/raw/severity for diagnostics pagination. Omit run_id to list recent runs and current rendered permission. Completed-run logs survive reopening.", parameters: Type.Object({ run_id: Type.Optional(Type.String()), cursor: Type.Optional(Type.Integer({ minimum: 0 })), raw: Type.Optional(Type.Boolean()), severity: Type.Optional(Type.Union([Type.Literal("error"), Type.Literal("warning"), Type.Literal("info")])), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }) },
+    { name: "stop_test_game", description: "Stop a separate test process. Requests graceful Godot shutdown, then forcibly terminates it after a short shutdown grace period if needed. Waits for the process exit and reports how it stopped; forced termination does not prove a hang.", parameters: Type.Object({ run_id: Type.String() }) },
+    { name: "test_game_action", description: "Interact with a separate running test game. Inspect direct children and requested properties at a game-relative node path, call a game method with JSON arguments, send a named InputMap action, or capture a screenshot (rendered only). Actions wait for a response; Stop remains available if the child hangs. Properties and return values are bounded text representations.", parameters: Type.Object({ run_id: Type.String(), action: Type.Union([Type.Literal("inspect"), Type.Literal("call"), Type.Literal("input"), Type.Literal("screenshot")]), path: Type.Optional(Type.String()), properties: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })), method: Type.Optional(Type.String()), arguments: Type.Optional(Type.Array(Type.Any())), input_action: Type.Optional(Type.String()), pressed: Type.Optional(Type.Boolean()) }) },
+  ]) {
+    pi.registerTool({
+      ...tool, label: tool.name,
+      async execute(id, params, signal) {
+        const result = await callHost(id, tool.name, params, signal);
+        if (!result?.ok) throw new Error(JSON.stringify(result));
+        if (result.image_base64) {
+          return { content: [{ type: "image" as const, data: result.image_base64, mimeType: result.mime_type }], details: { ok: true } };
+        }
+        return textResult(JSON.stringify(result), result);
+      },
+    });
+  }
+
   pi.registerTool({
     name: "reload_game",
     label: "reload_game",

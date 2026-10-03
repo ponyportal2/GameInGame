@@ -39,6 +39,7 @@ func run() -> void:
         await _test_missing_global_pi_error()
         await _test_known_model_capabilities()
         await _test_production_app_uses_pi()
+        await _test_real_pi_separate_process()
         await _test_real_pi_generation_edit_stream_and_restart()
         await _test_real_pi_completion_without_forced_tools()
         await _test_real_pi_retry_and_action_limit()
@@ -141,6 +142,29 @@ func _test_production_app_uses_pi() -> void:
     app.queue_free()
     await process_frame
     WorkspaceStoreScript.new().delete_game(created.name)
+
+func _test_real_pi_separate_process() -> void:
+    _settings("pi-gamesmith-test-process", 0.05)
+    var created = _new_game("Pi Separate Test")
+    var file = FileAccess.open(created.path.path_join("main.gd"), FileAccess.WRITE)
+    file.store_string("extends Node\nvar marker = 99\n")
+    file.close()
+    var runner = GameRunnerScript.new()
+    root.add_child(runner)
+    var agent = _controller(created.name, created.path, runner, false)
+    var text = {"value": ""}
+    agent.assistant_message.connect(func(message): text.value += str(message))
+    agent.llm_stream_delta.connect(func(kind, delta):
+        if kind == "assistant": text.value += str(delta)
+    )
+    agent.send_player_request("Test the current game in a separate process, inspect marker, and stop it. Do not reload the player's game.")
+    var ok = await agent.finished
+    assert_true(bool(ok) and "SEPARATE_TEST_VERIFIED" in text.value, "Real Pi launches, inspects, and gracefully stops separate Godot")
+    assert_true(not runner.has_active_game() and agent.pending_reload.is_empty(), "Real Pi testing never starts the live game or asks for reload approval")
+    assert_true(not WorkspaceStoreScript.new().has_working_snapshot(created.name), "Standalone tests never promote working snapshot")
+    agent.queue_free()
+    runner.queue_free()
+    await process_frame
 
 func _test_real_pi_generation_edit_stream_and_restart() -> void:
     _settings("pi-gamesmith-e2e", 0.05, 150, 100000, 20000, "high")

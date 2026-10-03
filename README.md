@@ -79,6 +79,18 @@ Run is available only when workspace `main.gd` or a last working snapshot exists
 
 **Allow Reload** gives GameSmith permission to attempt loading the game's current workspace, including any edits made while the request was waiting. A reload request does not freeze a revision. To cancel the waiting request, use **Stop**.
 
+### Separate agent testing
+
+Pi can run the current workspace in a separate Godot process without replacing or pausing your game. Headless testing is always available. Enable **Allow rendered agent tests** in Settings to permit a separate rendered window. It starts minimized with NO_FOCUS, audio is muted, and screenshots do not restore it or take focus. This permission is checked on each launch and does not change the system instructions.
+
+The tools are `start_test_game`, `read_test_log`, `test_game_action`, and `stop_test_game`. Pi chooses its testing strategy and duration. Actions can inspect game nodes/properties, call game methods, send named input actions, and capture rendered screenshots. One test process runs at a time. Starting a test returns a run ID immediately; reading its log reports startup progress. Tests still use the production loader and script-loading policy.
+
+Stop requests a clean exit, then forces termination after a five-second shutdown grace period if necessary. The result reports the exit code, shutdown method, and reason. The chat Stop button also requests test shutdown when it cancels Pi. Host teardown terminates remaining test processes. There is no automatic test-duration limit.
+
+Each test has separate writable user data and raw engine/stdout/stderr files under `host/games/<game>/tests/<run-id>/`. Shared runtime diagnostics use their own sessions under `tests/runtime/`, with the existing JSONL rotation, retention, and loss reporting. Records identify the test run and mode. Raw stdout/stderr capture is capped at 2 MiB per stream and discarded-byte counts are explicit; engine logs provide additional crash/startup evidence. Omit the run ID from `read_test_log` to list recent runs and the current rendered permission. Completed-run logs remain readable after reopening.
+
+Tests never promote the working snapshot or approve a live reload. Their workspace inputs are not frozen; separate user data is not a filesystem sandbox. A successful test is evidence about that test execution, not a guarantee that a later live reload will succeed.
+
 ## Library/chat behavior
 
 - **F1** toggles chat.

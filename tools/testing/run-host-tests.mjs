@@ -17,7 +17,7 @@ const bootstrap = spawnSync(resolve(godot), ["--headless", "--path", root,
 { env, windowsHide: true, stdio: "inherit" });
 if (bootstrap.error) throw bootstrap.error;
 if (bootstrap.status !== 0) process.exit(bootstrap.status ?? 1);
-const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd"];
+const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd", "test_process_runner.gd"];
 for (const [index, script] of scripts.entries()) {
   const result = spawnSync(resolve(godot), ["--headless", "--path", root,
     "--log-file", join(data, `engine-${index}.log`), "--script", `res://tests/${script}`],
