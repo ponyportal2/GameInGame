@@ -4,6 +4,7 @@ extends RefCounted
 # confusing comments or quoted examples with executable GDScript.
 const LOAD_METHODS = ["load", "load_threaded_request", "load_threaded_get"]
 const SCRIPT_EXTENSIONS = ["gd", "gdc", "gde", "cs"]
+const SAFE_RUNTIME_ASSET_EXTENSIONS = ["png", "jpg", "jpeg", "wav", "ogg"]
 
 static func first_violation(source: String) -> Dictionary:
     var tokens = _tokens(source)
@@ -14,19 +15,23 @@ static func first_violation(source: String) -> Dictionary:
         if i > 0 and tokens[i - 1].value == "func":
             continue
         var args = _arguments(tokens, i + 1)
-        var path = _literal(args[0]) if not args.is_empty() else null
+        if args.is_empty():
+            continue # An incomplete call belongs to Godot's compiler.
+        var qualified = i > 0 and tokens[i - 1].value == "."
+        var max_args = 4 if token.value == "load_threaded_request" else (3 if token.value == "load" and qualified else 1)
+        if args.size() > max_args:
+            continue # Invalid API arity also belongs to Godot.
+        var path = _literal(args[0])
         var hint = _literal(args[1]) if args.size() > 1 else null
         if path != null and str(path).get_extension().to_lower() in SCRIPT_EXTENSIONS:
             return {"line": token.line, "message": "Runtime script loading is not supported. Use preload() or script inheritance for script dependencies."}
         if hint != null and ClassDB.class_exists(str(hint)) and ClassDB.is_parent_class(str(hint), "Script"):
             return {"line": token.line, "message": "Runtime Script/GDScript loading is not supported. Use preload() or script inheritance."}
-        var opaque_path = path == null or str(path).begins_with("uid://") or str(path).get_extension().is_empty()
-        if opaque_path and not _asset_hint(hint):
-            return {"line": token.line, "message": "Cannot verify this runtime load path. Use preload() for scripts; for computed asset paths use ResourceLoader.load(path, an explicit non-script type such as \"Texture2D\")."}
+        if path == null or str(path).begins_with("uid://") or str(path).get_extension().is_empty():
+            return {"line": token.line, "message": "Runtime loading supports only literal PNG/JPG/JPEG/WAV/OGG paths. Use a literal approved asset path, or preload a statically known resource."}
+        if str(path).get_extension().to_lower() not in SAFE_RUNTIME_ASSET_EXTENSIONS:
+            return {"line": token.line, "message": "Runtime loading of scenes, serialized resources, and other unapproved asset formats is unsupported. Use preload() with a statically known resource path."}
     return {}
-
-static func _asset_hint(hint) -> bool:
-    return hint != null and hint != "Resource" and ClassDB.class_exists(str(hint)) and ClassDB.is_parent_class(str(hint), "Resource") and not ClassDB.is_parent_class(str(hint), "Script")
 
 static func _literal(argument: Array):
     if argument.size() == 1 and argument[0].kind == "string" and not str(argument[0].value).contains("\\"):
@@ -36,18 +41,23 @@ static func _literal(argument: Array):
 static func _arguments(tokens: Array[Dictionary], opening: int) -> Array:
     var arguments: Array = []
     var current: Array = []
-    var depth = 1
+    var closing: Array[String] = [")"]
     for i in range(opening + 1, tokens.size()):
         var token: Dictionary = tokens[i]
         if token.kind == "symbol":
             if token.value in ["(", "[", "{"]:
-                depth += 1
+                closing.append({"(": ")", "[": "]", "{": "}"}[token.value])
             elif token.value in [")", "]", "}"]:
-                depth -= 1
-                if depth == 0:
-                    arguments.append(current)
+                if token.value != closing.back():
+                    return []
+                closing.pop_back()
+                if closing.is_empty():
+                    if not current.is_empty():
+                        arguments.append(current)
                     return arguments
-            elif token.value == "," and depth == 1:
+            elif token.value == "," and closing.size() == 1:
+                if current.is_empty():
+                    return []
                 arguments.append(current)
                 current = []
                 continue
@@ -91,6 +101,8 @@ static func _tokens(source: String) -> Array[Dictionary]:
                         line += 1
                     i += 1
             var value = source.substr(start, i - start)
+            if i >= source.length():
+                return [] # Unterminated strings make tokenization uncertain.
             tokens.append({"kind": "string", "value": value if raw else value.c_unescape(), "line": start_line})
             i += delimiter.length()
             continue

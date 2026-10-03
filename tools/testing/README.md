@@ -20,9 +20,11 @@ The usual host tests include `cache_regression_runner.gd` and `cache_edge_regres
 
 Helper scripts must use `preload()` or script inheritance. Before touching the dependency cache, each load/reload checks all workspace `.gd` files (excluding `.git` and `.godot`) for direct runtime script loading calls and reports the offending file and line. A rejection keeps the accepted game and its preloaded dependencies intact. Comments and strings containing example code are ignored.
 
-Lazy assets remain supported: `load("texture.png")` or, for computed paths, `ResourceLoader.load(path, "Texture2D")` with an explicit non-script resource type. Computed paths, UID paths and extensionless paths require that explicit type because they could identify a script. This static convention check is not containment; indirect calls and script dependencies embedded in lazily loaded scene/resource assets are outside its guarantees.
+Identified direct runtime-loading calls are restricted to literal paths using approved ordinary asset formats: PNG/JPG/JPEG/WAV/OGG, case-insensitively. The same rule applies to `load()`, `ResourceLoader.load()`, `load_threaded_request()` and `load_threaded_get()`. Computed paths, UID paths, extensionless paths and every other format are rejected regardless of a non-script type hint. Explicit Script/GDScript hints are rejected even with an approved filename. Script dependencies should use `preload()` or script inheritance; scenes and serialized resources must use `preload()` with a statically known path.
 
-`script_load_policy_runner.gd` tests the scanner, file/line reporting, nested unused scripts, metadata exclusions, cache preservation, corrected reloads and model instructions. Both cache suites and the policy suite run in the usual portable and Linux verification commands.
+Comments and quoted examples are ignored. Unfinished strings, unmatched delimiters and invalid loading-call arity defer to Godot's compiler. This is a coding-policy check, not a security sandbox or complete revision isolation: indirect calls are prohibited by model instructions but outside the check, and games can still read ordinary files or assets later.
+
+`script_load_policy_runner.gd` applies a shared safe/unsafe path matrix across all loading APIs, checks hints only on APIs that accept them, and tests malformed-call compiler rejection, file/line reporting, nested unused scripts, metadata exclusions, cache preservation, corrected reloads and model instructions. Both cache suites and the policy suite run in the usual portable and Linux verification commands.
 
 The workflow performs, in order:
 

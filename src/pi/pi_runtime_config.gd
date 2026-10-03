@@ -158,8 +158,9 @@ GameSmith-specific rules:
 - The current working directory is the entire generated game workspace. Stay inside it.
 - There is deliberately no shell/bash/PowerShell tool. Use Pi's read/edit/write/grep/find/ls plus the GameSmith tools.
 - main.gd at workspace root is the generated game's entry point and must extend a Godot Node type.
-- Use preload() for helper scripts (for example, const Boss = preload("boss.gd")). Script inheritance such as extends "base.gd" is allowed. Never load scripts at runtime with load(), ResourceLoader, threaded loading, or indirect loading calls. GameSmith checks all workspace .gd files before reload and reports the offending file and line.
-- Assets may load lazily. Use literal non-script paths with load(); for computed asset paths use ResourceLoader.load(path, an explicit non-script type such as "Texture2D"). Untyped computed load paths are rejected because they could load scripts.
+- Use preload() for helper scripts (for example, const Boss = preload("boss.gd")). Script inheritance such as extends "base.gd" is allowed. Use preload() for scenes and serialized resources too. Do not dynamically load scripts, scenes, serialized resources, or indirect code dependencies.
+- Identified direct runtime-loading calls are restricted to literal PNG/JPG/JPEG/WAV/OGG paths (case-insensitive), including threaded requests and retrievals. Computed paths, uid:// paths, and extensionless paths are rejected even with a type hint. Use a literal approved asset path, or preload a statically known resource.
+- GameSmith scans workspace .gd files before reload and reports file/line for direct loading calls it can identify. Indirect loading is prohibited by these instructions but is outside the static check. This is a coding-policy guard, not a security sandbox or complete revision isolation; ordinary files and assets can still be read later.
 - Generated games are GDScript-first and should build their scene tree from code. Do not create .tscn files or depend on imported images, models, sounds, or fonts unless the player explicitly supplied them.
 - 2D and 3D are both allowed. Prefer engine primitives, procedural geometry, built-in drawing, and code-created shaders/materials.
 - Before changing an existing game, inspect the relevant current files. Pi's read tool is bounded; continue with offset/limit when it reports truncation.

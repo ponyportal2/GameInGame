@@ -23,20 +23,19 @@ func write_text(path: String, source: String) -> void:
     file.close()
 
 func run() -> void:
+    test_api_matrix()
     for source in [
         "const H = preload('helper.gd')",
         "extends 'base.gd'",
         "load('texture.png')",
-        "ResourceLoader.load(path, 'Texture2D')",
-        "ResourceLoader.load('uid://asset', 'Texture2D')",
-        "ResourceLoader.load_threaded_request(path, 'PackedScene')",
         "# load('helper.gd')\nvar text = \"load('other.gd')\"",
         "var text = '''\nResourceLoader.load('helper.gd')\n'''",
+        "var text = 'multiline example:\nload(\"helper.gd\")\n'",
         "var text = \"escaped \\\"load('helper.gd')\\\"\"",
         "func load(path): pass",
         "reload('helper.gd')",
         "load('asset(with,comma).png')",
-        "ResourceLoader.load(make_path([1, 2]), 'Texture2D')",
+        "ResourceLoader.load('texture.png', 'Texture2D', 1)",
     ]:
         check(Policy.first_violation(source).is_empty(), "allows: " + source)
     for source in [
@@ -54,16 +53,41 @@ func run() -> void:
         "ResourceLoader.load(path, 'Script')",
         "ResourceLoader.load('asset.dat', 'GDScript')",
         "load(r'helper.gd')",
-        "load('helper.gd', 'Texture2D')",
+        "ResourceLoader.load(make_path([1, 2]), 'Texture2D')",
     ]:
         check(not Policy.first_violation(source).is_empty(), "rejects: " + source)
     var multiline = "# example\nvar text = '''\nload('example.gd')\n'''\nResourceLoader.load(\n    'helper.gd'\n)"
     check(Policy.first_violation(multiline).get("line") == 5, "reports call line after multiline strings")
     var prompt = Config._game_prompt()
-    check("Use preload() for helper scripts" in prompt and "Script inheritance" in prompt and "computed asset paths" in prompt, "model instructions describe script and asset loading policy")
+    check("Use preload() for helper scripts" in prompt and "Script inheritance" in prompt and "literal PNG/JPG/JPEG/WAV/OGG" in prompt and "outside the static check" in prompt, "model instructions describe precise loading policy and enforcement limits")
     await test_reload_gate()
     print("SCRIPT LOAD POLICY TESTS: %d passed, %d failed" % [passed, failed])
     quit(0 if failed == 0 else 1)
+
+func test_api_matrix() -> void:
+    for api in ["load", "ResourceLoader.load", "ResourceLoader.load_threaded_request", "ResourceLoader.load_threaded_get"]:
+        var accepts_hint = api in ["ResourceLoader.load", "ResourceLoader.load_threaded_request"]
+        for extension in ["png", "jpg", "jpeg", "wav", "ogg"]:
+            for spelling in [extension, extension.to_upper()]:
+                var source = "%s('asset.%s')" % [api, spelling]
+                check(Policy.first_violation(source).is_empty(), "approved asset: " + source)
+        for path in ["'helper.gd'", "'helper.GD'", "'helper.gdc'", "'helper.cs'", "'scene.tscn'", "'scene.scn'", "'asset.tres'", "'asset.res'", "'asset.mesh'", "'asset.material'", "'asset.svg'", "'asset.ttf'", "'asset.otf'", "'asset.bin'", "'uid://asset.png'", "'extensionless'", "path", "'asset.' + 'png'", "'helper.gd\n'"]:
+            var source = "%s(%s)" % [api, path]
+            check(not Policy.first_violation(source).is_empty(), "unsupported path: " + source)
+            if accepts_hint:
+                source = "%s(%s, 'Texture2D')" % [api, path]
+                check(not Policy.first_violation(source).is_empty(), "hint cannot override path: " + source)
+        if accepts_hint:
+            for hint in ["Script", "GDScript"]:
+                var source = "%s('asset.png', '%s')" % [api, hint]
+                check(not Policy.first_violation(source).is_empty(), "script hint: " + source)
+        for arguments in ["'helper.gd'", "'helper.gd']", "[path)", "'helper.gd", "'''helper.gd", "", ", 'helper.gd')"]:
+            var source = "%s(%s" % [api, arguments]
+            check(Policy.first_violation(source).is_empty(), "malformed call defers: " + source)
+    for source in ["load('helper.gd', 'Texture2D')", "ResourceLoader.load_threaded_get('helper.gd', 'Texture2D')"]:
+        check(Policy.first_violation(source).is_empty(), "unsupported hint arity defers: " + source)
+    check("statically known resource" in Policy.first_violation("load(path)").message, "computed path diagnostic offers a valid literal alternative")
+    check("inheritance" not in Policy.first_violation("load('scene.tscn')").message, "structured resource diagnostic recommends preload without inheritance")
 
 func test_reload_gate() -> void:
     var ws = "user://script-policy-%d" % Time.get_ticks_usec()
@@ -83,6 +107,11 @@ func test_reload_gate() -> void:
     check(runner.active_game == old_game and old_game.probe() == 12, "policy failure preserves accepted game code")
     check(ResourceLoader.get_cached_ref(helper) == old_helper, "policy failure leaves dependency cache intact")
     write_text(ws.path_join("nested/unused.gd"), "extends RefCounted\n")
+    for malformed in ["load('helper.gd'", "load('helper.gd", "load([path)", "load('helper.gd', 'Texture2D')", "ResourceLoader.load_threaded_get('helper.gd', 'Texture2D')"]:
+        write_text(main, "extends Node\nfunc broken():\n    return " + malformed + "\n")
+        rejected = runner.load_game(ws)
+        check(not rejected.ok and "failed to compile" in rejected.error and runner.active_game == old_game and old_game.probe() == 12, "Godot rejects malformed call and preserves previous game: " + malformed)
+    write_text(main, "extends Node\nconst H = preload('helper.gd')\nfunc probe(): return H.new().value()\n")
     write_text(ws.path_join("nested/uppercase.GD"), "extends RefCounted\nfunc later(): return load('boss.gd')\n")
     rejected = runner.load_game(ws)
     check(not rejected.ok and "uppercase.GD:2:" in rejected.error, "checks uppercase script extensions on Windows")
