@@ -246,6 +246,8 @@ func _test_chat_pause_keeps_host_alive() -> void:
     await process_frame
     app._open_game(name)
     await process_frame; await process_frame
+    app._run_game()
+    await process_frame; await process_frame
     var before = app.runner.active_game.ticks
     assert_true(before > 0, "generated game processes while chat is closed")
     app._set_chat_visible(true)
@@ -276,7 +278,9 @@ func _test_chat_owns_mouse_mode_across_generated_reload() -> void:
     await process_frame
     app._open_game(name)
     await process_frame
-    assert_true(not app.chat_overlay.visible, "existing generated game starts with chat closed")
+    assert_true(app.chat_overlay.visible and not app.runner.has_active_game(), "existing generated game opens in chat without execution")
+    app._run_game()
+    assert_true(not app.chat_overlay.visible, "Run Game switches to gameplay")
     assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_STOP, "generated UI can normally own gameplay clicks")
 
     app._set_chat_visible(true)

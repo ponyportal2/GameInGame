@@ -56,6 +56,8 @@ var library_button: Button
 var send_button: Button
 var stop_button: Button
 var rename_button: Button
+var run_game_button: Button
+var reload_game_buttons: Array[Button] = []
 var game_override_provider: OptionButton
 var game_override_model: LineEdit
 var gameplay_mouse_mode := Input.MOUSE_MODE_VISIBLE
@@ -125,6 +127,7 @@ func _build_play_hud() -> void:
     game_title_label = Label.new(); game_title_label.text = ""; game_title_label.add_theme_font_size_override("font_size", 18); game_title_label.add_theme_color_override("font_color", Color("eef3ff")); top.add_child(game_title_label)
     var spacer = Control.new(); spacer.custom_minimum_size.x = 12; top.add_child(spacer)
     var chat_btn = Button.new(); chat_btn.text = "Chat  F1"; chat_btn.mouse_filter = Control.MOUSE_FILTER_STOP; chat_btn.pressed.connect(func(): _set_chat_visible(true)); top.add_child(chat_btn)
+    _add_reload_button(top)
     toast_label = Label.new(); toast_label.position = Vector2(20, 665); toast_label.add_theme_color_override("font_color", Color("a6b6d4")); play_hud.add_child(toast_label)
 
 func _build_chat() -> void:
@@ -141,6 +144,9 @@ func _build_chat() -> void:
     rename_button = Button.new(); rename_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER; rename_button.text = "Rename"; rename_button.pressed.connect(_open_rename); head.add_child(rename_button)
     var close = Button.new(); close.size_flags_vertical = Control.SIZE_SHRINK_CENTER; close.text = "Close  Esc"; close.pressed.connect(func(): _set_chat_visible(false)); head.add_child(close)
     status_label = Label.new(); status_label.text = "Ready"; status_label.add_theme_color_override("font_color", Color("8393b2")); box.add_child(status_label)
+    var game_controls = HBoxContainer.new(); game_controls.add_theme_constant_override("separation", 10); box.add_child(game_controls)
+    run_game_button = Button.new(); run_game_button.text = "Run Game"; run_game_button.pressed.connect(_run_game); game_controls.add_child(run_game_button)
+    _add_reload_button(game_controls)
     transcript_view = RichTextLabel.new(); transcript_view.bbcode_enabled = true; transcript_view.fit_content = false; transcript_view.scroll_active = true; transcript_view.size_flags_vertical = Control.SIZE_EXPAND_FILL; transcript_view.custom_minimum_size.y = 350; box.add_child(transcript_view)
     var composer = HBoxContainer.new(); composer.add_theme_constant_override("separation", 10); box.add_child(composer)
     chat_input = TextEdit.new(); chat_input.placeholder_text = "Describe what to build or change…  Enter sends · Shift+Enter adds a line"; chat_input.custom_minimum_size.y = 64; chat_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL; chat_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY; composer.add_child(chat_input)
@@ -151,6 +157,32 @@ func _build_chat() -> void:
     stop_button.disabled = true
     stop_button.pressed.connect(_stop_agent)
     composer.add_child(stop_button)
+
+func _add_reload_button(parent: Control) -> void:
+    var button = Button.new()
+    button.text = "Reload Game"
+    button.tooltip_text = "Reload the workspace when the agent is idle"
+    button.pressed.connect(_reload_game)
+    parent.add_child(button)
+    reload_game_buttons.append(button)
+
+func _run_game() -> void:
+    if not is_instance_valid(runner) or (is_instance_valid(agent) and agent.busy):
+        return
+    var result: Dictionary = runner.load_game(store.game_path(current_game))
+    if not result.ok and not runner.has_active_game() and store.has_working_snapshot(current_game):
+        result = runner.load_game(metadata.snapshot_dir(current_game))
+        if result.ok:
+            _toast("Workspace candidate is broken; launched the last working snapshot.")
+    _set_chat_busy_controls(false)
+    if result.ok:
+        _set_chat_visible(false)
+
+func _reload_game() -> void:
+    if not is_instance_valid(runner) or not runner.has_active_game() or (is_instance_valid(agent) and agent.busy):
+        return
+    runner.load_game(store.game_path(current_game))
+    _set_chat_busy_controls(false)
 
 func _build_dialogs() -> void:
     _build_new_game_overlay()
@@ -480,13 +512,9 @@ func _open_game(name: String) -> void:
         agent.llm_stream_end.connect(_end_stream_block)
     agent.finished.connect(_on_agent_finished)
     _load_transcript()
-    if FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
-        var result: Dictionary = runner.load_game(store.game_path(name))
-        if not result.ok and store.has_working_snapshot(name):
-            var fallback: Dictionary = runner.load_game(metadata.snapshot_dir(name))
-            if fallback.ok: _toast("Workspace candidate is broken; launched the last working snapshot.")
-    else:
-        _set_chat_visible(true)
+    _set_chat_visible(true)
+    _set_chat_busy_controls(false)
+    if not FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
         _append_chat("system", "This workspace is empty. Tell the agent what game to build.")
 
 func _on_load_success(_version: int) -> void:
@@ -505,6 +533,7 @@ func _on_load_success(_version: int) -> void:
             _suspend_generated_input()
         AppLoggerScript.game_event(current_game, "game.reload", "load_version=%d ok=true" % _version)
         _toast("Game reloaded successfully.")
+        _set_chat_busy_controls(is_instance_valid(agent) and agent.busy)
 
 func _reserve_host_canvas_layers() -> void:
     if not is_instance_valid(runner) or not runner.has_active_game():
@@ -537,6 +566,10 @@ func _set_chat_busy_controls(is_busy: bool) -> void:
         stop_button.disabled = not is_busy
     if is_instance_valid(rename_button):
         rename_button.disabled = is_busy
+    if is_instance_valid(run_game_button):
+        run_game_button.disabled = is_busy or not is_instance_valid(runner) or runner.has_active_game()
+    for button in reload_game_buttons:
+        button.disabled = is_busy or not is_instance_valid(runner) or not runner.has_active_game()
     if not is_busy and chat_overlay.visible and not settings_dialog.visible and is_instance_valid(chat_input):
         chat_input.grab_focus()
 
@@ -594,6 +627,8 @@ func _set_chat_visible(visible: bool) -> void:
         _suspend_generated_input()
         chat_input.grab_focus()
     else:
+        if not is_instance_valid(runner) or not runner.has_active_game():
+            return
         _restore_generated_input()
         chat_overlay.visible = false
         Input.mouse_mode = gameplay_mouse_mode

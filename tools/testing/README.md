@@ -18,6 +18,8 @@ The usual host tests include `cache_regression_runner.gd` and `cache_edge_regres
 
 ## Generated script loading policy
 
+The reliability suite also checks chat-first opening without executing crash-prone code, idle-only manual Run/Reload controls, and agent-triggered startup from chat.
+
 Helper scripts must use `preload()` or script inheritance. Before touching the dependency cache, each load/reload checks all workspace `.gd` files (excluding `.git` and `.godot`) for direct runtime script loading calls and reports the offending file and line. A rejection keeps the accepted game and its preloaded dependencies intact. Comments and strings containing example code are ignored.
 
 Identified direct runtime-loading calls are restricted to literal paths using approved ordinary asset formats: PNG/JPG/JPEG/WAV/OGG, case-insensitively. The same rule applies to `load()`, `ResourceLoader.load()`, `load_threaded_request()` and `load_threaded_get()`. Computed paths, UID paths, extensionless paths and every other format are rejected regardless of a non-script type hint. Explicit Script/GDScript hints are rejected even with an approved filename. Script dependencies should use `preload()` or script inheritance; scenes and serialized resources must use `preload()` with a statically known path.

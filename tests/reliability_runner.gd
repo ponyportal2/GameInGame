@@ -57,6 +57,7 @@ func put(path: String, text: String) -> void:
     file.close()
 
 func run() -> void:
+    await test_manual_execution()
     await test_fallback()
     await test_startup_and_dependencies()
     await test_rename()
@@ -65,6 +66,61 @@ func run() -> void:
     await test_capabilities()
     print("RELIABILITY TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
+
+func test_manual_execution() -> void:
+    var store = Store.new()
+    var created = store.create_game("Manual Execution Regression")
+    # If opening executes this game, the suite exits before its final summary.
+    put(created.path.path_join("main.gd"), "extends Node\nfunc _ready(): get_tree().quit(88)\n")
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app._open_game(created.name)
+    check(app.chat_overlay.visible and app.chat_input.editable and not app.runner.has_active_game(), "crashing game opens with usable chat and no execution")
+    check(app.runner.runtime_log.attempt_id == 0, "opening does not even attempt game compilation")
+    check(not app.run_game_button.disabled and app.reload_game_buttons.all(func(button): return button.disabled), "Run is available and Reload disabled before execution")
+    app._set_chat_visible(false)
+    check(app.chat_overlay.visible, "chat cannot be hidden before a game is running")
+    put(created.path.path_join("main.gd"), "extends Node\nvar answer = 1\n")
+    app.agent.busy = true
+    app._set_chat_busy_controls(true)
+    app._run_game()
+    check(app.run_game_button.disabled and not app.runner.has_active_game(), "busy agent blocks manual Run handler and button")
+    app.agent.busy = false
+    app._set_chat_busy_controls(false)
+    app.run_game_button.pressed.emit()
+    check(app.runner.has_active_game() and app.runner.active_game.answer == 1 and not app.chat_overlay.visible, "Run button starts repaired workspace and enters gameplay")
+    check(app.run_game_button.disabled and app.reload_game_buttons.all(func(button): return not button.disabled), "running game enables both manual Reload controls")
+    var old = app.runner.active_game
+    put(created.path.path_join("main.gd"), "extends Node\nvar answer = 2\n")
+    app.agent.busy = true
+    app._set_chat_busy_controls(true)
+    app._reload_game()
+    check(app.runner.active_game == old and app.reload_game_buttons.all(func(button): return button.disabled), "busy agent blocks manual Reload handler and buttons")
+    app.agent.busy = false
+    app._set_chat_busy_controls(false)
+    app.reload_game_buttons[0].pressed.emit()
+    check(app.runner.active_game.answer == 2, "gameplay Reload button uses current workspace")
+    app._set_chat_visible(true)
+    put(created.path.path_join("main.gd"), "extends Node\nvar answer = 3\n")
+    app.reload_game_buttons[1].pressed.emit()
+    check(app.runner.active_game.answer == 3 and app.chat_overlay.visible, "chat Reload button replaces game and keeps chat open")
+    app._show_library()
+    await process_frame
+    app._open_game(created.name)
+    check(not app.runner.has_active_game(), "reopening returns to chat without restoring execution")
+    app.agent.busy = true
+    app._set_chat_busy_controls(true)
+    var result: Dictionary = app.tools.reload_game()
+    check(result.ok and app.runner.active_game.answer == 3 and app.chat_overlay.visible, "agent reload remains available before manual Run and during its turn")
+    check(app.reload_game_buttons.all(func(button): return button.disabled), "agent-triggered startup keeps manual Reload disabled during its turn")
+    app.agent.busy = false
+    app._on_agent_finished(true)
+    check(app.reload_game_buttons.all(func(button): return not button.disabled), "settling agent re-enables manual Reload")
+    app._show_library()
+    app.queue_free()
+    await process_frame
+    store.delete_game(created.name)
 
 func test_fallback() -> void:
     var store = Store.new()
@@ -86,6 +142,8 @@ func test_fallback() -> void:
     root.add_child(app)
     await process_frame
     app._open_game(created.name)
+    check(not app.runner.has_active_game() and app.chat_overlay.visible, "opening broken workspace enters chat without executing fallback")
+    app._run_game()
     check(app.runner.active_game.marker == "working", "fallback runs the last working game")
     check(FileAccess.get_file_as_string(snapshot.path_join("main.gd")) == good, "fallback preserves working snapshot source")
     check(FileAccess.get_file_as_string(snapshot.path_join("keep.txt")) == "snapshot content", "fallback preserves all snapshot files")
@@ -93,6 +151,8 @@ func test_fallback() -> void:
     app._show_library()
     await process_frame
     app._open_game(created.name)
+    check(not app.runner.has_active_game(), "reopening does not automatically execute generated code")
+    app._run_game()
     check(app.runner.has_active_game(), "fallback still rescues the next launch")
     app.queue_free()
     await process_frame
