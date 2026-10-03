@@ -116,10 +116,15 @@ func _new_game(prefix: String) -> Dictionary:
     store.ensure()
     return store.create_game("%s %d" % [prefix, Time.get_ticks_msec()])
 
-func _controller(game_name: String, path: String, runner: Node) -> Node:
+func _controller(game_name: String, path: String, runner: Node, auto_approve_reload: bool = true) -> Node:
     var agent = PiAgentControllerScript.new()
     root.add_child(agent)
     agent.configure(game_name, GameToolsScript.new(path, runner))
+    if auto_approve_reload:
+        agent.reload_approval_changed.connect(func(pending):
+            if pending:
+                agent.call_deferred("approve_reload")
+        )
     return agent
 
 func _test_production_app_uses_pi() -> void:
@@ -145,7 +150,7 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
         return
     var runner = GameRunnerScript.new()
     root.add_child(runner)
-    var agent = _controller(created.name, created.path, runner)
+    var agent = _controller(created.name, created.path, runner, false)
     var tool_events: Array[String] = []
     var thought := {"text": ""}
     var streamed := {"text": ""}
@@ -158,6 +163,20 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     )
 
     agent.send_player_request("Build a tiny test game")
+    var deadline = Time.get_ticks_msec() + 30000
+    while agent.pending_reload.is_empty() and agent.busy and Time.get_ticks_msec() < deadline:
+        await process_frame
+    assert_true(not agent.pending_reload.is_empty(), "real Pi reload waits for player approval")
+    for _frame in 8:
+        await process_frame
+    assert_true(agent.busy and not runner.has_active_game(), "waiting Pi stays busy without executing candidate")
+    assert_true(FileAccess.file_exists(created.path.path_join("main.gd")), "Pi edits reach disk before reload approval")
+    if agent.pending_reload.is_empty():
+        agent.cancel()
+        agent.queue_free()
+        runner.queue_free()
+        return
+    agent.call_deferred("approve_reload")
     var ok = await agent.finished
     assert_true(bool(ok), "real supplied/global Pi completes initial generation")
     var main = FileAccess.get_file_as_string(created.path.path_join("main.gd"))
@@ -174,6 +193,11 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     assert_true("build initial Pi game" in str(log.get("output", "")), "Pi custom git_commit creates milestone")
 
     agent.send_player_request("make the player faster")
+    deadline = Time.get_ticks_msec() + 30000
+    while agent.pending_reload.is_empty() and agent.busy and Time.get_ticks_msec() < deadline:
+        await process_frame
+    assert_true(not agent.pending_reload.is_empty() and runner.has_active_game(), "each real Pi edit reload requires another approval")
+    agent.call_deferred("approve_reload")
     ok = await agent.finished
     assert_true(bool(ok), "real Pi completes second edit turn")
     main = FileAccess.get_file_as_string(created.path.path_join("main.gd"))

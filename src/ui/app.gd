@@ -58,6 +58,8 @@ var stop_button: Button
 var rename_button: Button
 var run_game_button: Button
 var reload_game_buttons: Array[Button] = []
+var reload_notice: Label
+var approve_reload_button: Button
 var game_override_provider: OptionButton
 var game_override_model: LineEdit
 var gameplay_mouse_mode := Input.MOUSE_MODE_VISIBLE
@@ -71,6 +73,12 @@ func _ready() -> void:
     store.ensure()
     AppLoggerScript.global_event("app.startup", "user_data=%s legacy_source=%s migrated=%d skipped=%d" % [ProjectSettings.globalize_path("user://"), str(migration.get("source_found", false)), int(migration.get("copied", 0)), int(migration.get("skipped", 0))])
     _build_ui()
+    if not InputMap.has_action("approve_game_reload"):
+        InputMap.add_action("approve_game_reload")
+        var shortcut = InputEventKey.new()
+        shortcut.physical_keycode = KEY_F5
+        shortcut.shift_pressed = true
+        InputMap.action_add_event("approve_game_reload", shortcut)
     _show_library()
     _maybe_capture()
 
@@ -78,6 +86,8 @@ func _process(_delta: float) -> void:
     # Poll global action state because generated games may consume _input() before the host.
     if current_game != "" and Input.is_action_just_pressed("toggle_chat"):
         _set_chat_visible(not chat_overlay.visible)
+    if current_game != "" and Input.is_action_just_pressed("approve_game_reload"):
+        _approve_agent_reload()
 
 func _input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
@@ -128,6 +138,13 @@ func _build_play_hud() -> void:
     var spacer = Control.new(); spacer.custom_minimum_size.x = 12; top.add_child(spacer)
     var chat_btn = Button.new(); chat_btn.text = "Chat  F1"; chat_btn.mouse_filter = Control.MOUSE_FILTER_STOP; chat_btn.pressed.connect(func(): _set_chat_visible(true)); top.add_child(chat_btn)
     _add_reload_button(top)
+    reload_notice = Label.new()
+    reload_notice.text = "Agent wants to reload. Shift+F5 to approve, or F1 for chat."
+    reload_notice.position = Vector2(20, 58)
+    reload_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    reload_notice.add_theme_color_override("font_color", Color("e5b978"))
+    reload_notice.visible = false
+    play_hud.add_child(reload_notice)
     toast_label = Label.new(); toast_label.position = Vector2(20, 665); toast_label.add_theme_color_override("font_color", Color("a6b6d4")); play_hud.add_child(toast_label)
 
 func _build_chat() -> void:
@@ -147,6 +164,11 @@ func _build_chat() -> void:
     var game_controls = HBoxContainer.new(); game_controls.add_theme_constant_override("separation", 10); box.add_child(game_controls)
     run_game_button = Button.new(); run_game_button.text = "Run Game"; run_game_button.pressed.connect(_run_game); game_controls.add_child(run_game_button)
     _add_reload_button(game_controls)
+    approve_reload_button = Button.new()
+    approve_reload_button.text = "Allow Reload  Shift+F5"
+    approve_reload_button.visible = false
+    approve_reload_button.pressed.connect(_approve_agent_reload)
+    box.add_child(approve_reload_button)
     transcript_view = RichTextLabel.new(); transcript_view.bbcode_enabled = true; transcript_view.fit_content = false; transcript_view.scroll_active = true; transcript_view.size_flags_vertical = Control.SIZE_EXPAND_FILL; transcript_view.custom_minimum_size.y = 350; box.add_child(transcript_view)
     var composer = HBoxContainer.new(); composer.add_theme_constant_override("separation", 10); box.add_child(composer)
     chat_input = TextEdit.new(); chat_input.placeholder_text = "Describe what to build or change…  Enter sends · Shift+Enter adds a line"; chat_input.custom_minimum_size.y = 64; chat_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL; chat_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY; composer.add_child(chat_input)
@@ -183,6 +205,15 @@ func _reload_game() -> void:
         return
     runner.load_game(store.game_path(current_game))
     _set_chat_busy_controls(false)
+
+func _reload_approval_changed(pending: bool) -> void:
+    reload_notice.visible = pending
+    approve_reload_button.visible = pending
+    approve_reload_button.disabled = not pending
+
+func _approve_agent_reload() -> void:
+    if is_instance_valid(agent) and agent.has_method("approve_reload"):
+        agent.approve_reload()
 
 func _build_dialogs() -> void:
     _build_new_game_overlay()
@@ -463,6 +494,7 @@ func _refresh_library() -> void:
         var del = Button.new(); del.size_flags_vertical = Control.SIZE_SHRINK_CENTER; del.text = "Delete"; del.pressed.connect(func(): _ask_delete(game)); row.add_child(del)
 
 func _show_library() -> void:
+    _reload_approval_changed(false)
     current_game = ""
     generated_input_states.clear()
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -511,6 +543,7 @@ func _open_game(name: String) -> void:
     if agent.has_signal("llm_stream_end"):
         agent.llm_stream_end.connect(_end_stream_block)
     agent.finished.connect(_on_agent_finished)
+    agent.reload_approval_changed.connect(_reload_approval_changed)
     _load_transcript()
     _set_chat_visible(true)
     _set_chat_busy_controls(false)

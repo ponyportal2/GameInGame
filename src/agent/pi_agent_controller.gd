@@ -7,6 +7,7 @@ signal llm_snippet(kind: String, text: String)
 signal llm_stream_delta(kind: String, text: String)
 signal llm_stream_end(kind: String)
 signal finished(ok: bool)
+signal reload_approval_changed(pending: bool)
 
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
@@ -39,6 +40,7 @@ var current_streamed_thinking := false
 var bridge_dir := ""
 var restart_after_finish := false
 var operation_id := 0
+var pending_reload: Dictionary = {}
 
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
@@ -170,6 +172,7 @@ func cancel() -> void:
     finished.emit(false)
 
 func restart_runtime() -> void:
+    _clear_pending_reload()
     if rpc != null:
         rpc.retire()
     rpc = null
@@ -417,7 +420,14 @@ func _service_host_bridge() -> void:
         var request: Dictionary = parsed
         var command = str(request.get("command", ""))
         var result: Dictionary
-        if command in ["reload_game", "read_runtime_log"]:
+        if command == "reload_game":
+            if pending_reload.is_empty():
+                pending_reload = {"request": request, "bridge_dir": bridge_dir, "operation_id": operation_id}
+                status_changed.emit("Waiting for reload approval")
+                reload_approval_changed.emit(true)
+                continue
+            result = {"ok": false, "error": "Another reload is already waiting for player approval."}
+        elif command == "read_runtime_log":
             result = tools.execute(command, request.get("args", {}))
         elif command == "diagnostic_notice":
             result = tools.runner.runtime_log.prepare_notification() if tools != null and tools.runner != null else {"ok": true, "notice": ""}
@@ -426,15 +436,36 @@ func _service_host_bridge() -> void:
             result = {"ok": true}
         else:
             result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
-        var response_path = bridge_dir.path_join("response-%s.json" % str(request.get("id", "")))
-        var tmp = response_path + ".tmp"
-        var out = FileAccess.open(tmp, FileAccess.WRITE)
-        if out != null:
-            out.store_string(JSON.stringify(result))
-            out.close()
-            DirAccess.rename_absolute(tmp, response_path)
+        _write_host_response(bridge_dir, request, result)
+
+func approve_reload() -> void:
+    if pending_reload.is_empty():
+        return
+    var pending = pending_reload
+    _clear_pending_reload()
+    if pending.operation_id != operation_id or pending.bridge_dir != bridge_dir or bridge_dir == "":
+        return
+    status_changed.emit("Reloading game...")
+    var result: Dictionary = tools.execute("reload_game", pending.request.get("args", {}))
+    _write_host_response(bridge_dir, pending.request, result)
+    status_changed.emit("Pi is working...")
+
+func _clear_pending_reload() -> void:
+    if not pending_reload.is_empty():
+        pending_reload = {}
+        reload_approval_changed.emit(false)
+
+func _write_host_response(directory: String, request: Dictionary, result: Dictionary) -> void:
+    var response_path = directory.path_join("response-%s.json" % str(request.get("id", "")))
+    var tmp = response_path + ".tmp"
+    var out = FileAccess.open(tmp, FileAccess.WRITE)
+    if out != null:
+        out.store_string(JSON.stringify(result))
+        out.close()
+        DirAccess.rename_absolute(tmp, response_path)
 
 func _fail(message: String) -> void:
+    _clear_pending_reload()
     AppLoggerScript.game_event(game_name, "pi.failed", message, "ERROR")
     transcript.append(game_name, "assistant", "Error: " + message)
     assistant_message.emit("Error: " + message)

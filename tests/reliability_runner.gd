@@ -58,6 +58,7 @@ func put(path: String, text: String) -> void:
 
 func run() -> void:
     await test_manual_execution()
+    await test_reload_approval()
     await test_fallback()
     await test_startup_and_dependencies()
     await test_rename()
@@ -117,6 +118,71 @@ func test_manual_execution() -> void:
     app.agent.busy = false
     app._on_agent_finished(true)
     check(app.reload_game_buttons.all(func(button): return not button.disabled), "settling agent re-enables manual Reload")
+    app._show_library()
+    app.queue_free()
+    await process_frame
+    store.delete_game(created.name)
+
+func test_reload_approval() -> void:
+    var store = Store.new()
+    var created = store.create_game("Reload Approval Regression")
+    var main = created.path.path_join("main.gd")
+    put(main, "extends Node\nvar answer = 1\nvar ticks = 0\nfunc _process(_delta): ticks += 1\n")
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app._open_game(created.name)
+    app._run_game()
+    var bridge = "user://reload-approval-bridge"
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(bridge))
+    app.agent.bridge_dir = bridge
+    app.agent.busy = true
+    app._set_chat_busy_controls(true)
+    var old = app.runner.active_game
+    var old_ticks = old.ticks
+    var mouse_mode = Input.mouse_mode
+    put(main, "extends Node\nvar answer = 2\n")
+    put(bridge.path_join("request-first.json"), JSON.stringify({"id": "first", "command": "reload_game"}))
+    app.agent._service_host_bridge()
+    for _frame in 8:
+        await process_frame
+    check(app.agent.busy and not app.agent.pending_reload.is_empty() and not FileAccess.file_exists(bridge.path_join("response-first.json")), "reload request waits without returning success or executing candidate")
+    check(app.runner.active_game == old and old.ticks > old_ticks and not paused, "preserved game keeps processing during reload approval wait")
+    check(app.reload_notice.visible and app.reload_notice.mouse_filter == Control.MOUSE_FILTER_IGNORE and Input.mouse_mode == mouse_mode, "reload notice leaves gameplay mouse and input ownership unchanged")
+    check(app.approve_reload_button.visible and not app.approve_reload_button.disabled and app.reload_game_buttons.all(func(button): return button.disabled), "approval button remains enabled while ordinary Reload is busy-disabled")
+    put(bridge.path_join("request-log.json"), JSON.stringify({"id": "log", "command": "read_runtime_log"}))
+    app.agent._service_host_bridge()
+    check(FileAccess.file_exists(bridge.path_join("response-log.json")), "host diagnostics bridge remains responsive while awaiting approval")
+    Input.action_press("approve_game_reload")
+    app._process(0.0)
+    Input.action_release("approve_game_reload")
+    var response = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-first.json")))
+    check(response.ok and app.runner.active_game.answer == 2, "Shift+F5 action approves and returns actual reload outcome")
+    check(app.agent.pending_reload.is_empty() and not app.reload_notice.visible and not app.approve_reload_button.visible, "approval consumes request and clears both notices")
+    var version = app.runner.runtime_log.load_version
+    app._approve_agent_reload()
+    check(app.runner.runtime_log.load_version == version, "repeated approval cannot repeat an already approved reload")
+    put(main, "extends Node\nvar answer = 3\n")
+    put(bridge.path_join("request-second.json"), JSON.stringify({"id": "second", "command": "reload_game"}))
+    app.agent._service_host_bridge()
+    app._set_chat_visible(true)
+    check(app.chat_overlay.visible and not app.approve_reload_button.disabled, "F1 chat path exposes approval while agent waits")
+    app.approve_reload_button.pressed.emit()
+    check(app.runner.active_game.answer == 3 and app.chat_overlay.visible, "mouse approval reloads while retaining chat input ownership")
+    old = app.runner.active_game
+    put(main, "extends Node\nfunc broken(:\n")
+    put(bridge.path_join("request-broken.json"), JSON.stringify({"id": "broken", "command": "reload_game"}))
+    app.agent._service_host_bridge()
+    app.approve_reload_button.pressed.emit()
+    response = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-broken.json")))
+    check(not response.ok and app.runner.active_game == old and app.agent.pending_reload.is_empty(), "approved broken reload returns failure and preserves accepted game")
+    put(main, "extends Node\nvar answer = 4\n")
+    put(bridge.path_join("request-cancelled.json"), JSON.stringify({"id": "cancelled", "command": "reload_game"}))
+    app.agent._service_host_bridge()
+    app._stop_agent()
+    app._approve_agent_reload()
+    check(not app.agent.busy and app.agent.pending_reload.is_empty() and not app.reload_notice.visible and app.runner.active_game == old, "Stop discards pending approval and late approval cannot execute it")
+    check(not FileAccess.file_exists(bridge.path_join("response-cancelled.json")), "cancelled request never receives a false successful reload response")
     app._show_library()
     app.queue_free()
     await process_frame

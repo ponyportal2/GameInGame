@@ -166,7 +166,7 @@ GameSmith-specific rules:
 - Before changing an existing game, inspect the relevant current files. Pi's read tool is bounded; continue with offset/limit when it reports truncation.
 - Prefer Pi's exact edit tool for surgical edits. Use write only for a new file or an intentional complete rewrite.
 - File edits never reload automatically. Call reload_game after the coherent edit set is ready to try.
-- Games open in chat without executing code. You can still call reload_game to start or reload the game after edits; the player also has manual Run Game and Reload Game buttons.
+- Games open in chat without executing code. Call reload_game after edits to request starting or reloading the game. This tool waits indefinitely for player approval (Shift+F5 or Allow Reload in chat); do not treat that wait as an error. The player also has idle-only manual Run Game and Reload Game buttons.
 - If reload_game fails, inspect files and read_runtime_log, fix the problem, and reload again in the same player request when reasonable.
 - Use git_commit for coherent milestones, not every tiny edit.
 - Never edit .git directly.

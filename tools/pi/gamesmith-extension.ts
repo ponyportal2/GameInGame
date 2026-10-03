@@ -256,7 +256,7 @@ export default async function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "reload_game",
     label: "reload_game",
-    description: "Ask the GameSmith host to compile/instantiate main.gd and replace the active game only if the candidate is valid.",
+    description: "Request player approval to compile/instantiate main.gd and replace the active game only if valid. Waits without timeout until the player approves with Shift+F5 or Allow Reload in chat, or cancels the agent.",
     promptSnippet: "reload_game: Compile and hot-reload the generated Godot game",
     parameters: Type.Object({}),
     annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },

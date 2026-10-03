@@ -73,7 +73,7 @@ No shell/bash/PowerShell tool is exposed to the model.
 
 Pi decides when its turn is complete. GameSmith instructs it to call `reload_game` after editing the game. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain Pi-owned.
 
-Games always open in chat without executing generated code, so after a game crashes GameSmith you can reopen its chat and ask Pi to repair it. **Run Game** starts execution; **Reload Game** is available in chat and gameplay once a game is running. Both manual controls are disabled while the agent is working; Pi can still call `reload_game` itself. Generated games still share the host process: running broken code can crash GameSmith again.
+Games always open in chat without executing generated code, so after a game crashes GameSmith you can reopen its chat and ask Pi to repair it. **Run Game** starts execution; **Reload Game** is available in chat and gameplay once a game is running. Both manual controls are disabled while the agent is working. Pi's `reload_game` waits indefinitely for approval: a notice over the game leaves gameplay input and mouse untouched; press **Shift+F5**, or **F1** and click **Allow Reload** in chat. **Stop** cancels the waiting agent. Generated games still share the host process: running broken code can crash GameSmith again.
 
 ## Library/chat behavior
 
