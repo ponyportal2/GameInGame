@@ -6,6 +6,10 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
+    if not FileAccess.file_exists("res://src/core/runtime_log_reader.gd"):
+        push_error("FAIL: exported GameSmith.pck is missing the runtime diagnostics reader")
+        quit(1)
+        return
     for module in ["workspace-paths.mjs", "model-capabilities.mjs", "diagnostic-delivery.mjs"]:
         if not FileAccess.file_exists("res://tools/pi/" + module):
             push_error("FAIL: exported GameSmith.pck is missing " + module)
