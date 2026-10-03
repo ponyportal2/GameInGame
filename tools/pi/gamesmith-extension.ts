@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { workspacePath } from "./workspace-paths.mjs";
 import { modelCapabilities } from "./model-capabilities.mjs";
@@ -13,23 +13,8 @@ const bridgeDir = process.env.GAMESMITH_HOST_BRIDGE_DIR || "";
 const legacyTranscriptPath = process.env.GAMESMITH_LEGACY_TRANSCRIPT || "";
 const delayMs = Math.max(0, Number(process.env.GAMESMITH_LLM_DELAY_MS || "0"));
 
-let startedWithoutMain = false;
-let requestRequiresChange = false;
-let turnMutation = false;
-let successfulReload = false;
-let pendingCodeChanges = false;
-let verifierRetries = 0;
-
 function textResult(text: string, details: unknown = undefined) {
   return { content: [{ type: "text" as const, text }], details };
-}
-
-function requestLooksLikeChange(text: string): boolean {
-  const lower = text.trim().toLowerCase();
-  for (const prefix of ["what ", "why ", "where ", "when ", "who ", "which ", "how ", "explain ", "tell me ", "describe ", "list ", "show me ", "is ", "are ", "does ", "do "]) {
-    if (lower.startsWith(prefix)) return false;
-  }
-  return ["create", "build", "make", "add", "change", "update", "modify", "fix", "remove", "delete", "rename", "replace", "increase", "decrease", "faster", "slower", "speed up", "slow down", "implement", "rework", "recolor", "resize", "spawn"].some((marker) => lower.includes(marker));
 }
 
 async function runGit(cwd: string, args: string[]) {
@@ -65,11 +50,6 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   }
-}
-
-function mutationPath(event: any): string {
-  if (event.toolName === "move_path") return String(event.input?.to || event.input?.from || "");
-  return String(event.input?.path || "");
 }
 
 export default async function (pi: ExtensionAPI) {
@@ -114,32 +94,11 @@ export default async function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("before_agent_start", async (event, ctx) => {
-    startedWithoutMain = !(await stat(join(ctx.cwd, "main.gd")).then(() => true).catch(() => false));
-    requestRequiresChange = requestLooksLikeChange(event.prompt);
-    turnMutation = false;
-    successfulReload = false;
-    pendingCodeChanges = false;
-    verifierRetries = 0;
+  pi.on("before_agent_start", async (_event, ctx) => {
     const diagnostics = await callHost("diagnostic-notice", "diagnostic_notice", {});
     if (diagnostics?.notice) {
       delivery.retain(diagnostics, ctx.sessionManager, { customType: "gamesmith-diagnostics" }, String(diagnostics.notice));
       return { message: { customType: "gamesmith-diagnostics", content: String(diagnostics.notice), display: false } };
-    }
-  });
-
-  pi.on("tool_result", async (event) => {
-    if (event.isError) return;
-    if (["write", "edit", "delete_path", "move_path"].includes(event.toolName)) {
-      turnMutation = true;
-      const path = mutationPath(event).toLowerCase();
-      if (event.toolName === "delete_path" || event.toolName === "move_path" || path.endsWith(".gd") || path.endsWith(".gdshader")) {
-        pendingCodeChanges = true;
-      }
-    }
-    if (event.toolName === "reload_game") {
-      successfulReload = true;
-      pendingCodeChanges = false;
     }
   });
 
@@ -160,26 +119,6 @@ export default async function (pi: ExtensionAPI) {
 
   pi.on("agent_before_settle", async (_event, ctx) => {
     await confirmDelivery(ctx);
-    const hasMain = await stat(join(ctx.cwd, "main.gd")).then(() => true).catch(() => false);
-    let reason = "";
-    if (startedWithoutMain && !hasMain) reason = "new game still has no main.gd";
-    else if (requestRequiresChange && !turnMutation) reason = "requested game change made no workspace mutation";
-    else if (pendingCodeChanges) reason = "code changes were not successfully reloaded";
-    else if ((startedWithoutMain || turnMutation) && !successfulReload) reason = "changed game was not successfully reloaded";
-    if (!reason) return;
-
-    verifierRetries += 1;
-    const content = `GameSmith verification rejected completion: ${reason}. Continue the same player request with tools now. Do not claim completion again until the condition is actually satisfied.`;
-    if (verifierRetries >= 3) {
-      return {
-        entries: [{ type: "custom_message", customType: "gamesmith-verifier-failed", content, display: false }],
-        continue: false,
-      };
-    }
-    return {
-      entries: [{ type: "custom_message", customType: "gamesmith-verifier", content, display: false }],
-      continue: true,
-    };
   });
 
   pi.on("session_start", async (_event, ctx) => {

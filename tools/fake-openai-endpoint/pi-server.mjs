@@ -191,16 +191,16 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    if (model === "pi-gamesmith-false-done") {
+    if (model === "pi-gamesmith-no-action") {
+      answer(res, model, "Done.");
+      return;
+    }
+
+    if (model === "pi-gamesmith-no-reload") {
       if (st.calls === 1) {
-        answer(res, model, "Done.");
-      } else if (st.calls === 2) {
-        if (!hasText(messages, "GameSmith verification rejected completion")) answer(res, model, "VERIFIER_CONTEXT_MISSING");
-        else tool(res, model, "false-write", "write", { path: "main.gd", content: "extends Node\n\nvar built_by_pi := true\n" });
-      } else if (st.calls === 3) {
-        tool(res, model, "false-reload", "reload_game", {});
+        tool(res, model, "no-reload-write", "write", { path: "main.gd", content: "extends Node\nvar answer = 2\n" });
       } else {
-        answer(res, model, "Created and reloaded the game after verification.");
+        answer(res, model, "Done.");
       }
       return;
     }

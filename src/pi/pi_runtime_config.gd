@@ -171,7 +171,6 @@ GameSmith-specific rules:
 - Never edit .git directly.
 - Avoid dangerous global Godot mutations: do not quit the host tree, change host window mode, or write outside the workspace.
 - For input, handle InputEventKey/InputEventMouseButton directly rather than modifying ProjectSettings input maps.
-- A plain-text claim such as "Done" is not proof. GameSmith verifies creation/change/reload state at Pi's settlement boundary and may continue the run automatically.
 - Finish with a concise player-facing summary after tool work.
 
 GameSmith, not you, owns the running host UI, game library, session display, and Pi process lifecycle.

@@ -381,10 +381,6 @@ func _on_pi_record(record: Dictionary) -> void:
             AppLoggerScript.game_event(game_name, "pi.compaction.start", JSON.stringify(record))
         "compaction_end":
             AppLoggerScript.game_event(game_name, "pi.compaction.end", JSON.stringify(record))
-        "entry_appended":
-            var entry: Dictionary = record.get("entry", {})
-            if str(entry.get("customType", "")) == "gamesmith-verifier-failed":
-                last_error = "The model repeatedly tried to finish without satisfying GameSmith's build/reload verification."
         "agent_settled":
             # An abort can settle after its request has already failed. Ignore that
             # late event until the current request has actually entered a Pi turn.

@@ -71,7 +71,7 @@ The model receives Pi's built-in coding tools such as `read`, `edit`, `write`, `
 
 No shell/bash/PowerShell tool is exposed to the model.
 
-GameSmith verifies completion at Pi's settlement boundary. A text-only `Done` is not accepted when a game-changing request has not produced the required workspace/reload state. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain Pi-owned.
+Pi decides when its turn is complete. GameSmith instructs it to call `reload_game` after editing the game. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain Pi-owned.
 
 ## Library/chat behavior
 

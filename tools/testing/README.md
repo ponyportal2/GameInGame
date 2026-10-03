@@ -51,7 +51,7 @@ GODOT_BIN=/path/to/godot tools/testing/run-pi-e2e.sh
 
 For focused development, `GAMESMITH_PI_TEST_PART=1`, `2`, `3`, or `4` still runs only that slice.
 
-Part 1 covers production controller selection, missing-Pi diagnostics, generation/edit/reload/Git behavior, streaming assistant/thinking events, false-completion recovery, native retry behavior, action limits, provider-call pacing, Pi session restart/resume, hidden diagnostic notices, and filtered runtime-log reads through real Pi.
+Part 1 covers production controller selection, missing-Pi diagnostics, generation/edit/reload/Git behavior, streaming assistant/thinking events, completion without forced edits or reloads, native retry behavior, action limits, provider-call pacing, Pi session restart/resume, hidden diagnostic notices, and filtered runtime-log reads through real Pi. Reload remains a model instruction; the host does not infer change intent or continue a settled turn to force missing tool work. Diagnostic delivery receipts are still confirmed at settlement.
 
 `diagnostics_runner.gd` checks persistent startup/live capture, timestamps and attempt identities, unchanged startup rejection, session lifecycle, exact delivery receipts beyond 128 diagnostics, sparse grouped membership, filters, raw pagination, repeated reads, response trimming, cancellation before delivery, bounded acknowledgement state, queue overflow, retention, write failures, interrupted JSONL tails, recovery fast paths, Windows rename, and snapshot fallback. The reliability suite also exercises the production rename handler on success/failure and the formerly-used broken-helper cache regression. Both the portable host runner and full verification workflow include these suites.
 

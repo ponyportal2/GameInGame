@@ -40,7 +40,7 @@ func run() -> void:
         await _test_known_model_capabilities()
         await _test_production_app_uses_pi()
         await _test_real_pi_generation_edit_stream_and_restart()
-        await _test_real_pi_false_done_verifier()
+        await _test_real_pi_completion_without_forced_tools()
         await _test_real_pi_retry_and_action_limit()
         await _test_real_pi_cancel_and_rename()
 
@@ -220,24 +220,43 @@ func _test_real_pi_generation_edit_stream_and_restart() -> void:
     await process_frame
     WorkspaceStoreScript.new().delete_game(created.name)
 
-func _test_real_pi_false_done_verifier() -> void:
-    _settings("pi-gamesmith-false-done", 0.0)
-    var created = _new_game("Pi False Done")
+func _test_real_pi_completion_without_forced_tools() -> void:
+    _settings("pi-gamesmith-no-action", 0.0)
+    var created = _new_game("Pi No Action")
     if not created.get("ok", false):
-        assert_true(false, "creates false-Done game")
+        assert_true(false, "creates no-action game")
         return
     var runner = GameRunnerScript.new()
     root.add_child(runner)
     var agent = _controller(created.name, created.path, runner)
     agent.send_player_request("build a game")
     var ok = await agent.finished
-    assert_true(bool(ok), "Pi settlement hook recovers from false Done")
-    assert_true(FileAccess.file_exists(created.path.path_join("main.gd")), "false-Done continuation actually creates main.gd")
-    assert_true(runner.has_active_game(), "false-Done continuation successfully reloads game")
-    var records = _fake_records("pi-gamesmith-false-done")
-    assert_true(records.size() >= 4, "false-Done completion causes another Pi provider turn")
-    if records.size() >= 2:
-        assert_true("GameSmith verification rejected completion" in JSON.stringify(records[1].get("messages", [])), "Pi continuation receives hidden GameSmith verifier context without a player message")
+    assert_true(bool(ok), "Pi may finish a change request without tools")
+    assert_true(not FileAccess.file_exists(created.path.path_join("main.gd")), "host does not force creation of missing main.gd")
+    assert_true(not runner.has_active_game(), "host does not force a reload on completion")
+    assert_eq(_fake_records("pi-gamesmith-no-action").size(), 1, "no-action completion causes no automatic provider continuation")
+    agent.restart_runtime()
+    agent.queue_free()
+    runner.queue_free()
+    await process_frame
+    WorkspaceStoreScript.new().delete_game(created.name)
+
+    _settings("pi-gamesmith-no-reload", 0.0)
+    created = _new_game("Pi No Reload")
+    if not created.get("ok", false):
+        assert_true(false, "creates no-reload game")
+        return
+    _write(created.path.path_join("main.gd"), "extends Node\nvar answer = 1\n")
+    runner = GameRunnerScript.new()
+    root.add_child(runner)
+    assert_true(runner.load_game(created.path).ok, "no-reload fixture has a running game")
+    agent = _controller(created.name, created.path, runner)
+    agent.send_player_request("change the answer to 2")
+    ok = await agent.finished
+    assert_true(bool(ok), "Pi may finish after editing without reloading")
+    assert_true("answer = 2" in FileAccess.get_file_as_string(created.path.path_join("main.gd")), "Pi edit reaches workspace")
+    assert_eq(runner.active_game.answer, 1, "host leaves running game untouched when Pi omits reload")
+    assert_eq(_fake_records("pi-gamesmith-no-reload").size(), 2, "missing reload causes no automatic provider continuation")
     agent.restart_runtime()
     agent.queue_free()
     runner.queue_free()
