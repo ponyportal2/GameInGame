@@ -47,6 +47,7 @@ func run() -> void:
 
     if part == "" or part == "2":
         await _test_real_pi_manual_and_auto_compaction()
+        await _test_compaction_failure_is_visible()
 
     if part == "" or part == "3":
         await _test_legacy_transcript_import_is_one_time()
@@ -437,6 +438,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
 
     var compacted = await agent.compact_now()
     assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction: %s" % str(compacted.get("error", "")))
+    assert_true(int(compacted.get("tokens_after", 0)) > 0, "compaction reports saved context usage rather than an absent RPC field")
     assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary: %s" % JSON.stringify(compacted))
     var entries = await agent.rpc.command({"type": "get_entries"})
     var manual_entries: Array = entries.get("data", {}).get("entries", [])
@@ -506,6 +508,29 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     await process_frame
     WorkspaceStoreScript.new().delete_game(created.name)
 
+
+func _test_compaction_failure_is_visible() -> void:
+    _settings("pi-gamesmith-compact-failure", 0.0, 150, 2000, 1000)
+    var created = _new_game("Pi Compact Failure")
+    var runner = GameRunnerScript.new()
+    root.add_child(runner)
+    var agent = _controller(created.name, created.path, runner)
+    var notices: Array[String] = []
+    agent.assistant_message.connect(func(text): notices.append(text))
+    agent.send_player_request("first context " + "x".repeat(6000))
+    await agent.finished
+    agent.send_player_request("second context " + "z".repeat(6000))
+    await agent.finished
+    assert_true(notices.any(func(text): return "Automatic compaction failed:" in text and "token cap" in text), "automatic compaction failures reach the chat instead of silently returning Ready")
+    var entries = await agent.rpc.command({"type": "get_entries"})
+    assert_true(not entries.get("data", {}).get("entries", []).any(func(entry): return entry.get("type") == "compaction"), "failed summaries do not replace conversation history")
+    var result = await agent.compact_now()
+    assert_true(not result.get("ok", false) and "token cap" in str(result.get("error", "")), "manual compaction reports the actual provider failure")
+    agent.restart_runtime()
+    agent.queue_free()
+    runner.queue_free()
+    await process_frame
+    WorkspaceStoreScript.new().delete_game(created.name)
 
 func _test_legacy_transcript_import_is_one_time() -> void:
     _settings("pi-gamesmith-legacy-import", 0.0, 150, 0, 1000)

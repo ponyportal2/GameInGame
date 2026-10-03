@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { workspacePath } from "./workspace-paths.mjs";
-import { modelCapabilities } from "./model-capabilities.mjs";
+import { resolveModelCapabilities } from "./model-capabilities.mjs";
 import { DiagnosticDelivery } from "./diagnostic-delivery.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -67,7 +67,7 @@ export default async function (pi: ExtensionAPI) {
     const config = JSON.parse(await readFile(join(process.env.PI_CODING_AGENT_DIR!, "models.json"), "utf8"));
     const provider = config.providers.gamesmith;
     const model = provider.models[0];
-    Object.assign(model, modelCapabilities(process.env.GAMESMITH_MODEL_PROVIDER || "", model.id, lookup));
+    Object.assign(model, await resolveModelCapabilities(process.env.GAMESMITH_MODEL_PROVIDER || "", model.id, lookup, { baseUrl: provider.baseUrl }));
     model.input ??= ["text"];
     model.cost ??= { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     pi.registerProvider("gamesmith", provider);

@@ -154,6 +154,10 @@ const server = http.createServer((req, res) => {
 
     // Pi native compaction requests do not expose the coding tool loadout.
     if (tools.length === 0) {
+      if (model === "pi-gamesmith-compact-failure") {
+        sse(res, model, { content: "Truncated summary" }, "length", { prompt_tokens: 7000, completion_tokens: 1024, total_tokens: 8024 });
+        return;
+      }
       summary(res, model);
       return;
     }

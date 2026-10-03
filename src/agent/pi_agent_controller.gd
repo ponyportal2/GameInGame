@@ -149,11 +149,16 @@ func compact_now() -> Dictionary:
         return {"ok": false, "no_op": no_op, "error": error}
     var data: Dictionary = response.get("data", {})
     last_context_tokens = int(data.get("estimatedTokensAfter", 0))
+    # Current Pi returns summary/tokensBefore, not estimatedTokensAfter.
+    # Query the saved checkpoint's context instead of claiming it became zero.
+    await _refresh_context_usage()
+    if operation != operation_id:
+        return {"ok": false, "cancelled": true, "error": "Compaction cancelled."}
     return {
         "ok": true,
         "summary": str(data.get("summary", "")),
         "tokens_before": int(data.get("tokensBefore", 0)),
-        "tokens_after": int(data.get("estimatedTokensAfter", 0))
+        "tokens_after": last_context_tokens
     }
 
 func cancel() -> void:
@@ -308,8 +313,13 @@ func _maybe_auto_compact(phase: String) -> void:
         return
     if bool(response.get("success", false)):
         last_context_tokens = int(response.get("data", {}).get("estimatedTokensAfter", 0))
+        await _refresh_context_usage()
     else:
-        AppLoggerScript.game_event(game_name, "pi.compaction.error", str(response.get("error", "unknown")), "WARN")
+        var error = str(response.get("error", "unknown"))
+        AppLoggerScript.game_event(game_name, "pi.compaction.error", error, "WARN")
+        var message = "Automatic compaction failed: " + error + ". Conversation history was kept."
+        transcript.append(game_name, "system", message)
+        assistant_message.emit(message)
 
 func _on_pi_record(record: Dictionary) -> void:
     var type = str(record.get("type", ""))

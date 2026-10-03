@@ -54,7 +54,7 @@ OpenRouter, OpenCode Go, Command Code, and Custom OpenAI-compatible routes are m
 
 Per-game provider/model overrides remain available. Saving provider/model/thinking settings restarts only that game's Pi runtime; the generated game itself is not restarted.
 
-Model capabilities come from Pi's installed catalog for exact provider/model matches. Unknown models, including arbitrary Custom endpoints, use conservative budgets of **8,192 context tokens** and **1,024 output tokens**, with reasoning disabled. These budgets are not claims about the server's actual limits. Compaction settings never change model capabilities; automatic compaction and retained context are capped to the available budgets.
+Model capabilities come from Pi's installed catalog for exact provider/model matches. Official OpenRouter endpoints also use live provider metadata, including when configured under Custom, so newly published models do not inherit the unknown-model output cap. Metadata lookup failures fall back to the installed catalog. Unknown models, including arbitrary Custom endpoints, use conservative budgets of **8,192 context tokens** and **1,024 output tokens**, with reasoning disabled. These budgets are not claims about the server's actual limits. Compaction settings never change model capabilities; automatic compaction and retained context are capped to the available budgets.
 
 Important JSON files are replaced through a flushed temporary file. Settings reports any failed writes and stays open so you can retry; a partial save is reported explicitly.
 
