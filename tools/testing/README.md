@@ -14,7 +14,7 @@ node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tes
 node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
 ```
 
-The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
+The usual host tests include `cache_regression_runner.gd`, covering changed dependencies, nested/shared preloads, repeated edits, dynamic loads after rejected reloads, retained-resource cleanup and unused broken helpers. The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
 
 The workflow performs, in order:
 

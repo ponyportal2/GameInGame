@@ -8,8 +8,10 @@ var active_game: Node
 var active_source_path = ""
 var runtime_log = RuntimeLog.new()
 var dependency_paths: Array[String] = []
+var restored_dependencies: Dictionary = {}
 
 func _exit_tree() -> void:
+    restored_dependencies.clear()
     runtime_log.close()
 
 func load_game(workspace: String) -> Dictionary:
@@ -72,6 +74,7 @@ func load_game(workspace: String) -> Dictionary:
     active_game = candidate
     active_source_path = main_path
     dependency_paths = paths
+    restored_dependencies.clear()
     var result = runtime_log.finish_attempt(true, "load", "Loaded %s" % main_path)
     var version = runtime_log.load_version
     load_succeeded.emit(version)
@@ -92,6 +95,13 @@ func _restore_cache(previous: Dictionary) -> void:
     for path in previous:
         if previous[path] != null:
             previous[path].take_over_path(path)
+    # Godot's resource cache does not keep resources alive. Dynamic load() calls
+    # in the old game need these restored scripts after this function returns.
+    restored_dependencies.clear()
+    if is_instance_valid(active_game):
+        for path in previous:
+            if previous[path] != null:
+                restored_dependencies[path] = previous[path]
 
 func _collect_scripts(directory: String, paths: Array[String]) -> void:
     var dir = DirAccess.open(directory)
@@ -109,6 +119,7 @@ func unload_game() -> void:
         active_game.queue_free()
     active_game = null
     active_source_path = ""
+    restored_dependencies.clear()
 
 func has_active_game() -> bool:
     return is_instance_valid(active_game)

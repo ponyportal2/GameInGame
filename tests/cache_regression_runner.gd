@@ -142,10 +142,29 @@ func test_failed_dependency_restores_cache_behavior() -> void:
     var runner = new_runner()
     check(runner.load_game(ws).ok and runner.active_game.answer == 12, "rollback fixture starts from working dependency")
     var old_game = runner.active_game
+    var old_helper = weakref(ResourceLoader.get_cached_ref(helper))
     write_text(helper, "extends RefCounted\nfunc broken(:\n")
     var rejected = runner.load_game(ws)
     check(not rejected.ok and runner.active_game == old_game, "broken cached dependency rejects candidate and preserves old node")
     check(old_game.probe() == 12, "failed dependency reload restores old cache for subsequent load() calls")
+    await process_frame
+    await process_frame
+    check(old_game.probe() == 12, "restored dynamic dependency survives later frames")
+    rejected = runner.load_game(ws)
+    check(not rejected.ok and old_game.probe() == 12, "repeated rejected reload retains the same working dependency")
+    write_text(helper, "extends RefCounted\nfunc value(): return 34\n")
+    check(runner.load_game(ws).ok and runner.active_game.answer == 34, "successful retry loads repaired dependency rather than restored old code")
+    await process_frame
+    await process_frame
+    check(old_helper.get_ref() == null, "successful replacement releases restored dependency resources")
+    var current_helper = weakref(ResourceLoader.get_cached_ref(helper))
+    write_text(helper, "extends RefCounted\nfunc broken(:\n")
+    rejected = runner.load_game(ws)
+    check(not rejected.ok and runner.active_game.probe() == 34, "later rejection retains the replacement game's dependency")
+    runner.unload_game()
+    await process_frame
+    await process_frame
+    check(current_helper.get_ref() == null, "unloading releases restored dependency resources")
     await dispose_runner(runner)
     remove_tree(ws)
 
