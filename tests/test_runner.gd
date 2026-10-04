@@ -512,7 +512,7 @@ func _test_app_identity_settings_and_compact_ui() -> void:
     assert_eq(int(settings.get("compaction_keep_recent_tokens", -1)), 20000, "Pi-style compaction keeps 20k recent tokens by default")
     var theme = ThemeFactoryScript.build()
     var button_box = theme.get_stylebox("normal", "Button")
-    assert_true(button_box != null and button_box.content_margin_left <= 10.0 and button_box.content_margin_top <= 7.0, "buttons use compact deliberate padding")
+    assert_true(button_box != null and button_box.content_margin_left <= 16.0 and button_box.content_margin_top <= 10.0, "buttons use comfortable bounded padding")
     var original_settings = settings.duplicate(true)
     var app = load("res://main.tscn").instantiate()
     root.add_child(app); await process_frame

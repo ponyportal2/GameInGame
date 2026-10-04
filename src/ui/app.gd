@@ -11,6 +11,9 @@ const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd")
 
+const WorkspaceUIScript = preload("res://src/ui/workspace_ui.gd")
+const SettingsUIScript = preload("res://src/ui/settings_ui.gd")
+
 const HOST_UI_CANVAS_LAYER = 524287
 
 var store = WorkspaceStoreScript.new()
@@ -36,8 +39,9 @@ var status_label: Label
 var game_title_label: Label
 var toast_label: Label
 var new_game_dialog: Control
-var rename_dialog: ConfirmationDialog
-var delete_dialog: ConfirmationDialog
+var rename_dialog: Control
+var delete_dialog: Control
+var delete_game_label: Label
 var settings_dialog: Control
 var name_edit: LineEdit
 var rename_edit: LineEdit
@@ -58,6 +62,7 @@ var send_button: Button
 var stop_button: Button
 var rename_button: Button
 var run_game_button: Button
+var resume_game_button: Button
 var reload_game_buttons: Array[Button] = []
 var execution_status_labels: Array[Label] = []
 var running_source_status := "Running workspace"
@@ -68,6 +73,10 @@ var game_override_model: LineEdit
 var gameplay_mouse_mode := Input.MOUSE_MODE_VISIBLE
 var generated_input_states: Array = []
 var stream_open_kind := ""
+var library_search: LineEdit
+var library_count: Label
+var workspace_title_label: Label
+var workspace_welcome: Control
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -88,7 +97,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
     # Poll global action state because generated games may consume _input() before the host.
-    if current_game != "" and Input.is_action_just_pressed("toggle_chat"):
+    if current_game != "" and not _host_modal_open() and Input.is_action_just_pressed("toggle_chat"):
         _set_chat_visible(not chat_overlay.visible)
     if current_game != "" and Input.is_action_just_pressed("approve_game_reload"):
         _approve_agent_reload()
@@ -96,20 +105,38 @@ func _process(_delta: float) -> void:
 func _input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
         return
+    if event.keycode == KEY_ESCAPE and (rename_dialog.visible or delete_dialog.visible):
+        get_viewport().set_input_as_handled()
+        rename_dialog.visible = false
+        delete_dialog.visible = false
+        return
+    if event.keycode == KEY_ESCAPE and settings_dialog.visible:
+        get_viewport().set_input_as_handled()
+        _close_settings()
+        return
+    if event.keycode == KEY_ESCAPE and new_game_dialog.visible:
+        get_viewport().set_input_as_handled()
+        new_game_dialog.visible = false
+        return
     if event.keycode == KEY_ESCAPE and chat_overlay.visible:
         get_viewport().set_input_as_handled()
         _set_chat_visible(false)
         return
-    if chat_overlay.visible and chat_input.has_focus() and not event.shift_pressed and (event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER):
+    if chat_overlay.visible and not _host_modal_open() and chat_input.has_focus() and not event.shift_pressed and (event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER):
         # Handle this before TextEdit sees it, otherwise Enter inserts a newline.
         get_viewport().set_input_as_handled()
         _send_chat()
 
+func _host_modal_open() -> bool:
+    return settings_dialog.visible or new_game_dialog.visible or rename_dialog.visible or delete_dialog.visible
+
 func _build_ui() -> void:
     host_ui_canvas = CanvasLayer.new(); host_ui_canvas.layer = HOST_UI_CANVAS_LAYER; add_child(host_ui_canvas)
     host_ui_root = Control.new(); host_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.theme = theme; host_ui_canvas.add_child(host_ui_root)
-    background = ColorRect.new(); background.color = Color("090d16"); background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.add_child(background)
+    host_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    background = ColorRect.new(); background.color = ThemeFactoryScript.BACKGROUND; background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.add_child(background)
     game_layer = Control.new(); game_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.add_child(game_layer)
+    game_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
     library_layer = Control.new(); library_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); host_ui_root.add_child(library_layer)
     play_hud = Control.new(); play_hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); play_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE; host_ui_root.add_child(play_hud)
     chat_overlay = Control.new(); chat_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); chat_overlay.visible = false; chat_overlay.process_mode = Node.PROCESS_MODE_ALWAYS; chat_overlay.mouse_filter = Control.MOUSE_FILTER_STOP; host_ui_root.add_child(chat_overlay)
@@ -117,76 +144,16 @@ func _build_ui() -> void:
     _build_play_hud()
     _build_chat()
     _build_dialogs()
+    host_ui_root.move_child(toast_label, host_ui_root.get_child_count() - 1)
 
 func _build_library() -> void:
-    var margin = MarginContainer.new(); margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    margin.add_theme_constant_override("margin_left", 72); margin.add_theme_constant_override("margin_right", 72)
-    margin.add_theme_constant_override("margin_top", 54); margin.add_theme_constant_override("margin_bottom", 54)
-    library_layer.add_child(margin)
-    var root = VBoxContainer.new(); root.add_theme_constant_override("separation", 18); margin.add_child(root)
-    var header = HBoxContainer.new(); header.add_theme_constant_override("separation", 8); root.add_child(header)
-    var brand = VBoxContainer.new(); brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL; header.add_child(brand)
-    var title = Label.new(); title.text = "GAMESMITH"; title.add_theme_font_size_override("font_size", 34); title.add_theme_color_override("font_color", Color("f3f6ff")); brand.add_child(title)
-    var subtitle = Label.new(); subtitle.text = "Describe a game. Change it while it runs."; subtitle.add_theme_color_override("font_color", Color("93a1bd")); brand.add_child(subtitle)
-    var logs_btn = Button.new(); logs_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; logs_btn.text = "Logs"; logs_btn.tooltip_text = "Open global GameSmith logs"; logs_btn.pressed.connect(_open_global_logs); header.add_child(logs_btn)
-    var settings_btn = Button.new(); settings_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; settings_btn.text = "Settings"; settings_btn.tooltip_text = "Pi provider, model, and agent limits"; settings_btn.pressed.connect(_open_settings); header.add_child(settings_btn)
-    var new_btn = Button.new(); new_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER; new_btn.text = "+ New Game"; new_btn.pressed.connect(_open_new_game); header.add_child(new_btn)
-    var divider = HSeparator.new(); root.add_child(divider)
-    var section = Label.new(); section.name = "SectionTitle"; section.text = "YOUR GAMES"; section.add_theme_color_override("font_color", Color("7f8eaa")); section.add_theme_font_size_override("font_size", 13); root.add_child(section)
-    var scroll = ScrollContainer.new(); scroll.name = "GameScroll"; scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; root.add_child(scroll)
-    var games = VBoxContainer.new(); games.name = "GamesList"; games.size_flags_horizontal = Control.SIZE_EXPAND_FILL; games.add_theme_constant_override("separation", 10); scroll.add_child(games)
+    WorkspaceUIScript.build_library(self)
 
 func _build_play_hud() -> void:
-    var top = HBoxContainer.new(); top.position = Vector2(18, 16); top.mouse_filter = Control.MOUSE_FILTER_PASS; play_hud.add_child(top)
-    game_title_label = Label.new(); game_title_label.text = ""; game_title_label.add_theme_font_size_override("font_size", 18); game_title_label.add_theme_color_override("font_color", Color("eef3ff")); top.add_child(game_title_label)
-    var spacer = Control.new(); spacer.custom_minimum_size.x = 12; top.add_child(spacer)
-    var chat_btn = Button.new(); chat_btn.text = "Chat  F1"; chat_btn.mouse_filter = Control.MOUSE_FILTER_STOP; chat_btn.pressed.connect(func(): _set_chat_visible(true)); top.add_child(chat_btn)
-    _add_reload_button(top)
-    var execution_status = _add_execution_status(play_hud)
-    execution_status.position = Vector2(20, 54)
-    reload_notice = Label.new()
-    reload_notice.text = "Agent wants to reload the current workspace. Shift+F5 to allow, or F1 for chat."
-    reload_notice.position = Vector2(20, 80)
-    reload_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    reload_notice.add_theme_color_override("font_color", Color("e5b978"))
-    reload_notice.visible = false
-    play_hud.add_child(reload_notice)
-    toast_label = Label.new(); toast_label.position = Vector2(20, 665); toast_label.add_theme_color_override("font_color", Color("a6b6d4")); play_hud.add_child(toast_label)
+    WorkspaceUIScript.build_play_hud(self)
 
 func _build_chat() -> void:
-    var shade = ColorRect.new(); shade.color = Color(0.02, 0.025, 0.04, 0.82); shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); chat_overlay.add_child(shade)
-    var panel = PanelContainer.new(); panel.anchor_left = 0.42; panel.anchor_right = 1.0; panel.anchor_bottom = 1.0; panel.offset_left = 0; panel.offset_top = 0; panel.offset_right = 0; panel.offset_bottom = 0; chat_overlay.add_child(panel)
-    var margin = MarginContainer.new(); margin.add_theme_constant_override("margin_left", 24); margin.add_theme_constant_override("margin_right", 24); margin.add_theme_constant_override("margin_top", 22); margin.add_theme_constant_override("margin_bottom", 20); panel.add_child(margin)
-    var box = VBoxContainer.new(); box.add_theme_constant_override("separation", 14); margin.add_child(box)
-    var head = HBoxContainer.new(); head.add_theme_constant_override("separation", 6); box.add_child(head)
-    library_button = Button.new(); library_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER; library_button.text = "← Library"; library_button.tooltip_text = "Unavailable while the agent is working"; library_button.pressed.connect(_return_to_library); head.add_child(library_button)
-    var spacer = Control.new(); spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL; head.add_child(spacer)
-    var folder = Button.new(); folder.size_flags_vertical = Control.SIZE_SHRINK_CENTER; folder.text = "Folder"; folder.tooltip_text = "Open generated game workspace"; folder.pressed.connect(_open_folder); head.add_child(folder)
-    var logs = Button.new(); logs.size_flags_vertical = Control.SIZE_SHRINK_CENTER; logs.text = "Logs"; logs.tooltip_text = "Open this game's host debug logs"; logs.pressed.connect(_open_game_logs); head.add_child(logs)
-    var game_settings = Button.new(); game_settings.size_flags_vertical = Control.SIZE_SHRINK_CENTER; game_settings.text = "Settings"; game_settings.pressed.connect(_open_settings); head.add_child(game_settings)
-    rename_button = Button.new(); rename_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER; rename_button.text = "Rename"; rename_button.pressed.connect(_open_rename); head.add_child(rename_button)
-    var close = Button.new(); close.size_flags_vertical = Control.SIZE_SHRINK_CENTER; close.text = "Close  Esc"; close.pressed.connect(func(): _set_chat_visible(false)); head.add_child(close)
-    status_label = Label.new(); status_label.text = "Ready"; status_label.add_theme_color_override("font_color", Color("8393b2")); box.add_child(status_label)
-    var game_controls = HBoxContainer.new(); game_controls.add_theme_constant_override("separation", 10); box.add_child(game_controls)
-    run_game_button = Button.new(); run_game_button.text = "Run Game"; run_game_button.pressed.connect(_run_game); game_controls.add_child(run_game_button)
-    _add_reload_button(game_controls)
-    _add_execution_status(game_controls)
-    approve_reload_button = Button.new()
-    approve_reload_button.text = "Allow Reload  Shift+F5"
-    approve_reload_button.tooltip_text = "Allow GameSmith to try loading this game's workspace as it exists now, including edits made while waiting. Stop cancels the agent."
-    approve_reload_button.visible = false
-    approve_reload_button.pressed.connect(_approve_agent_reload)
-    box.add_child(approve_reload_button)
-    transcript_view = RichTextLabel.new(); transcript_view.bbcode_enabled = true; transcript_view.fit_content = false; transcript_view.scroll_active = true; transcript_view.size_flags_vertical = Control.SIZE_EXPAND_FILL; transcript_view.custom_minimum_size.y = 350; box.add_child(transcript_view)
-    var composer = HBoxContainer.new(); composer.add_theme_constant_override("separation", 10); box.add_child(composer)
-    chat_input = TextEdit.new(); chat_input.placeholder_text = "Describe what to build or change…  Enter sends · Shift+Enter adds a line"; chat_input.custom_minimum_size.y = 64; chat_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL; chat_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY; composer.add_child(chat_input)
-    send_button = Button.new(); send_button.text = "Send"; send_button.custom_minimum_size = Vector2(82, 64); send_button.pressed.connect(_send_chat); composer.add_child(send_button)
-    stop_button = Button.new()
-    stop_button.text = "Stop"
-    stop_button.tooltip_text = "Cancel the current request or compaction. File edits already made are kept."
-    stop_button.disabled = true
-    stop_button.pressed.connect(_stop_agent)
-    composer.add_child(stop_button)
+    WorkspaceUIScript.build_chat(self)
 
 func _add_reload_button(parent: Control) -> void:
     var button = Button.new()
@@ -200,7 +167,7 @@ func _add_execution_status(parent: Control) -> Label:
     var label = Label.new()
     label.text = "Not running"
     label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    label.add_theme_color_override("font_color", Color("8393b2"))
+    label.add_theme_color_override("font_color", ThemeFactoryScript.MUTED)
     parent.add_child(label)
     execution_status_labels.append(label)
     return label
@@ -214,6 +181,8 @@ func _update_execution_status() -> void:
         text = running_source_status
     for label in execution_status_labels:
         label.text = text
+        label.add_theme_color_override("font_color", ThemeFactoryScript.ACCENT if text == "Running workspace" else Color("eac491") if text == "Running last working snapshot" else ThemeFactoryScript.MUTED)
+    workspace_welcome.visible = not is_instance_valid(runner) or not runner.has_active_game()
 
 func _run_game() -> void:
     if not is_instance_valid(runner) or runner.has_active_game() or (is_instance_valid(agent) and agent.busy):
@@ -248,74 +217,11 @@ func _approve_agent_reload() -> void:
 
 func _build_dialogs() -> void:
     _build_new_game_overlay()
-    rename_dialog = ConfirmationDialog.new(); rename_dialog.title = "Rename game"; add_child(rename_dialog)
-    rename_edit = LineEdit.new(); rename_edit.custom_minimum_size.x = 360; rename_dialog.add_child(rename_edit); rename_edit.position = Vector2(24, 58); rename_dialog.confirmed.connect(_rename_game)
-    delete_dialog = ConfirmationDialog.new(); delete_dialog.title = "Delete game"; delete_dialog.confirmed.connect(_delete_game_confirmed); add_child(delete_dialog)
+    SettingsUIScript.build_management(self)
     _build_settings_overlay()
 
 func _build_new_game_overlay() -> void:
-    new_game_dialog = Control.new()
-    new_game_dialog.name = "NewGameOverlay"
-    new_game_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    new_game_dialog.visible = false
-    new_game_dialog.process_mode = Node.PROCESS_MODE_ALWAYS
-    new_game_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
-    host_ui_root.add_child(new_game_dialog)
-
-    var shade = ColorRect.new()
-    shade.color = Color(0.015, 0.02, 0.03, 0.88)
-    shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    new_game_dialog.add_child(shade)
-
-    var center = CenterContainer.new()
-    center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    new_game_dialog.add_child(center)
-
-    var panel = PanelContainer.new()
-    panel.custom_minimum_size = Vector2(460, 190)
-    center.add_child(panel)
-
-    var margin = MarginContainer.new()
-    margin.add_theme_constant_override("margin_left", 22)
-    margin.add_theme_constant_override("margin_right", 22)
-    margin.add_theme_constant_override("margin_top", 18)
-    margin.add_theme_constant_override("margin_bottom", 18)
-    panel.add_child(margin)
-
-    var box = VBoxContainer.new()
-    box.add_theme_constant_override("separation", 12)
-    margin.add_child(box)
-
-    var title = Label.new()
-    title.text = "Create a game"
-    title.add_theme_font_size_override("font_size", 22)
-    box.add_child(title)
-
-    var note = Label.new()
-    note.text = "Name your game. The workspace starts empty with a baseline Git commit."
-    note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    note.add_theme_color_override("font_color", Color("8492ad"))
-    box.add_child(note)
-
-    name_edit = LineEdit.new()
-    name_edit.placeholder_text = "Neon Asteroids"
-    box.add_child(name_edit)
-    name_edit.text_submitted.connect(func(_text): _create_game())
-
-    var actions = HBoxContainer.new()
-    actions.alignment = BoxContainer.ALIGNMENT_END
-    actions.add_theme_constant_override("separation", 8)
-    box.add_child(actions)
-
-    var cancel = Button.new()
-    cancel.text = "Cancel"
-    cancel.pressed.connect(func(): new_game_dialog.visible = false)
-    actions.add_child(cancel)
-
-    var create = Button.new()
-    create.text = "Create"
-    create.pressed.connect(_create_game)
-    actions.add_child(create)
+    SettingsUIScript.build_new_game(self)
 
 func _open_new_game() -> void:
     name_edit.text = ""
@@ -323,211 +229,10 @@ func _open_new_game() -> void:
     name_edit.grab_focus()
 
 func _build_settings_overlay() -> void:
-    settings_dialog = Control.new()
-    settings_dialog.name = "SettingsOverlay"
-    settings_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    settings_dialog.visible = false
-    settings_dialog.process_mode = Node.PROCESS_MODE_ALWAYS
-    settings_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
-    host_ui_root.add_child(settings_dialog)
-
-    var shade = ColorRect.new()
-    shade.color = Color(0.015, 0.02, 0.03, 0.90)
-    shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    settings_dialog.add_child(shade)
-
-    var center = CenterContainer.new()
-    center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    settings_dialog.add_child(center)
-
-    var panel = PanelContainer.new()
-    panel.custom_minimum_size = Vector2(620, 610)
-    center.add_child(panel)
-
-    var outer = MarginContainer.new()
-    outer.add_theme_constant_override("margin_left", 20)
-    outer.add_theme_constant_override("margin_right", 20)
-    outer.add_theme_constant_override("margin_top", 16)
-    outer.add_theme_constant_override("margin_bottom", 16)
-    panel.add_child(outer)
-
-    var root_box = VBoxContainer.new()
-    root_box.add_theme_constant_override("separation", 10)
-    outer.add_child(root_box)
-
-    var head = HBoxContainer.new()
-    root_box.add_child(head)
-    var title = Label.new()
-    title.text = "Settings"
-    title.add_theme_font_size_override("font_size", 22)
-    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    head.add_child(title)
-    var close_btn = Button.new()
-    close_btn.text = "Close"
-    close_btn.pressed.connect(_close_settings)
-    head.add_child(close_btn)
-
-    var settings_scroll = ScrollContainer.new()
-    settings_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-    root_box.add_child(settings_scroll)
-    var sm = MarginContainer.new()
-    sm.add_theme_constant_override("margin_right", 10)
-    settings_scroll.add_child(sm)
-    var sv = VBoxContainer.new()
-    sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    sv.add_theme_constant_override("separation", 8)
-    sm.add_child(sv)
-
-    sv.add_child(_small_label("Pi turn limit per request"))
-    agent_steps_spin = SpinBox.new()
-    agent_steps_spin.min_value = PiAgentControllerScript.MIN_AGENT_STEPS
-    agent_steps_spin.max_value = PiAgentControllerScript.MAX_AGENT_STEPS
-    agent_steps_spin.step = 1
-    agent_steps_spin.allow_greater = false
-    agent_steps_spin.allow_lesser = false
-    agent_steps_spin.tooltip_text = "Maximum Pi agent turns before GameSmith stops a runaway request."
-    sv.add_child(agent_steps_spin)
-    var agent_note = Label.new()
-    agent_note.text = "Default: 150. Lower it to cap cost/latency; raise it for larger builds."
-    agent_note.add_theme_color_override("font_color", Color("8492ad"))
-    sv.add_child(agent_note)
-
-    sv.add_child(_small_label("Delay between Pi provider calls (seconds)"))
-    llm_delay_spin = SpinBox.new()
-    llm_delay_spin.min_value = PiAgentControllerScript.MIN_LLM_CALL_DELAY_SEC
-    llm_delay_spin.max_value = PiAgentControllerScript.MAX_LLM_CALL_DELAY_SEC
-    llm_delay_spin.step = 0.5
-    llm_delay_spin.allow_greater = false
-    llm_delay_spin.allow_lesser = false
-    llm_delay_spin.tooltip_text = "Minimum wall-clock quiet time after one Pi provider response before the next provider request. First call is immediate."
-    sv.add_child(llm_delay_spin)
-    var delay_note = Label.new()
-    delay_note.text = "Default: 6 seconds. Set 0 to disable."
-    delay_note.add_theme_color_override("font_color", Color("8492ad"))
-    sv.add_child(delay_note)
-
-    sv.add_child(HSeparator.new())
-    sv.add_child(_small_label("Pi session compaction"))
-    var compaction_note = Label.new()
-    compaction_note.text = "Pi owns agent history and native compaction. GameSmith only chooses when to trigger it and how much recent context Pi keeps verbatim."
-    compaction_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    compaction_note.add_theme_color_override("font_color", Color("8492ad"))
-    sv.add_child(compaction_note)
-    sv.add_child(_small_label("Auto compact at estimated tokens (0 = disabled)"))
-    compaction_auto_spin = SpinBox.new()
-    compaction_auto_spin.min_value = 0
-    compaction_auto_spin.max_value = 2000000
-    compaction_auto_spin.step = 1000
-    compaction_auto_spin.allow_greater = false
-    compaction_auto_spin.allow_lesser = false
-    sv.add_child(compaction_auto_spin)
-    sv.add_child(_small_label("Keep recent tokens verbatim"))
-    compaction_keep_spin = SpinBox.new()
-    compaction_keep_spin.min_value = 1000
-    compaction_keep_spin.max_value = 500000
-    compaction_keep_spin.step = 1000
-    compaction_keep_spin.allow_greater = false
-    compaction_keep_spin.allow_lesser = false
-    sv.add_child(compaction_keep_spin)
-    compaction_status_label = Label.new()
-    compaction_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    compaction_status_label.add_theme_color_override("font_color", Color("8492ad"))
-    sv.add_child(compaction_status_label)
-
-    sv.add_child(HSeparator.new())
-    sv.add_child(_small_label("Global Pi provider"))
-    provider_option = OptionButton.new()
-    sv.add_child(provider_option)
-    for id in PiProviderCatalogScript.display_names():
-        provider_option.add_item(PiProviderCatalogScript.display_names()[id])
-        provider_option.set_item_metadata(provider_option.item_count - 1, id)
-    provider_option.item_selected.connect(_provider_changed)
-    sv.add_child(_small_label("Global Pi model"))
-    model_edit = LineEdit.new()
-    sv.add_child(model_edit)
-    sv.add_child(_small_label("Pi thinking / reasoning effort"))
-    reasoning_option = OptionButton.new()
-    sv.add_child(reasoning_option)
-    for pair in [["Provider default (omit)", ""], ["None", "none"], ["Minimal", "minimal"], ["Low", "low"], ["Medium", "medium"], ["High", "high"], ["XHigh", "xhigh"], ["Max", "max"]]:
-        reasoning_option.add_item(pair[0])
-        reasoning_option.set_item_metadata(reasoning_option.item_count - 1, pair[1])
-    sv.add_child(_small_label("API key passed to Pi for selected provider"))
-    key_edit = LineEdit.new()
-    key_edit.secret = true
-    key_edit.placeholder_text = "Stored under user://host, outside game workspaces"
-    sv.add_child(key_edit)
-    sv.add_child(_small_label("Custom OpenAI-compatible /v1 base address"))
-    custom_base_edit = LineEdit.new()
-    custom_base_edit.placeholder_text = "http://127.0.0.1:1234/v1"
-    sv.add_child(custom_base_edit)
-    var note = Label.new()
-    note.text = "Known model capabilities come from Pi's catalog. Unknown/custom models use conservative budgets (8,192 context tokens, 1,024 output tokens) with reasoning off. Custom can omit an API key; OpenAI subscription uses Pi global auth."
-    note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    note.add_theme_color_override("font_color", Color("8492ad"))
-    sv.add_child(note)
-
-    sv.add_child(HSeparator.new())
-    sv.add_child(_small_label("Current game Pi override"))
-    game_override_provider = OptionButton.new()
-    sv.add_child(game_override_provider)
-    game_override_provider.add_item("Use global default")
-    game_override_provider.set_item_metadata(0, "")
-    for id in PiProviderCatalogScript.display_names():
-        game_override_provider.add_item(PiProviderCatalogScript.display_names()[id])
-        game_override_provider.set_item_metadata(game_override_provider.item_count - 1, id)
-    sv.add_child(_small_label("Current game Pi model override"))
-    game_override_model = LineEdit.new()
-    game_override_model.placeholder_text = "Blank = use global model"
-    sv.add_child(game_override_model)
-
-    rendered_tests_check = CheckBox.new()
-    rendered_tests_check.text = "Allow rendered agent tests (minimized window)"
-    rendered_tests_check.tooltip_text = "Headless tests are always available. Rendered tests use the GPU in a minimized window that does not take focus."
-    sv.add_child(rendered_tests_check)
-
-    var actions = HBoxContainer.new()
-    actions.add_theme_constant_override("separation", 8)
-    root_box.add_child(actions)
-    compact_now_button = Button.new()
-    compact_now_button.text = "Compact now"
-    compact_now_button.tooltip_text = "Summarize older context now using the current game's provider/model."
-    compact_now_button.pressed.connect(_compact_now_from_settings)
-    actions.add_child(compact_now_button)
-    var action_spacer = Control.new()
-    action_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    actions.add_child(action_spacer)
-    var cancel = Button.new()
-    cancel.text = "Cancel"
-    cancel.pressed.connect(_close_settings)
-    actions.add_child(cancel)
-    var save = Button.new()
-    save.text = "Save"
-    save.pressed.connect(_save_settings)
-    actions.add_child(save)
-
-
-func _small_label(text: String) -> Label:
-    var l = Label.new(); l.text = text; l.add_theme_color_override("font_color", Color("aab6cf")); return l
+    SettingsUIScript.build(self)
 
 func _refresh_library() -> void:
-    var list: VBoxContainer = library_layer.find_child("GamesList", true, false)
-    for child in list.get_children(): child.queue_free()
-    var games = store.list_games()
-    if games.is_empty():
-        var empty = PanelContainer.new(); empty.custom_minimum_size.y = 160; list.add_child(empty)
-        var center = CenterContainer.new(); empty.add_child(center)
-        var text = Label.new(); text.text = "No games yet. Create one, then tell the agent what to build."; text.add_theme_color_override("font_color", Color("7f8eaa")); center.add_child(text)
-        return
-    for game in games:
-        var card = PanelContainer.new(); card.custom_minimum_size.y = 60; list.add_child(card)
-        var margin = MarginContainer.new(); margin.add_theme_constant_override("margin_left", 14); margin.add_theme_constant_override("margin_right", 10); margin.add_theme_constant_override("margin_top", 7); margin.add_theme_constant_override("margin_bottom", 7); card.add_child(margin)
-        var row = HBoxContainer.new(); row.add_theme_constant_override("separation", 6); margin.add_child(row)
-        var label = Label.new(); label.text = game; label.size_flags_horizontal = Control.SIZE_EXPAND_FILL; label.add_theme_font_size_override("font_size", 19); row.add_child(label)
-        var open = Button.new(); open.size_flags_vertical = Control.SIZE_SHRINK_CENTER; open.text = "Open"; open.pressed.connect(func(): _open_game(game)); row.add_child(open)
-        var folder = Button.new(); folder.size_flags_vertical = Control.SIZE_SHRINK_CENTER; folder.text = "Folder"; folder.pressed.connect(func(): _open_game_folder_named(game)); row.add_child(folder)
-        var rename = Button.new(); rename.size_flags_vertical = Control.SIZE_SHRINK_CENTER; rename.text = "Rename"; rename.pressed.connect(func(): _open_rename(game)); row.add_child(rename)
-        var del = Button.new(); del.size_flags_vertical = Control.SIZE_SHRINK_CENTER; del.text = "Delete"; del.pressed.connect(func(): _ask_delete(game)); row.add_child(del)
+    WorkspaceUIScript.refresh_library(self)
 
 func _show_library() -> void:
     _reload_approval_changed(false)
@@ -560,6 +265,10 @@ func _open_game(name: String) -> void:
     background.visible = false
     library_layer.visible = false; play_hud.visible = true
     game_title_label.text = name
+    game_title_label.tooltip_text = name
+    workspace_title_label.text = name
+    workspace_title_label.tooltip_text = name
+    status_label.text = "Ready"
     var git_state = store.ensure_game_repo(name)
     if not bool(git_state.get("ok", false)):
         AppLoggerScript.game_event(name, "git.recovery_failed", "code=%s output=%s" % [str(git_state.get("code", "")), str(git_state.get("output", "")).left(1000)], "WARN")
@@ -638,6 +347,8 @@ func _set_chat_busy_controls(is_busy: bool) -> void:
         rename_button.disabled = is_busy
     if is_instance_valid(run_game_button):
         run_game_button.disabled = is_busy or not is_instance_valid(runner) or runner.has_active_game() or not _has_runnable_game()
+    if is_instance_valid(resume_game_button):
+        resume_game_button.disabled = not is_instance_valid(runner) or not runner.has_active_game()
     for button in reload_game_buttons:
         button.disabled = is_busy or not is_instance_valid(runner) or not runner.has_active_game()
     _update_execution_status()
@@ -650,7 +361,7 @@ func _stop_agent() -> void:
 
 func _append_chat(role: String, text: String) -> void:
     var label = {"user": "YOU", "assistant": "AGENT", "thinking": "THINK", "tool": "TOOL"}.get(role, "HOST")
-    var color = {"user": "9bb7ff", "assistant": "c2f0cb", "thinking": "6f7ea3", "tool": "e5b978"}.get(role, "8393b2")
+    var color = {"user": "8bc7dd", "assistant": "b8e986", "thinking": "97a6ab", "tool": "ecc592"}.get(role, "8393b2")
     transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n%s\n\n" % [color, label, _escape_bbcode(text)])
     await get_tree().process_frame
     transcript_view.scroll_to_line(maxi(0, transcript_view.get_line_count() - 1))
@@ -662,7 +373,7 @@ func _append_stream_delta(kind: String, text: String) -> void:
         if stream_open_kind != "":
             transcript_view.append_text("\n\n")
         var label = {"assistant": "AGENT", "thinking": "THINK"}.get(kind, "AGENT")
-        var color = {"assistant": "c2f0cb", "thinking": "6f7ea3"}.get(kind, "c2f0cb")
+        var color = {"assistant": "b8e986", "thinking": "97a6ab"}.get(kind, "c2f0cb")
         transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n" % [color, label])
         stream_open_kind = kind
     transcript_view.append_text(_escape_bbcode(text))
@@ -693,6 +404,7 @@ func _set_chat_visible(visible: bool) -> void:
             return
         gameplay_mouse_mode = Input.mouse_mode
         chat_overlay.visible = true
+        play_hud.visible = false
         get_tree().paused = true
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
         _suspend_generated_input()
@@ -702,6 +414,7 @@ func _set_chat_visible(visible: bool) -> void:
             return
         _restore_generated_input()
         chat_overlay.visible = false
+        play_hud.visible = true
         Input.mouse_mode = gameplay_mouse_mode
         get_tree().paused = false
 
@@ -767,7 +480,9 @@ func _open_rename(name: String = "") -> void:
     rename_target = name if name != "" else current_game
     if rename_target == "": return
     rename_edit.text = rename_target
-    rename_dialog.popup_centered(Vector2i(430, 150))
+    rename_dialog.visible = true
+    rename_edit.grab_focus()
+    rename_edit.select_all()
 
 func _rename_game() -> void:
     if is_instance_valid(agent) and agent.busy:
@@ -793,6 +508,9 @@ func _rename_game() -> void:
     if current_game == old:
         current_game = new_name
         game_title_label.text = current_game
+        game_title_label.tooltip_text = current_game
+        workspace_title_label.text = current_game
+        workspace_title_label.tooltip_text = current_game
         tools.workspace = store.game_path(current_game)
         if is_instance_valid(tools.test_supervisor):
             tools.test_supervisor.rebind(tools.workspace)
@@ -801,17 +519,19 @@ func _rename_game() -> void:
     else:
         _refresh_library()
     rename_target = ""
+    rename_dialog.visible = false
     _toast("Renamed to %s." % new_name)
 
 func _ask_delete(name: String) -> void:
     pending_delete = name
-    delete_dialog.dialog_text = "Delete ‘%s’, its Git history, transcript, and host metadata? This cannot be undone from the UI." % name
-    delete_dialog.popup_centered(Vector2i(500, 160))
+    delete_game_label.text = name
+    delete_dialog.visible = true
 
 func _delete_game_confirmed() -> void:
     if pending_delete == "": return
     var target = pending_delete
     pending_delete = ""
+    delete_dialog.visible = false
     if current_game == target:
         if is_instance_valid(runner):
             runner.runtime_log.close()
@@ -827,6 +547,7 @@ func _open_settings() -> void:
     model_edit.text = str(settings.get("model", PiProviderCatalogScript.defaults().get(id, "")))
     key_edit.text = str(creds.get(id, ""))
     custom_base_edit.text = str(settings.get("custom_base_url", ""))
+    custom_base_edit.get_parent().visible = id == "custom"
     _select_reasoning_effort(str(settings.get("reasoning_effort", "")))
     agent_steps_spin.value = clampi(int(settings.get("max_agent_steps", PiAgentControllerScript.DEFAULT_MAX_STEPS)), PiAgentControllerScript.MIN_AGENT_STEPS, PiAgentControllerScript.MAX_AGENT_STEPS)
     llm_delay_spin.value = clampf(float(settings.get("llm_call_delay_sec", PiAgentControllerScript.DEFAULT_LLM_CALL_DELAY_SEC)), PiAgentControllerScript.MIN_LLM_CALL_DELAY_SEC, PiAgentControllerScript.MAX_LLM_CALL_DELAY_SEC)
@@ -853,6 +574,8 @@ func _open_settings() -> void:
 
 func _close_settings() -> void:
     settings_dialog.visible = false
+    if chat_overlay.visible and chat_input.editable:
+        chat_input.grab_focus()
 
 func _compact_now_from_settings() -> void:
     if current_game == "" or not is_instance_valid(agent):
@@ -894,6 +617,7 @@ func _provider_changed(index: int) -> void:
     var id = str(provider_option.get_item_metadata(index)); var settings = metadata.global_settings(); var creds = metadata.credentials()
     model_edit.text = str(PiProviderCatalogScript.defaults().get(id, settings.get("model", "")))
     key_edit.text = str(creds.get(id, ""))
+    custom_base_edit.get_parent().visible = id == "custom"
 
 func _save_settings() -> void:
     var id = str(provider_option.get_item_metadata(provider_option.selected))
@@ -952,9 +676,12 @@ func _select_reasoning_effort(value: String) -> void:
 
 func _toast(text: String) -> void:
     toast_label.text = text
+    toast_label.visible = true
     var token = Time.get_ticks_msec(); toast_label.set_meta("toast_token", token)
     await get_tree().create_timer(4.0, true).timeout
-    if toast_label.get_meta("toast_token", -1) == token: toast_label.text = ""
+    if toast_label.get_meta("toast_token", -1) == token:
+        toast_label.text = ""
+        toast_label.visible = false
 
 func _maybe_capture() -> void:
     for arg in OS.get_cmdline_user_args():

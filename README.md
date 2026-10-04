@@ -38,7 +38,9 @@ The Windows launcher source and unit tests are under `tools/windows-bootstrap/`.
 
 ## Settings
 
-Use **Settings** from either the library or an open game's chat toolbar. Current controls are Pi-oriented:
+The library is a searchable workspace gallery. Each game's **•••** menu opens its folder, renames it, or asks for confirmation before deletion. In a workspace, project and execution controls sit beside the conversation; **F1** switches between chat and play. The layout adapts to the window size.
+
+Use **Settings** from the library sidebar or an open game's chat toolbar. Preferences are grouped into **Model**, **Agent & testing**, **Conversation**, and **This game** tabs. **Compact now** is on the Conversation tab. Current controls are Pi-oriented:
 
 - global Pi provider and model;
 - optional Custom OpenAI-compatible `/v1` base address;

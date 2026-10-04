@@ -32,6 +32,7 @@ func run() -> void:
     var source = """extends Node
 var blocker: ColorRect
 var ui_layer: CanvasLayer
+var gameplay_clicks := 0
 func _ready():
     ui_layer = CanvasLayer.new()
     ui_layer.layer = 524287
@@ -41,9 +42,14 @@ func _ready():
     blocker.mouse_filter = Control.MOUSE_FILTER_STOP
     blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     ui_layer.add_child(blocker)
+    blocker.gui_input.connect(func(event):
+        if event is InputEventMouseButton and event.pressed:
+            gameplay_clicks += 1
+    )
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-func _input(_event):
-    get_viewport().set_input_as_handled()
+func _input(event):
+    if event is InputEventKey:
+        get_viewport().set_input_as_handled()
 """
     var f = FileAccess.open(created.path.path_join("main.gd"), FileAccess.WRITE)
     f.store_string(source); f.close()
@@ -52,11 +58,25 @@ func _input(_event):
     root.add_child(app)
     await process_frame
     app._open_game(name)
+    app._run_game()
     await process_frame; await process_frame
     assert_true(not app.chat_overlay.visible, "windowed generated game starts in gameplay")
     assert_eq(Input.mouse_mode, Input.MOUSE_MODE_CAPTURED, "generated game captures the real window mouse")
     assert_true(app.host_ui_canvas != null and app.host_ui_canvas.layer == app.HOST_UI_CANVAS_LAYER, "host UI lives in the reserved top CanvasLayer")
     assert_eq(app.runner.active_game.ui_layer.layer, app.HOST_UI_CANVAS_LAYER - 1, "generated max-layer UI is clamped below host UI on load")
+    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    var game_click = InputEventMouseButton.new()
+    game_click.position = Vector2(640, 600)
+    game_click.global_position = game_click.position
+    game_click.button_index = MOUSE_BUTTON_LEFT
+    game_click.pressed = true
+    Input.parse_input_event(game_click)
+    game_click = game_click.duplicate()
+    game_click.pressed = false
+    Input.parse_input_event(game_click)
+    await process_frame
+    assert_eq(app.runner.active_game.gameplay_clicks, 1, "unoccupied host UI lets mouse input reach the playing game")
+    Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
     # Polling the InputMap action keeps host F1 ownership independent from generated _input handlers.
     Input.action_press("toggle_chat")
@@ -83,7 +103,7 @@ func _input(_event):
             assert_true(app.chat_overlay.visible, "closing Settings returns to the still-live chat overlay")
             assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_IGNORE, "Settings round-trip keeps generated input suspended behind chat")
 
-    var close = _find_button(app.chat_overlay, "Close  Esc")
+    var close = _find_button(app.chat_overlay, "Resume Game  Esc")
     assert_true(close != null, "finds real chat Close button")
     if close != null:
         var point: Vector2 = close.get_global_rect().get_center()
