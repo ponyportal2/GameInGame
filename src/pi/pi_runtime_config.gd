@@ -16,7 +16,9 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
     var root = metadata.game_meta_dir(game_name).path_join("pi")
     var agent_dir = root.path_join("agent")
     var session_dir = root.path_join("sessions")
-    var bridge_dir = root.path_join("bridge")
+    # Each Pi process owns its command mailbox. Multiple host windows (including
+    # an idle old one) must never consume or answer another runtime's requests.
+    var bridge_dir = root.path_join("bridge").path_join(Crypto.new().generate_random_bytes(16).hex_encode())
     for dir in [root, agent_dir, session_dir, bridge_dir]:
         var err = DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
         if err != OK and err != ERR_ALREADY_EXISTS:
