@@ -89,7 +89,7 @@ static func enforce(root: String, active: Array, budget: int = BUDGET_BYTES) -> 
             continue
         var path = root.path_join(id)
         var outcome = JsonStore.read_dict(path.path_join("outcome.json"), {})
-        if outcome.get("state") != "exited":
+        if outcome.get("state") not in ["exited", "interrupted"]:
             continue
         var child = JsonStore.read_dict(path.path_join("status.json"), {})
         if not remove_tree(root, path):

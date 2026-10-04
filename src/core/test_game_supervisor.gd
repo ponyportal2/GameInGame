@@ -247,8 +247,8 @@ func request_action(id: String, args: Dictionary) -> Dictionary:
             return {"ok": false, "error": "Unknown or superseded test action."}
         if state.has("action_result"):
             return state.action_result
-        if state.state == "exited":
-            return {"ok": false, "error": "Test process exited before completing the action.", "process": state}
+        if state.state in ["exited", "interrupted"]:
+            return {"ok": false, "error": "Test process ended or ownership was lost before completing the action.", "process": state}
         return {"ok": true, "run_id": id, "action_id": state.action_id, "pending": true}
     if not runs.has(id) or status(id).state != "running":
         return {"ok": false, "error": "Test game is not running."}
