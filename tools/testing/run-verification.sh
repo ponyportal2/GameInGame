@@ -23,9 +23,12 @@ HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://test
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/cache_regression_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/cache_edge_regression_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/script_load_policy_runner.gd
+HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/maintenance_runner.gd
 node --test "$ROOT/tests/workspace-paths.test.mjs" "$ROOT/tests/model-capabilities.test.mjs" "$ROOT/tests/diagnostic-delivery.test.mjs"
 if command -v xvfb-run >/dev/null 2>&1; then
   mkdir -p "$TMP/windowed-home"
+  xvfb-run -a env HOME="$TMP/unit-home" GODOT_SILENCE_ROOT_WARNING=1 \
+    "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/test_process_runner.gd
   xvfb-run -a env HOME="$TMP/windowed-home" GODOT_SILENCE_ROOT_WARNING=1 \
     "$GODOT_BIN" --audio-driver Dummy --path "$ROOT" --script res://tests/windowed_input_runner.gd
 else

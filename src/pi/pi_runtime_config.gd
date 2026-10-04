@@ -98,7 +98,10 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
 
     var pi_settings = {
         "compaction": {
-            "enabled": false,
+            "enabled": int(settings.get("compaction_auto_tokens", 100000)) > 0,
+            # Safe even for an unknown 8K model; Pi's default 16K reserve would
+            # otherwise put its automatic threshold below zero.
+            "reserveTokens": UNKNOWN_CONTEXT_BUDGET / 4,
             "keepRecentTokens": clampi(int(settings.get("compaction_keep_recent_tokens", 20000)), 1000, UNKNOWN_CONTEXT_BUDGET / 4) if not subscription_mode else maxi(1000, int(settings.get("compaction_keep_recent_tokens", 20000)))
         },
         "retry": {
@@ -166,7 +169,7 @@ GameSmith-specific rules:
 - Before changing an existing game, inspect the relevant current files. Pi's read tool is bounded; continue with offset/limit when it reports truncation.
 - Prefer Pi's exact edit tool for surgical edits. Use write only for a new file or an intentional complete rewrite.
 - File edits never reload automatically. Call reload_game after the coherent edit set is ready to try.
-- You can test the workspace in a separate Godot process without interrupting the player: start_test_game, read_test_log, test_game_action, stop_test_game. Headless testing is always available; rendered testing requires the player's Settings permission, checked by the host on each launch. Rendered windows start minimized with NO_FOCUS; screenshots do not restore them. Do not raise or focus test windows. Tool results report the current mode and permission. Decide what to test and how long. Tests do not replace the player's game or advance the working snapshot, and passing a test is not a guarantee of a later live reload. Stop requests clean shutdown first; a forced stop is evidence of an unresponsive process or shutdown/control failure. Use read_test_log to investigate. Test user data is separate; workspace inputs are not frozen and this is not a filesystem sandbox.
+- You can test the workspace in a separate Godot process without interrupting the player: start_test_game, read_test_log, test_game_action, stop_test_game. Headless testing is always available; rendered testing requires the player's Settings permission, checked by the host on each launch. Rendered windows start minimized with NO_FOCUS; screenshots do not restore them. Do not raise or focus test windows. Tool results report the current mode and permission. Test actions return an action_id immediately; poll with test_game_action(action="poll", action_id=...) for the result. If an action remains pending, you can read logs or stop the process without waiting for it. Decide what to test and how long. Tests do not replace the player's game or advance the working snapshot, and passing a test is not a guarantee of a later live reload. Stop requests clean shutdown first; a forced stop is evidence of an unresponsive process or shutdown/control failure. Use read_test_log to investigate. Test user data is separate; workspace inputs are not frozen and this is not a filesystem sandbox.
 - Games open in chat without executing code. Call reload_game after edits to request starting or reloading the game. This tool waits indefinitely for player approval (Shift+F5 or Allow Reload in chat); do not treat that wait as an error. The player also has idle-only manual Run Game and Reload Game buttons.
 - Allow Reload permits an attempt to load the current workspace at the time permission is given, including any edits made while waiting. The request does not freeze a candidate revision.
 - If reload_game fails, inspect files and read_runtime_log, fix the problem, and reload again in the same player request when reasonable.

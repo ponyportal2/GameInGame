@@ -27,6 +27,7 @@ func start(config: Dictionary) -> Dictionary:
         "GAMESMITH_HOST_BRIDGE_DIR": str(config.bridge_dir),
         "GAMESMITH_LEGACY_TRANSCRIPT": str(config.legacy_transcript),
         "GAMESMITH_LLM_DELAY_MS": str(config.llm_delay_ms),
+        "GAMESMITH_MODEL_CACHE_PATH": ProjectSettings.globalize_path("user://host/openrouter-models.json"),
         "GAMESMITH_MODEL_PROVIDER": str(config.get("source_provider", "custom"))
     }
     if not bool(config.get("use_global_pi_auth", false)):

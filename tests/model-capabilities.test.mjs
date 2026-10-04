@@ -1,6 +1,42 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { modelCapabilities, resolveModelCapabilities, UNKNOWN_CAPABILITIES } from "../tools/pi/model-capabilities.mjs";
+
+test("public metadata cache is shared, expires, and never caches failed discovery", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gamesmith-model-cache-"));
+  const cachePath = join(root, "models.json");
+  let calls = 0;
+  let now = 100000;
+  let offline = false;
+  const options = { baseUrl: "https://openrouter.ai/api/v1", cachePath, now: () => now, ttlMs: 1000,
+    fetch: async () => {
+      calls++;
+      if (offline) throw new Error("offline");
+      return { ok: true, json: async () => ({ data: [
+        { id: "a", context_length: 10000, top_provider: { max_completion_tokens: 2000 } },
+        { id: "b", context_length: 20000, top_provider: { max_completion_tokens: 3000 } },
+      ] }) };
+    } };
+  try {
+    assert.equal((await resolveModelCapabilities("custom", "a", () => undefined, options)).contextWindow, 10000);
+    assert.equal((await resolveModelCapabilities("custom", "b", () => undefined, options)).contextWindow, 20000);
+    assert.equal(calls, 1, "another game/model reuses the public listing");
+    const saved = await readFile(cachePath, "utf8");
+    now += 1001;
+    offline = true;
+    assert.deepEqual(await resolveModelCapabilities("custom", "a", () => undefined, options), UNKNOWN_CAPABILITIES);
+    assert.equal(await readFile(cachePath, "utf8"), saved, "failure never replaces successful metadata");
+    offline = false;
+    await resolveModelCapabilities("custom", "a", () => undefined, options);
+    assert.equal(calls, 3);
+    await writeFile(cachePath, "{broken");
+    await resolveModelCapabilities("custom", "a", () => undefined, options);
+    assert.equal(calls, 4, "damaged cache refetches");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test("exact provider catalog metadata is retained", () => {
   const known = { reasoning: true, contextWindow: 123456, maxTokens: 1234, input: ["text"], thinkingLevelMap: { max: null } };

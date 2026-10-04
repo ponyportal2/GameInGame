@@ -132,6 +132,15 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (model === "pi-gamesmith-compact-resume" && tools.length) {
+      st.normalCalls = (st.normalCalls || 0) + 1;
+      if (st.normalCalls === 2) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "maximum context length exceeded" } }));
+        return;
+      }
+    }
+
     res.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
@@ -162,6 +171,17 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (model === "pi-gamesmith-compact-resume") {
+      if (st.normalCalls === 1) {
+        answer(res, model, "Retain this earlier history " + "x".repeat(6000), { prompt_tokens: 2000, completion_tokens: 100, total_tokens: 2100 });
+      } else if (st.normalCalls === 3) {
+        const compacted = JSON.stringify(messages).includes("## Goal");
+        if (compacted) tool(res, model, "continued-write", "write", { path: "continued.txt", content: "AUTO_RESUMED" });
+        else answer(res, model, "CHECKPOINT_MISSING");
+      } else answer(res, model, "Automatic compaction resumed the unfinished task.");
+      return;
+    }
+
     if (model === "pi-gamesmith-test-process") {
       if (!["start_test_game", "read_test_log", "stop_test_game", "test_game_action"].every((name) => tools.includes(name))) {
         answer(res, model, "SEPARATE_TOOLS_MISSING");
@@ -181,6 +201,9 @@ const server = http.createServer((req, res) => {
         } else {
           tool(res, model, `test-log-${st.calls}`, "read_test_log", { run_id: st.runId });
         }
+      } else if (st.testPhase === "inspecting" && result.pending) {
+        st.actionId ||= result.action_id;
+        tool(res, model, `test-inspect-poll-${st.calls}`, "test_game_action", { run_id: st.runId, action: "poll", action_id: st.actionId });
       } else if (st.testPhase === "inspecting") {
         st.inspected = result.properties?.marker === "99";
         st.testPhase = "stopping";

@@ -6,7 +6,7 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
-    for script in ["test_game_supervisor.gd", "test_game_process.gd"]:
+    for script in ["test_game_supervisor.gd", "test_game_process.gd", "test_game_watchdog.gd", "test_evidence.gd"]:
         if not ResourceLoader.exists("res://src/core/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)

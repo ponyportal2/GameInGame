@@ -4,11 +4,14 @@ const Runner = preload("res://src/core/game_runner.gd")
 var config: Dictionary
 var runner: Node
 var finishing := false
+var watchdog = preload("res://src/core/test_game_watchdog.gd").new()
 
 func _init() -> void:
     var args = OS.get_cmdline_user_args()
     if not args.is_empty():
         config = JsonStore.read_dict(args[0], {})
+    if not config.is_empty() and config.has("parent_pid"):
+        watchdog.start(config)
     # Apply before deferred game startup; never raise the test window for actions.
     if config.get("mode") == "rendered":
         DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
@@ -30,6 +33,8 @@ func start() -> void:
     runner = Runner.new()
     root.add_child(runner)
     runner.runtime_log.start(config.game, config.workspace, {"root_path": config.diagnostics_root, "execution": {"kind": "test", "run_id": config.run_id, "mode": config.mode}})
+    # Persist the diagnostic session before generated startup can hang or crash.
+    _status("starting")
     var result = runner.load_game(config.workspace)
     _status("running" if result.ok else "failed", {"load_result": result})
     if not result.ok:
@@ -38,6 +43,8 @@ func start() -> void:
 func _process(_delta: float) -> bool:
     if finishing or config.is_empty() or runner == null:
         return false
+    if config.mode == "rendered" and DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_MINIMIZED:
+        DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
     if FileAccess.file_exists(config.control_dir.path_join("stop.json")):
         finish(0)
         return false
@@ -60,8 +67,12 @@ func finish(code: int) -> void:
     status.merge({"state": "exited", "graceful_exit": true}, true)
     # Execute generated cleanup before closing diagnostics.
     runner.free()
+    watchdog.close()
     JsonStore.write_dict(config.control_dir.path_join("status.json"), status)
     quit(code)
+
+func _finalize() -> void:
+    watchdog.close()
 
 func perform_action(args: Dictionary) -> void:
     var result: Dictionary = {"ok": false, "error": "Unknown test action."}
@@ -104,5 +115,9 @@ func perform_action(args: Dictionary) -> void:
                 # presenting a frame or restoring/focusing the native window.
                 RenderingServer.force_draw(false)
                 var bytes = root.get_texture().get_image().save_png_to_buffer()
+                # Keep the test minimized after explicit capture as well.
+                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
                 result = {"ok": true, "image_base64": Marshalls.raw_to_base64(bytes), "mime_type": "image/png"}
+    result.action_id = args.get("action_id", "")
+    result.pending = false
     JsonStore.write_dict(config.control_dir.path_join("action-result.json"), result)

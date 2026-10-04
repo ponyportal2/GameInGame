@@ -48,6 +48,7 @@ func run() -> void:
     if part == "" or part == "2":
         await _test_real_pi_manual_and_auto_compaction()
         await _test_compaction_failure_is_visible()
+        await _test_auto_compaction_resumes_work()
 
     if part == "" or part == "3":
         await _test_legacy_transcript_import_is_one_time()
@@ -438,7 +439,7 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
 
     var compacted = await agent.compact_now()
     assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction: %s" % str(compacted.get("error", "")))
-    assert_true(int(compacted.get("tokens_after", 0)) > 0, "compaction reports saved context usage rather than an absent RPC field")
+    assert_true(compacted.get("tokens_after") == null or int(compacted.tokens_after) > 0, "compaction reports checkpoint usage as positive or explicitly unknown")
     assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary: %s" % JSON.stringify(compacted))
     var entries = await agent.rpc.command({"type": "get_entries"})
     var manual_entries: Array = entries.get("data", {}).get("entries", [])
@@ -509,6 +510,26 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     WorkspaceStoreScript.new().delete_game(created.name)
 
 
+func _test_auto_compaction_resumes_work() -> void:
+    _settings("pi-gamesmith-compact-resume", 0.0, 150, 7000, 1000)
+    var created = _new_game("Pi Auto Resume")
+    var runner = GameRunnerScript.new()
+    root.add_child(runner)
+    var agent = _controller(created.name, created.path, runner)
+    agent.send_player_request("Remember this history " + "y".repeat(6000))
+    await agent.finished
+    agent.send_player_request("Write continued.txt with AUTO_RESUMED after recovering from context overflow.")
+    var ok = await agent.finished
+    assert_true(bool(ok), "Native automatic compaction resumes interrupted request successfully")
+    assert_true(FileAccess.get_file_as_string(created.path.path_join("continued.txt")) == "AUTO_RESUMED", "Model executes remaining tool work without a new player prompt")
+    var entries = await agent.rpc.command({"type": "get_entries"})
+    assert_true(entries.get("data", {}).get("entries", []).any(func(entry): return entry.get("type") == "compaction"), "Resumed work follows a persisted automatic checkpoint")
+    agent.restart_runtime()
+    agent.queue_free()
+    runner.queue_free()
+    await process_frame
+    WorkspaceStoreScript.new().delete_game(created.name)
+
 func _test_compaction_failure_is_visible() -> void:
     _settings("pi-gamesmith-compact-failure", 0.0, 150, 2000, 1000)
     var created = _new_game("Pi Compact Failure")
@@ -521,7 +542,7 @@ func _test_compaction_failure_is_visible() -> void:
     await agent.finished
     agent.send_player_request("second context " + "z".repeat(6000))
     await agent.finished
-    assert_true(notices.any(func(text): return "Automatic compaction failed:" in text and "token cap" in text), "automatic compaction failures reach the chat instead of silently returning Ready")
+    assert_true(notices.any(func(text): return "Automatic compaction failed:" in text and "token cap" in text), "automatic compaction failures reach chat: %s" % str(notices))
     var entries = await agent.rpc.command({"type": "get_entries"})
     assert_true(not entries.get("data", {}).get("entries", []).any(func(entry): return entry.get("type") == "compaction"), "failed summaries do not replace conversation history")
     var result = await agent.compact_now()

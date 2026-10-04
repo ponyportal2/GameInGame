@@ -14,6 +14,8 @@ node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tes
 node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
 ```
 
+The usual host tests also cover standalone process ownership, hung-action polling, graceful/forced stop, test-storage retention and safe recovery, plus compaction failure backoff and unknown checkpoint usage. Real Pi verifies automatic compaction resumes unfinished tool work without another player message. On Linux, rendered tests require `xvfb-run` or a display.
+
 The usual host tests include `cache_regression_runner.gd` and `cache_edge_regression_runner.gd`, covering changed dependencies, nested/shared preloads, repeated edits, first helper instantiation after rejected reloads, inheritance rollback, rejected-candidate cache cleanup, retained-resource cleanup and unused broken helpers. The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
 
 ## Generated script loading policy

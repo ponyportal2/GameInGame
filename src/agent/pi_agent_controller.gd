@@ -42,6 +42,7 @@ var restart_after_finish := false
 var operation_id := 0
 var pending_reload: Dictionary = {}
 var pending_test_commands: Array[Dictionary] = []
+var auto_compaction_failed_operation := -1
 
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
@@ -140,25 +141,24 @@ func compact_now() -> Dictionary:
     var response: Dictionary = await rpc.command({"type": "compact"})
     if operation != operation_id:
         return {"ok": false, "cancelled": true, "error": "Compaction cancelled."}
-    busy = false
-    status_changed.emit("Ready")
     if not bool(response.get("success", false)):
+        busy = false
+        status_changed.emit("Ready")
         var error = str(response.get("error", "Pi compaction failed."))
         var lower = error.to_lower()
-        var no_op = "nothing to compact" in lower or "session too small" in lower
+        var no_op = _compaction_is_noop(lower)
         return {"ok": false, "no_op": no_op, "error": error}
     var data: Dictionary = response.get("data", {})
-    last_context_tokens = int(data.get("estimatedTokensAfter", 0))
-    # Current Pi returns summary/tokensBefore, not estimatedTokensAfter.
-    # Query the saved checkpoint's context instead of claiming it became zero.
-    await _refresh_context_usage()
+    var usage_known = await _refresh_context_usage()
     if operation != operation_id:
         return {"ok": false, "cancelled": true, "error": "Compaction cancelled."}
+    busy = false
+    status_changed.emit("Ready")
     return {
         "ok": true,
         "summary": str(data.get("summary", "")),
         "tokens_before": int(data.get("tokensBefore", 0)),
-        "tokens_after": last_context_tokens
+        "tokens_after": last_context_tokens if usage_known else null
     }
 
 func cancel() -> void:
@@ -235,9 +235,9 @@ func _ensure_runtime() -> Dictionary:
         return {"ok": false, "error": "Pi runtime was cancelled or replaced."}
     if not bool(synced.get("ok", false)):
         return synced
-    var auto_off: Dictionary = await rpc.command({"type": "set_auto_compaction", "enabled": false})
-    if not bool(auto_off.get("success", false)):
-        return {"ok": false, "error": "Could not configure Pi compaction policy: " + str(auto_off.get("error", ""))}
+    var auto_policy: Dictionary = await rpc.command({"type": "set_auto_compaction", "enabled": int(settings.get("compaction_auto_tokens", 100000)) > 0})
+    if not bool(auto_policy.get("success", false)):
+        return {"ok": false, "error": "Could not configure Pi compaction policy: " + str(auto_policy.get("error", ""))}
     await _refresh_context_usage()
     return {"ok": true}
 
@@ -278,28 +278,32 @@ func _sync_runtime_state(session) -> Dictionary:
             return {"ok": false, "error": "Could not name Pi session: " + str(name_result.get("error", ""))}
     return {"ok": true}
 
-func _refresh_context_usage() -> void:
+func _refresh_context_usage() -> bool:
     if rpc == null or not rpc.running:
-        return
+        return false
     var session = rpc
     var stats: Dictionary = await session.command({"type": "get_session_stats"})
-    if session != rpc or rpc == null or not rpc.running:
-        return
-    if not bool(stats.get("success", false)):
-        return
+    if session != rpc or rpc == null or not rpc.running or not bool(stats.get("success", false)):
+        return false
     var usage = stats.get("data", {}).get("contextUsage", null)
-    if typeof(usage) == TYPE_DICTIONARY:
-        var tokens = usage.get("tokens", null)
-        if tokens != null:
-            last_context_tokens = int(tokens)
+    if typeof(usage) == TYPE_DICTIONARY and usage.get("tokens") != null:
+        last_context_tokens = int(usage.tokens)
+        return true
+    return false
+
+func _compaction_is_noop(message: String) -> bool:
+    var lower = message.to_lower()
+    return "nothing to compact" in lower or "session too small" in lower
 
 func _maybe_auto_compact(phase: String) -> void:
+    if auto_compaction_failed_operation == operation_id:
+        return
     var session = rpc
     var threshold = maxi(0, int(metadata.global_settings().get("compaction_auto_tokens", 100000)))
     if threshold <= 0:
         return
-    await _refresh_context_usage()
-    if session != rpc or rpc == null or not rpc.running:
+    var usage_known = await _refresh_context_usage()
+    if not usage_known or session != rpc or rpc == null or not rpc.running:
         return
     var context_window = int(runtime_config.get("context_window", 0))
     if context_window > 0:
@@ -312,10 +316,12 @@ func _maybe_auto_compact(phase: String) -> void:
     if session != rpc or rpc == null or not rpc.running:
         return
     if bool(response.get("success", false)):
-        last_context_tokens = int(response.get("data", {}).get("estimatedTokensAfter", 0))
         await _refresh_context_usage()
     else:
         var error = str(response.get("error", "unknown"))
+        if _compaction_is_noop(error):
+            return
+        auto_compaction_failed_operation = operation_id
         AppLoggerScript.game_event(game_name, "pi.compaction.error", error, "WARN")
         var message = "Automatic compaction failed: " + error + ". Conversation history was kept."
         transcript.append(game_name, "system", message)
@@ -397,6 +403,11 @@ func _on_pi_record(record: Dictionary) -> void:
             status_changed.emit("Pi is compacting context…")
             AppLoggerScript.game_event(game_name, "pi.compaction.start", JSON.stringify(record))
         "compaction_end":
+            if record.get("reason", "manual") != "manual" and not record.get("result") and record.get("errorMessage") and not record.get("aborted", false) and not _compaction_is_noop(str(record.errorMessage)):
+                auto_compaction_failed_operation = operation_id
+                var notice = "Automatic compaction failed: " + str(record.errorMessage) + ". Conversation history was kept."
+                transcript.append(game_name, "system", notice)
+                assistant_message.emit(notice)
             AppLoggerScript.game_event(game_name, "pi.compaction.end", JSON.stringify(record))
         "agent_settled":
             # An abort can settle after its request has already failed. Ignore that
@@ -446,11 +457,13 @@ func _service_host_bridge() -> void:
             result = tools.execute(command, request.get("args", {}))
         elif command in ["start_test_game", "read_test_log", "stop_test_game", "test_game_action"]:
             result = tools.execute(command, request.get("args", {}))
-            if result.get("ok", false) and command in ["stop_test_game", "test_game_action"] and result.get("state", "") != "exited":
+            if result.get("ok", false) and command == "stop_test_game" and result.get("state", "") != "exited":
                 pending_test_commands.append({"request": request, "run_id": request.get("args", {}).get("run_id", ""), "command": command, "bridge_dir": bridge_dir, "operation_id": operation_id})
                 continue
         elif command == "diagnostic_notice":
             result = tools.runner.runtime_log.prepare_notification() if tools != null and tools.runner != null else {"ok": true, "notice": ""}
+        elif command == "compaction_status":
+            result = {"ok": true, "blocked": auto_compaction_failed_operation == operation_id}
         elif command == "diagnostic_delivery":
             tools.runner.runtime_log.commit_delivery(str(request.get("args", {}).get("delivery_id", "")))
             result = {"ok": true}
@@ -467,11 +480,6 @@ func _service_pending_test_commands() -> void:
         var result: Dictionary = {}
         if pending.command == "stop_test_game" and state.get("state") == "exited":
             result = state
-        elif pending.command == "test_game_action":
-            if state.has("action_result"):
-                result = state.action_result
-            elif state.get("state") == "exited":
-                result = {"ok": false, "error": "Test process exited before completing the action.", "process": state}
         if not result.is_empty():
             pending_test_commands.erase(pending)
             _write_host_response(bridge_dir, pending.request, result)

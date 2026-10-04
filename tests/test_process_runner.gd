@@ -104,7 +104,7 @@ func run() -> void:
     check(image.load_png_from_buffer(png) == OK and image.get_pixel(10, 10).r > 0.8, "Minimized screenshot captures game drawing")
     supervisor.request_action(started.run_id, {"action": "call", "method": "window_state"})
     inspected = await wait_for(supervisor, started.run_id, func(s): return s.has("action_result"))
-    check(inspected.get("action_result", {}).get("value") == "true:true", "Screenshot does not restore or focus the test window")
+    check(inspected.get("action_result", {}).get("value") == "true:true", "Screenshot does not restore or focus the test window: " + str(inspected.get("action_result", {}).get("value")))
     supervisor.request_stop(started.run_id)
     await wait_for(supervisor, started.run_id, func(s): return s.state == "exited")
     settings.save_global_settings({"allow_rendered_tests": false})
@@ -127,11 +127,71 @@ func run() -> void:
     check(str(stopped.get("stop_reason", "")).contains("graceful"), "Forced stop explains failed graceful shutdown to agent")
     check(str(supervisor.read_log(started.run_id, {})).contains("forced"), "Supervisor preserves forced shutdown evidence")
     check(not supervisor.status("../escape").ok, "Unknown run IDs cannot access arbitrary files")
+    await test_maintenance()
     await test_bridge_and_prompt()
     supervisor.queue_free()
     await process_frame
     print("TEST PROCESS TESTS: ", passed, " passed, ", failed, " failed")
     quit(1 if failed else 0)
+
+func test_maintenance() -> void:
+    var supervisor = load("res://src/core/test_game_supervisor.gd").new()
+    root.add_child(supervisor)
+    var workspace = fixture("ProcessMaintenance", "extends Node\nfunc hang():\n\twhile true:\n\t\tpass\n")
+    var started = supervisor.start(workspace)
+    var id: String = started.run_id
+    await wait_for(supervisor, id, func(s): return s.state == "running")
+    var action = supervisor.request_action(id, {"action": "call", "method": "hang"})
+    check(action.get("pending", false) and action.get("action_id", "") != "", "Hung action returns an identity immediately")
+    await create_timer(0.3).timeout
+    check(supervisor.request_action(id, {"action": "poll", "action_id": action.get("action_id")}).get("pending", false), "Hung action polling returns without blocking")
+    check(not supervisor.request_action(id, {"action": "poll", "action_id": "wrong"}).ok, "Unrelated action identity cannot retrieve a result")
+    supervisor.grace_ms = 100
+    supervisor.request_stop(id)
+    var stopped = await wait_for(supervisor, id, func(s): return s.state == "exited")
+    check(stopped.stop_method == "forced", "Independent Stop recovers a hung action")
+    check(not supervisor.request_action(id, {"action": "poll", "action_id": action.get("action_id")}).ok, "Polling interrupted action reports child exit")
+    # Simulate losing the owner while the child's main thread is hung.
+    supervisor.parent_grace_ms = 600
+    workspace = fixture("ProcessOwnerLost", "extends Node\nfunc _ready():\n\twhile true:\n\t\tpass\n")
+    started = supervisor.start(workspace)
+    supervisor.heartbeat_enabled = false
+    stopped = await wait_for(supervisor, started.run_id, func(s): return s.state == "exited")
+    check(stopped.get("stop_reason", "").contains("parent_lost"), "Watchdog terminates orphan even with hung game main thread")
+    supervisor.heartbeat_enabled = true
+    supervisor.parent_grace_ms = 15000
+    supervisor.run_budget_bytes = 128 * 1024
+    workspace = fixture("ProcessStorageFlood", "extends Node\nfunc _ready():\n\tvar f = FileAccess.open('user://large.dat', FileAccess.WRITE)\n\tf.store_buffer(PackedByteArray(range(300000)))\n\twhile true:\n\t\tpass\n")
+    started = supervisor.start(workspace)
+    stopped = await wait_for(supervisor, started.run_id, func(s): return s.state == "exited")
+    check(stopped.get("stop_reason", "").contains("test_storage_budget"), "Watchdog stops user-data flood despite hung main thread")
+    var evidence = load("res://src/core/test_evidence.gd")
+    var test_root: String = stopped.path.get_base_dir()
+    var retained = evidence.enforce(test_root, [], 1)
+    check(retained.expired.size() > 0 and not DirAccess.dir_exists_absolute(stopped.path), "Completed run storage expires under per-game budget")
+    check(stopped.get("session_path", "") != "" and not DirAccess.dir_exists_absolute(stopped.session_path), "Retention removes diagnostics even when startup hung before acceptance")
+    check(str(supervisor.read_log(started.run_id, {})).contains("retention_expired"), "Expired evidence is reported explicitly")
+    # Recovery records uncertainty instead of trusting a persisted process ID.
+    var recovery_root = ProjectSettings.globalize_path("user://recovery-tests")
+    var recovery_path = recovery_root.path_join("abandoned")
+    JsonStore.write_dict(recovery_path.path_join("config.json"), {"run_id": "abandoned", "mode": "headless", "parent_token": "old"})
+    JsonStore.write_dict(recovery_path.path_join("outcome.json"), {"run_id": "abandoned", "state": "running", "pid": OS.get_process_id()})
+    JsonStore.write_dict(recovery_path.path_join("watchdog.json"), {"reason": "parent_lost", "method": "requested"})
+    evidence.recover(recovery_root)
+    var recovered = JsonStore.read_dict(recovery_path.path_join("outcome.json"), {})
+    check(recovered.state == "interrupted", "Recovery does not claim an unconfirmed shutdown succeeded or kill a saved PID")
+    JsonStore.write_dict(recovery_path.path_join("status.json"), {"state": "exited", "graceful_exit": true})
+    evidence.recover(recovery_root)
+    check(JsonStore.read_dict(recovery_path.path_join("outcome.json"), {}).state == "exited", "Recovery reconciles confirmed child termination")
+    supervisor.runs.clear()
+    supervisor.runs["active"] = {"state": "running"}
+    for i in range(20):
+        supervisor.runs[str(i)] = {"state": "exited"}
+    supervisor._prune_runs()
+    check(supervisor.runs.has("active") and supervisor.runs.size() == supervisor.MAX_RUNS, "Bounded history never evicts the live supervised process")
+    supervisor.runs.clear()
+    supervisor.queue_free()
+    await process_frame
 
 func test_bridge_and_prompt() -> void:
     var workspace = fixture("ProcessBridge", "extends Node\nconst Helper = preload('helper.gd')\nvar marker = Helper.VALUE\n")

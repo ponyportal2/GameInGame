@@ -67,7 +67,7 @@ export default async function (pi: ExtensionAPI) {
     const config = JSON.parse(await readFile(join(process.env.PI_CODING_AGENT_DIR!, "models.json"), "utf8"));
     const provider = config.providers.gamesmith;
     const model = provider.models[0];
-    Object.assign(model, await resolveModelCapabilities(process.env.GAMESMITH_MODEL_PROVIDER || "", model.id, lookup, { baseUrl: provider.baseUrl }));
+    Object.assign(model, await resolveModelCapabilities(process.env.GAMESMITH_MODEL_PROVIDER || "", model.id, lookup, { baseUrl: provider.baseUrl, cachePath: process.env.GAMESMITH_MODEL_CACHE_PATH }));
     model.input ??= ["text"];
     model.cost ??= { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     pi.registerProvider("gamesmith", provider);
@@ -99,6 +99,18 @@ export default async function (pi: ExtensionAPI) {
     if (diagnostics?.notice) {
       delivery.retain(diagnostics, ctx.sessionManager, { customType: "gamesmith-diagnostics" }, String(diagnostics.notice));
       return { message: { customType: "gamesmith-diagnostics", content: String(diagnostics.notice), display: false } };
+    }
+  });
+
+  // Native automatic compaction preserves the agent run and retries interrupted
+  // work itself. Manual RPC compaction aborts it, so never use that mid-turn.
+  let autoCompactionFailed = false;
+  pi.on("before_agent_start", () => { autoCompactionFailed = false; });
+  pi.on("session_compact_failed", (event) => { if (!event.aborted && !/nothing to compact|session too small/i.test(event.errorMessage ?? "")) autoCompactionFailed = true; });
+  pi.on("session_before_compact", async (event) => {
+    if (event.reason !== "manual") {
+      const status = await callHost("compaction-policy", "compaction_status", {}, event.signal);
+      if (autoCompactionFailed || status.blocked) return { cancel: true };
     }
   });
 
@@ -257,7 +269,7 @@ export default async function (pi: ExtensionAPI) {
     { name: "start_test_game", description: "Start a separate Godot test process for the current workspace. Headless is always available; rendered requires user Settings permission. Returns immediately with run_id; read_test_log reports startup progress. Does not interrupt the player or promote the working snapshot. One test at a time.", parameters: Type.Object({ mode: Type.Optional(Type.Union([Type.Literal("headless"), Type.Literal("rendered")])) }) },
     { name: "read_test_log", description: "Read separate test-process status, shared runtime diagnostics and raw engine/stdout/stderr tails. Includes mode, exit code, graceful/forced stop and reason. Use cursor/raw/severity for diagnostics pagination. Omit run_id to list recent runs and current rendered permission. Completed-run logs survive reopening.", parameters: Type.Object({ run_id: Type.Optional(Type.String()), cursor: Type.Optional(Type.Integer({ minimum: 0 })), raw: Type.Optional(Type.Boolean()), severity: Type.Optional(Type.Union([Type.Literal("error"), Type.Literal("warning"), Type.Literal("info")])), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }) },
     { name: "stop_test_game", description: "Stop a separate test process. Requests graceful Godot shutdown, then forcibly terminates it after a short shutdown grace period if needed. Waits for the process exit and reports how it stopped; forced termination does not prove a hang.", parameters: Type.Object({ run_id: Type.String() }) },
-    { name: "test_game_action", description: "Interact with a separate running test game. Inspect direct children and requested properties at a game-relative node path, call a game method with JSON arguments, send a named InputMap action, or capture a screenshot (rendered only). Actions wait for a response; Stop remains available if the child hangs. Properties and return values are bounded text representations.", parameters: Type.Object({ run_id: Type.String(), action: Type.Union([Type.Literal("inspect"), Type.Literal("call"), Type.Literal("input"), Type.Literal("screenshot")]), path: Type.Optional(Type.String()), properties: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })), method: Type.Optional(Type.String()), arguments: Type.Optional(Type.Array(Type.Any())), input_action: Type.Optional(Type.String()), pressed: Type.Optional(Type.Boolean()) }) },
+    { name: "test_game_action", description: "Interact with a separate running test game. Inspect direct children and requested properties at a game-relative node path, call a game method with JSON arguments, send a named InputMap action, or capture a screenshot (rendered only). Actions return an action_id immediately. Poll that ID with action=poll. A pending action does not block read_test_log or stop_test_game; inspect logs or stop if it appears hung. Properties and return values are bounded text representations.", parameters: Type.Object({ run_id: Type.String(), action: Type.Union([Type.Literal("inspect"), Type.Literal("call"), Type.Literal("input"), Type.Literal("screenshot"), Type.Literal("poll")]), action_id: Type.Optional(Type.String()), path: Type.Optional(Type.String()), properties: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })), method: Type.Optional(Type.String()), arguments: Type.Optional(Type.Array(Type.Any())), input_action: Type.Optional(Type.String()), pressed: Type.Optional(Type.Boolean()) }) },
   ]) {
     pi.registerTool({
       ...tool, label: tool.name,

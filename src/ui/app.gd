@@ -74,6 +74,7 @@ func _ready() -> void:
     theme = ThemeFactoryScript.build()
     var migration = LegacyDataMigratorScript.migrate_user_data()
     store.ensure()
+    preload("res://src/core/test_evidence.gd").recover_all()
     AppLoggerScript.global_event("app.startup", "user_data=%s legacy_source=%s migrated=%d skipped=%d" % [ProjectSettings.globalize_path("user://"), str(migration.get("source_found", false)), int(migration.get("copied", 0)), int(migration.get("skipped", 0))])
     _build_ui()
     if not InputMap.has_action("approve_game_reload"):
@@ -872,7 +873,7 @@ func _compact_now_from_settings() -> void:
         return
     var chat_result = ""
     if bool(result.get("ok", false)):
-        chat_result = "Compaction finished: ~%d → ~%d estimated tokens." % [int(result.get("tokens_before", 0)), int(result.get("tokens_after", 0))]
+        chat_result = "Compaction finished: ~%d estimated tokens before; %s after." % [int(result.get("tokens_before", 0)), "unknown" if result.get("tokens_after") == null else "~%d" % int(result.tokens_after)]
         compaction_status_label.text = chat_result
     elif bool(result.get("no_op", false)):
         chat_result = "Compaction skipped: " + str(result.get("error", "Nothing to compact."))
