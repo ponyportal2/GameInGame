@@ -3,7 +3,17 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { modelCapabilities, resolveModelCapabilities, UNKNOWN_CAPABILITIES } from "../tools/pi/model-capabilities.mjs";
+import { modelCapabilities, resolveModelCapabilities, compactionReserveTokens, UNKNOWN_CAPABILITIES } from "../tools/pi/model-capabilities.mjs";
+
+test("compaction budgets use discovered context capacity without inflating capabilities", () => {
+  assert.equal(compactionReserveTokens(undefined), 2048);
+  assert.equal(compactionReserveTokens({ contextWindow: 8192 }), 2048);
+  const model = { contextWindow: 1000000, maxTokens: 524288 };
+  assert.equal(compactionReserveTokens(model), 32768);
+  assert.equal(Math.floor(compactionReserveTokens(model) * 0.8), 26214);
+  assert.equal(compactionReserveTokens({ contextWindow: 32768 }), 8192);
+  assert.deepEqual(model, { contextWindow: 1000000, maxTokens: 524288 });
+});
 
 test("public metadata cache is shared, expires, and never caches failed discovery", async () => {
   const root = await mkdtemp(join(tmpdir(), "gamesmith-model-cache-"));

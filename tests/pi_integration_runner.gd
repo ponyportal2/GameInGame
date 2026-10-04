@@ -441,6 +441,8 @@ func _test_real_pi_manual_and_auto_compaction() -> void:
     assert_true(bool(compacted.get("ok", false)), "GameSmith Compact now invokes Pi native compaction: %s" % str(compacted.get("error", "")))
     assert_true(compacted.get("tokens_after") == null or int(compacted.tokens_after) > 0, "compaction reports checkpoint usage as positive or explicitly unknown")
     assert_true(str(compacted.get("summary", "")) != "", "Pi returns a real compaction summary: %s" % JSON.stringify(compacted))
+    var summary_requests: Array = _fake_records("pi-gamesmith-compact-manual").filter(func(record): return record.get("tools", []).is_empty())
+    assert_true(not summary_requests.is_empty() and summary_requests.all(func(record): return int(record.get("max_tokens", 0)) == 1024), "Unknown model compaction remains capped by actual model output budget")
     var entries = await agent.rpc.command({"type": "get_entries"})
     var manual_entries: Array = entries.get("data", {}).get("entries", [])
     assert_true(manual_entries.any(func(entry): return typeof(entry) == TYPE_DICTIONARY and str(entry.get("type", "")) == "compaction"), "Pi session persists a native compaction entry")

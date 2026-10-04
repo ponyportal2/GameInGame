@@ -2,6 +2,13 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export const UNKNOWN_CAPABILITIES = Object.freeze({ reasoning: false, contextWindow: 8192, maxTokens: 1024 });
+
+// Local summary budget, not a claim about model capacity. Pi spends 80% of
+// reserveTokens on the history summary (50% on a split-turn summary).
+export function compactionReserveTokens(model) {
+  const context = Number.isFinite(model?.contextWindow) && model.contextWindow > 0 ? model.contextWindow : UNKNOWN_CAPABILITIES.contextWindow;
+  return Math.max(1, Math.min(32768, Math.floor(context / 4)));
+}
 const METADATA_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_BYTES = 8 * 1024 * 1024;
 

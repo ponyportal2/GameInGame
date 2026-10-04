@@ -110,6 +110,7 @@ const server = http.createServer((req, res) => {
       call: st.calls,
       auth,
       reasoning_effort: body.reasoning_effort ?? null,
+      max_tokens: body.max_tokens ?? body.max_completion_tokens ?? null,
       stream: body.stream,
       tools,
       messages

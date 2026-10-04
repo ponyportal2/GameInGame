@@ -79,6 +79,9 @@ func send_player_request(text: String) -> void:
     await _maybe_auto_compact("before_request")
     if operation != operation_id:
         return
+    if auto_compaction_failed_operation == operation:
+        _fail("Could not compact the conversation before this request. History and edits were kept. Retry Compact now before continuing.")
+        return
     status_changed.emit("Pi is working…")
     var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text})
     if operation != operation_id:

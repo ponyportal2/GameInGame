@@ -10,8 +10,11 @@ class FakeRpc extends Node:
     var fail_stats := false
     var owner_agent
     var stayed_busy := true
+    var prompts := 0
     func command(request: Dictionary) -> Dictionary:
         await get_tree().process_frame
+        if request.type == "prompt":
+            prompts += 1
         if request.type == "compact":
             compactions += 1
             return {"success": false, "error": "test failure"} if fail_compaction else {"success": true, "data": {"summary": "summary", "tokensBefore": 7000}}
@@ -62,6 +65,11 @@ func run() -> void:
     await agent._maybe_auto_compact("before_request")
     check(rpc.compactions == before + 2, "Next player request may retry automatic compaction")
     agent.busy = false
+    var notices: Array[String] = []
+    agent.assistant_message.connect(func(text): notices.append(text))
+    await agent.send_player_request("continue the game")
+    check(rpc.prompts == 0 and not agent.busy, "Failed pre-request compaction does not send oversized history to the provider")
+    check(notices.any(func(text): return "Could not compact" in text), "Failed pre-request compaction returns an actionable error")
     agent.free()
     test_interrupted_runs()
     print("MAINTENANCE TESTS: ", passed, " passed, ", failed, " failed")

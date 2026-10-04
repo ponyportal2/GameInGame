@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { workspacePath } from "./workspace-paths.mjs";
-import { resolveModelCapabilities } from "./model-capabilities.mjs";
+import { resolveModelCapabilities, compactionReserveTokens } from "./model-capabilities.mjs";
 import { DiagnosticDelivery } from "./diagnostic-delivery.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -107,11 +107,15 @@ export default async function (pi: ExtensionAPI) {
   let autoCompactionFailed = false;
   pi.on("before_agent_start", () => { autoCompactionFailed = false; });
   pi.on("session_compact_failed", (event) => { if (!event.aborted && !/nothing to compact|session too small/i.test(event.errorMessage ?? "")) autoCompactionFailed = true; });
-  pi.on("session_before_compact", async (event) => {
+  pi.on("session_before_compact", async (event, ctx) => {
     if (event.reason !== "manual") {
       const status = await callHost("compaction-policy", "compaction_status", {}, event.signal);
       if (autoCompactionFailed || status.blocked) return { cancel: true };
     }
+    // The initial settings must fit unknown models. Once selected, size this
+    // preparation's summary budget from the actual model, for manual and native
+    // automatic compaction alike. Pi still caps output at model.maxTokens.
+    event.preparation.settings = { ...event.preparation.settings, reserveTokens: compactionReserveTokens(ctx.model) };
   });
 
   let lastProviderResponseAt = 0;
