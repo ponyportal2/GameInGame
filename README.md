@@ -179,7 +179,7 @@ Portable host, reliability, and diagnostics suites with isolated application dat
 
 ```bash
 node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
-node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs
+node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs tests/empty-response-retry.test.mjs
 ```
 
 Full source verification:

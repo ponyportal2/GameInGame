@@ -10,7 +10,7 @@ For Windows or Linux, the portable runners isolate application data under a temp
 
 ```bash
 node tools/testing/run-host-tests.mjs /path/to/godot
-node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs
+node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs tests/empty-response-retry.test.mjs
 node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
 ```
 

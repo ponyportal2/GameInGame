@@ -465,6 +465,11 @@ func _service_host_bridge() -> void:
                 continue
         elif command == "diagnostic_notice":
             result = tools.runner.runtime_log.prepare_notification() if tools != null and tools.runner != null else {"ok": true, "notice": ""}
+        elif command == "provider_retry":
+            var retry_args: Dictionary = request.get("args", {})
+            AppLoggerScript.game_event(game_name, "pi.retry", JSON.stringify(retry_args), "WARN")
+            status_changed.emit("Provider response was empty; retrying %d/%d…" % [int(retry_args.get("attempt", 0)), int(retry_args.get("maxRetries", 3))])
+            result = {"ok": true}
         elif command == "compaction_status":
             result = {"ok": true, "blocked": auto_compaction_failed_operation == operation_id}
         elif command == "diagnostic_delivery":

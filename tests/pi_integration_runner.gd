@@ -43,6 +43,7 @@ func run() -> void:
         await _test_real_pi_generation_edit_stream_and_restart()
         await _test_real_pi_completion_without_forced_tools()
         await _test_real_pi_retry_and_action_limit()
+        await _test_empty_provider_recovery()
         await _test_real_pi_cancel_and_rename()
 
     if part == "" or part == "2":
@@ -57,6 +58,9 @@ func run() -> void:
     if part == "" or part == "4":
         _test_pi_binary_discovery_modes()
         _test_windows_pi_install_guidance()
+
+    if part == "5":
+        await _test_empty_provider_recovery()
 
     var label = "ALL" if part == "" else "PART " + part
     print("PI %s INTEGRATION TESTS: %d passed, %d failed" % [label, passed, failures])
@@ -308,6 +312,53 @@ func _test_real_pi_completion_without_forced_tools() -> void:
     assert_eq(runner.active_game.answer, 1, "host leaves running game untouched when Pi omits reload")
     assert_eq(_fake_records("pi-gamesmith-no-reload").size(), 2, "missing reload causes no automatic provider continuation")
     agent.restart_runtime()
+    agent.queue_free()
+    runner.queue_free()
+    await process_frame
+    WorkspaceStoreScript.new().delete_game(created.name)
+
+func _test_empty_provider_recovery() -> void:
+    for model in ["pi-gamesmith-empty-recover", "pi-gamesmith-empty-exhaust"]:
+        _settings(model, 0.0)
+        var created = _new_game("Pi Empty " + model)
+        _write(created.path.path_join("main.gd"), "extends Node\n")
+        var runner = GameRunnerScript.new()
+        root.add_child(runner)
+        var agent = _controller(created.name, created.path, runner)
+        agent.send_player_request("continue working through transient empty responses")
+        var ok = await agent.finished
+        var recovered = model.ends_with("recover")
+        assert_eq(bool(ok), recovered, "Empty response recovery is bounded: " + model)
+        assert_eq(_fake_records(model).size(), 4, "Retries neither replay completed tools nor loop forever: " + model)
+        var game_log = FileAccess.get_file_as_string(AppLoggerScript.game_log_path(created.name))
+        assert_true("pi.retry" in game_log, "Empty response retries are visible in game logs")
+        if recovered:
+            assert_eq(FileAccess.get_file_as_string(created.path.path_join("retained.txt")), "PRESERVED", "Completed edits survive empty-response recovery")
+        else:
+            assert_true("Provider returned an empty response" in agent.last_error, "Exhausted retries expose the provider error: " + agent.last_error)
+        agent.restart_runtime()
+        agent.queue_free()
+        runner.queue_free()
+        await process_frame
+        WorkspaceStoreScript.new().delete_game(created.name)
+
+    _settings("pi-gamesmith-empty-cancel", 0.0)
+    var created = _new_game("Pi Empty Cancel")
+    _write(created.path.path_join("main.gd"), "extends Node\n")
+    var runner = GameRunnerScript.new()
+    root.add_child(runner)
+    var agent = _controller(created.name, created.path, runner)
+    agent.send_player_request("work until I stop")
+    var deadline = Time.get_ticks_msec() + 10000
+    while Time.get_ticks_msec() < deadline:
+        if "pi.retry" in FileAccess.get_file_as_string(AppLoggerScript.game_log_path(created.name)):
+            break
+        await process_frame
+    assert_true(agent.busy, "Agent remains busy during empty-response backoff")
+    agent.cancel()
+    await create_timer(2.5).timeout
+    assert_true(not agent.busy and agent.rpc == null, "Stop cancels empty-response recovery")
+    assert_eq(_fake_records("pi-gamesmith-empty-cancel").size(), 1, "Cancelled backoff issues no further provider requests")
     agent.queue_free()
     runner.queue_free()
     await process_frame

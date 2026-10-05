@@ -34,7 +34,7 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
     extension_file.store_string(extension_source)
     extension_file.close()
 
-    for module in ["workspace-paths.mjs", "model-capabilities.mjs", "diagnostic-delivery.mjs"]:
+    for module in ["workspace-paths.mjs", "model-capabilities.mjs", "diagnostic-delivery.mjs", "empty-response-retry.mjs"]:
         var module_source = FileAccess.get_file_as_string("res://tools/pi/" + module)
         var module_file = FileAccess.open(agent_dir.path_join(module), FileAccess.WRITE)
         if module_source == "" or module_file == null:

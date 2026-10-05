@@ -148,6 +148,17 @@ const server = http.createServer((req, res) => {
       "connection": "close"
     });
 
+    if (model.startsWith("pi-gamesmith-empty-")) {
+      if (model.endsWith("recover") && st.calls === 1) {
+        tool(res, model, "before-empty", "write", { path: "retained.txt", content: "PRESERVED" });
+      } else if (model.endsWith("exhaust") || st.calls < 4) {
+        res.end('data: {"error":{"message":"Provider returned an empty response"}}\n\n');
+      } else {
+        answer(res, model, "Recovered from the empty provider response.");
+      }
+      return;
+    }
+
     if (model === "pi-gamesmith-cancel" && st.calls === 1) {
       res.write(": waiting for cancellation\n\n");
       res.on("close", () => appendLog({ model, event: "cancelled-connection", time: Date.now() }));

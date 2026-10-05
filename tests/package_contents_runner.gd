@@ -24,7 +24,7 @@ func _run() -> void:
         push_error("FAIL: exported GameSmith.pck is missing the runtime diagnostics reader")
         quit(1)
         return
-    for module in ["workspace-paths.mjs", "model-capabilities.mjs", "diagnostic-delivery.mjs"]:
+    for module in ["workspace-paths.mjs", "model-capabilities.mjs", "diagnostic-delivery.mjs", "empty-response-retry.mjs"]:
         if not FileAccess.file_exists("res://tools/pi/" + module):
             push_error("FAIL: exported GameSmith.pck is missing " + module)
             quit(1)

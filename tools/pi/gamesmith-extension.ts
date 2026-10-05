@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { workspacePath } from "./workspace-paths.mjs";
 import { resolveModelCapabilities, compactionReserveTokens } from "./model-capabilities.mjs";
 import { DiagnosticDelivery } from "./diagnostic-delivery.mjs";
+import { EmptyResponseRetry } from "./empty-response-retry.mjs";
 
 const execFileAsync = promisify(execFile);
 const bridgeDir = process.env.GAMESMITH_HOST_BRIDGE_DIR || "";
@@ -53,6 +54,18 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
 }
 
 export default async function (pi: ExtensionAPI) {
+  const emptyResponseRetry = new EmptyResponseRetry();
+  pi.on("before_agent_start", () => { emptyResponseRetry.reset(); });
+  pi.on("agent_before_settle", async (event) => {
+    const retry = emptyResponseRetry.prepare(event);
+    if (!retry) return;
+    await callHost("provider-retry", "provider_retry", {
+      attempt: retry.attempt, maxRetries: retry.maxRetries,
+      error: "Provider returned an empty response",
+    });
+    await new Promise(resolve => setTimeout(resolve, retry.delayMs));
+    return retry.result;
+  });
   const delivery = new DiagnosticDelivery();
   const confirmDelivery = (ctx: any) => delivery.confirm(ctx.sessionManager,
     (id: string) => callHost("diagnostic-receipt", "diagnostic_delivery", { delivery_id: id }));
