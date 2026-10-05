@@ -149,7 +149,15 @@ const server = http.createServer((req, res) => {
     });
 
     if (model.startsWith("pi-gamesmith-empty-")) {
-      if (model.endsWith("recover") && st.calls === 1) {
+      if (model.endsWith("intermittent")) {
+        if (st.calls % 2 === 0) {
+          res.end('data: {"error":{"message":"Provider returned an empty response"}}\n\n');
+        } else if (st.calls < 11) {
+          tool(res, model, "intermittent-" + st.calls, "write", { path: "retained.txt", content: "PRESERVED" });
+        } else {
+          answer(res, model, "Finished despite five intermittent empty responses.");
+        }
+      } else if (model.endsWith("recover") && st.calls === 1) {
         tool(res, model, "before-empty", "write", { path: "retained.txt", content: "PRESERVED" });
       } else if (model.endsWith("exhaust") || st.calls < 4) {
         res.end('data: {"error":{"message":"Provider returned an empty response"}}\n\n');

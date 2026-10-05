@@ -8,6 +8,14 @@ export class EmptyResponseRetry {
 
   reset() { this.attempt = 0; }
 
+  recordSuccess(message) {
+    // Successful provider requests end a failure streak. Tool results alone
+    // do not: they are host output, not evidence the provider recovered.
+    if (message?.role === "assistant" &&
+        !["error", "aborted"].includes(message.stopReason) &&
+        message.content?.length > 0) this.reset();
+  }
+
   prepare(event) {
     if (event.outcome !== "error" || this.attempt >= this.maxRetries) return;
     const messages = event.context.contextMessages;

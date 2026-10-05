@@ -56,6 +56,7 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
 export default async function (pi: ExtensionAPI) {
   const emptyResponseRetry = new EmptyResponseRetry();
   pi.on("before_agent_start", () => { emptyResponseRetry.reset(); });
+  pi.on("message_end", event => { emptyResponseRetry.recordSuccess(event.message); });
   pi.on("agent_before_settle", async (event) => {
     const retry = emptyResponseRetry.prepare(event);
     if (!retry) return;

@@ -318,7 +318,7 @@ func _test_real_pi_completion_without_forced_tools() -> void:
     WorkspaceStoreScript.new().delete_game(created.name)
 
 func _test_empty_provider_recovery() -> void:
-    for model in ["pi-gamesmith-empty-recover", "pi-gamesmith-empty-exhaust"]:
+    for model in ["pi-gamesmith-empty-recover", "pi-gamesmith-empty-exhaust", "pi-gamesmith-empty-intermittent"]:
         _settings(model, 0.0)
         var created = _new_game("Pi Empty " + model)
         _write(created.path.path_join("main.gd"), "extends Node\n")
@@ -327,9 +327,9 @@ func _test_empty_provider_recovery() -> void:
         var agent = _controller(created.name, created.path, runner)
         agent.send_player_request("continue working through transient empty responses")
         var ok = await agent.finished
-        var recovered = model.ends_with("recover")
+        var recovered = not model.ends_with("exhaust")
         assert_eq(bool(ok), recovered, "Empty response recovery is bounded: " + model)
-        assert_eq(_fake_records(model).size(), 4, "Retries neither replay completed tools nor loop forever: " + model)
+        assert_eq(_fake_records(model).size(), 11 if model.ends_with("intermittent") else 4, "Retries neither replay completed tools nor loop forever: " + model)
         var game_log = FileAccess.get_file_as_string(AppLoggerScript.game_log_path(created.name))
         assert_true("pi.retry" in game_log, "Empty response retries are visible in game logs")
         if recovered:

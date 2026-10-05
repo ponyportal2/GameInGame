@@ -48,3 +48,19 @@ test("unidentified source and successful settlement never trigger recovery", () 
   event.outcome = "completed";
   assert.equal(new EmptyResponseRetry().prepare(event), undefined);
 });
+
+test("successful provider responses reset consecutive failures throughout a long turn", () => {
+  const retries = new EmptyResponseRetry();
+  for (let i = 0; i < 10; i++) {
+    assert.equal(retries.prepare(boundary()).attempt, 1);
+    retries.recordSuccess({ role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] });
+  }
+  assert.equal(retries.prepare(boundary()).attempt, 1);
+  for (const message of [
+    { role: "toolResult", content: [{ type: "text", text: "ok" }] },
+    { role: "assistant", stopReason: "error", content: [] },
+    { role: "assistant", stopReason: "aborted", content: [{ type: "text", text: "partial" }] },
+    { role: "assistant", stopReason: "stop", content: [] },
+  ]) retries.recordSuccess(message);
+  assert.equal(retries.prepare(boundary()).attempt, 2);
+});
