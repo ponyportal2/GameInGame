@@ -37,7 +37,8 @@ test("public metadata cache is shared, expires, and never caches failed discover
     const saved = await readFile(cachePath, "utf8");
     now += 1001;
     offline = true;
-    assert.deepEqual(await resolveModelCapabilities("custom", "a", () => undefined, options), UNKNOWN_CAPABILITIES);
+    assert.equal((await resolveModelCapabilities("custom", "a", () => undefined, options)).contextWindow, 10000,
+      "a failed refresh retains recently verified limits instead of shrinking the model to 8K/1K");
     assert.equal(await readFile(cachePath, "utf8"), saved, "failure never replaces successful metadata");
     offline = false;
     await resolveModelCapabilities("custom", "a", () => undefined, options);
@@ -46,6 +47,30 @@ test("public metadata cache is shared, expires, and never caches failed discover
     await resolveModelCapabilities("custom", "a", () => undefined, options);
     assert.equal(calls, 4, "damaged cache refetches");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("offline discovery only reuses recent valid metadata", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gamesmith-model-offline-"));
+  const cachePath = join(root, "models.json");
+  const now = 10 * 24 * 60 * 60 * 1000;
+  const options = { baseUrl: "https://openrouter.ai/api/v1", cachePath, now: () => now,
+    fetch: async () => { throw new Error("offline"); } };
+  try {
+    for (const fetchedAt of [0, now + 1]) {
+      await writeFile(cachePath, JSON.stringify({ format: 1, fetchedAt, data: [
+        { id: "a", context_length: 1000000, top_provider: { max_completion_tokens: 65536 } },
+      ] }));
+      assert.deepEqual(await resolveModelCapabilities("custom", "a", () => undefined, options), UNKNOWN_CAPABILITIES);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("custom official OpenRouter uses its catalog when metadata discovery fails", async () => {
+  const known = { reasoning: true, contextWindow: 1000000, maxTokens: 65536 };
+  assert.deepEqual(await resolveModelCapabilities("custom", "nvidia/nemotron-3-ultra-550b-a55b:free", (provider) => {
+    assert.equal(provider, "openrouter");
+    return known;
+  }, { baseUrl: "https://openrouter.ai/api/v1", fetch: async () => { throw new Error("offline"); } }), known);
 });
 
 test("exact provider catalog metadata is retained", () => {

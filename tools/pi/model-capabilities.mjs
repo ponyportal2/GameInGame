@@ -10,24 +10,40 @@ export function compactionReserveTokens(model) {
   return Math.max(1, Math.min(32768, Math.floor(context / 4)));
 }
 const METADATA_TTL_MS = 5 * 60 * 1000;
+// A refresh outage must not turn yesterday's verified million-token model into
+// an unknown 8K model. Bound offline reuse too; this is metadata, not a guarantee
+// that a provider will never change its limits.
+const OFFLINE_METADATA_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_BYTES = 8 * 1024 * 1024;
 
 async function modelListing(options) {
   const cachePath = options.cachePath;
   const now = (options.now ?? Date.now)();
   const ttl = options.ttlMs ?? METADATA_TTL_MS;
+  let previous;
   if (cachePath) {
     try {
       if ((await stat(cachePath)).size <= MAX_CACHE_BYTES) {
         const cached = JSON.parse(await readFile(cachePath, "utf8"));
-        if (cached.format === 1 && Number.isFinite(cached.fetchedAt) && now >= cached.fetchedAt && now - cached.fetchedAt < ttl && Array.isArray(cached.data)) return cached;
+        if (cached.format === 1 && Number.isFinite(cached.fetchedAt) && now >= cached.fetchedAt && Array.isArray(cached.data)) {
+          const age = now - cached.fetchedAt;
+          if (age < ttl) return cached;
+          if (age < OFFLINE_METADATA_MAX_AGE_MS) previous = cached;
+        }
       }
     } catch { /* Missing, expired, or damaged cache: fetch public metadata. */ }
   }
-  const response = await (options.fetch ?? fetch)("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(10000) });
-  if (!response.ok) throw new Error("Metadata discovery failed");
-  const listing = await response.json();
-  if (!Array.isArray(listing.data)) throw new Error("Invalid metadata listing");
+  let listing;
+  try {
+    const response = await (options.fetch ?? fetch)("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error("Metadata discovery failed");
+    listing = await response.json();
+    if (!Array.isArray(listing.data) || !listing.data.length) throw new Error("Invalid metadata listing");
+  } catch (error) {
+    if (!previous) throw error;
+    console.warn("GameSmith: OpenRouter metadata refresh failed; using previously verified capabilities (less than seven days old).");
+    return previous;
+  }
   // Cache only public capability fields, never request headers or credentials.
   const data = listing.data.filter((entry) => typeof entry.id === "string").map((entry) => ({
     id: entry.id, context_length: entry.context_length, top_provider: entry.top_provider,
@@ -51,8 +67,9 @@ async function modelListing(options) {
 // provider limits only for the official endpoint, never for a lookalike model
 // name on a custom server. Metadata lookup is bounded; agent work is not.
 export async function resolveModelCapabilities(provider, id, lookup, options = {}) {
-  const fallback = modelCapabilities(provider, id, lookup);
-  if (options.baseUrl?.replace(/\/$/, "") !== "https://openrouter.ai/api/v1") return fallback;
+  const officialOpenRouter = options.baseUrl?.replace(/\/$/, "") === "https://openrouter.ai/api/v1";
+  const fallback = modelCapabilities(officialOpenRouter ? "openrouter" : provider, id, lookup);
+  if (!officialOpenRouter) return fallback;
   try {
     const data = await modelListing(options);
     const model = data.data?.find((entry) => entry.id === id);
