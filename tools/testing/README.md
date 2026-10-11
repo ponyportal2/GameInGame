@@ -10,7 +10,7 @@ For Windows or Linux, the portable runners isolate application data under a temp
 
 ```bash
 node tools/testing/run-host-tests.mjs /path/to/godot
-node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs tests/empty-response-retry.test.mjs tests/command-code.test.mjs
+node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs tests/empty-response-retry.test.mjs tests/command-code.test.mjs tests/opencode.test.mjs
 node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
 ```
 
@@ -76,3 +76,20 @@ The production default Pi turn limit is 150. Runaway fixtures use a deliberately
 ## Expected parse errors
 
 Some host/runtime tests deliberately write invalid generated GDScript. Godot will print parse errors for those candidates. The tests only pass when GameSmith rejects the bad candidate, preserves or recovers the previous working game, and continues correctly.
+
+## OpenCode acceptance
+
+`opencode_lifecycle_runner.gd` is included in the default host suite and uses a fake
+CLI with the real MCP adapter to verify approval, Stop, descendant cancellation,
+session persistence, native errors and same-request reload repair. `harness_runner.gd`
+checks OpenCode selection and preservation of disabled provider/compaction settings.
+
+Run the installed CLI with your available provider using:
+
+```powershell
+node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe opencode_integration_runner.gd
+```
+
+This isolates host and OpenCode test data. It verifies native file edits, separate
+headless tests, reopening the same native session, and a reload approval wait longer
+than the MCP default deadline. It deliberately contacts the configured/default provider.

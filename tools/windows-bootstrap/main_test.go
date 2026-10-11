@@ -18,19 +18,19 @@ import (
 )
 
 func TestEitherHarnessAvailable(t *testing.T) {
-	for _, available := range []string{"pi", "command-code"} {
+	for _, available := range []string{"pi", "command-code", "opencode"} {
 		lookup := func(name string) (string, error) {
 			if name == available {
 				return name, nil
 			}
 			return "", errors.New("missing")
 		}
-		if !hasAgentHarness("", "", lookup) {
+		if !hasAgentHarness("", "", "", lookup) {
 			t.Fatalf("%s should allow startup without a missing-harness warning", available)
 		}
 	}
 	missing := func(string) (string, error) { return "", errors.New("missing") }
-	if hasAgentHarness("", "", missing) {
+	if hasAgentHarness("", "", "", missing) {
 		t.Fatal("both missing should show a warning")
 	}
 }

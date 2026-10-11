@@ -1,18 +1,26 @@
 # GameSmith
 
-GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi** or **Command-code** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
+GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, or **OpenCode** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
 
 The integration/test target is `@earendil-works/pi-coding-agent@1.0.0`.
 
 Command-code integration is tested with `command-code@1.79.2`. Install it with `npm install -g command-code` and configure/sign in through its CLI. GameSmith uses the CLI's selected model and native provider configuration. `GAMESMITH_COMMAND_CODE_BIN` can point to its npm `.cmd` shim, an executable, or its `dist/index.mjs` entry point. Node.js must be on PATH.
 
-Command-code games disable GameSmith's provider/model overrides, API key, reasoning, turn limit, model-call delay, and retained-context policy. GameSmith's automatic compaction threshold and Compact now remain available for both harnesses, along with rendered-test permission and automatic reload approval. Saving Command-code settings preserves Pi/provider settings.
+Command-code games disable GameSmith's provider/model overrides, API key, reasoning, turn limit, model-call delay, and retained-context policy. GameSmith's automatic compaction threshold and Compact now remain available for Pi and Command-code, along with rendered-test permission and automatic reload approval. Saving Command-code settings preserves Pi/provider settings.
 
 The Command-code adapter uses headless NDJSON output and a GameSmith mod. Requests resume an explicit native session file rather than the CLI's global last conversation. Native sessions remain in Command-code's own session storage; GameSmith keeps the per-game session reference and adapter files under `host/games/<game>/command-code/`. Model history and summarization are Command-code-owned; readable UI transcripts do not reconstruct native history. GameSmith checks the saved current-context token count before a player request and after its completed turn, including cached tokens. At the configured threshold it loads the same native session through ACP and executes `/compact`. A threshold of 0 disables this host trigger while leaving native automatic compaction intact. Manual Compact now uses the same native command. The native model, retained context, and fast/default policy remain configured in Command-code. For Command-code 1.79.2, ACP ignores `--mod`; GameSmith installs an inert user drop-in outcome observer under `.commandcode/mods/gamesmith-compaction-observer-v2.ts`, enabled only in its marked compaction subprocess. Native no-op and failure outcomes are reported separately, and Stop cancels compaction.
 
 Headless file editing requires Command-code's permission bypass mode. The mod exposes only native file/search tools and GameSmith's game/Git tools, blocks shell and delegation tools, and checks file paths against the game workspace (including reserved `.git` writes). This is a cooperative coding policy, consistent with the existing host policy. Reload waits for player approval unless automatic approval is enabled; separate headless/rendered tests and Stop use the same host bridge as Pi. No GameSmith request timeout or compaction policy is passed to Command-code.
 
 Command-code regressions: `node --test tests/command-code.test.mjs`; isolated UI/lifecycle tests are included in the host suite. To test your selected model live: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe command_code_integration_runner.gd`. The live test creates an isolated game, runs a separate headless test, and checks native conversation resume; it contacts your configured provider.
+
+OpenCode integration is tested with installed `opencode 1.19.0`. Install it with `npm install -g opencode-ai`, configure its model/provider in the OpenCode CLI, then select **OpenCode** for a new game. Node.js must be on PATH. `GAMESMITH_OPENCODE_BIN` can point to the executable or npm shim. GameSmith disables provider/model overrides, credentials, reasoning, turn limits, call delay, automatic compaction threshold, retained-context policy, and Compact now for OpenCode games. Saving host testing/reload settings preserves those disabled settings.
+
+The OpenCode adapter uses `opencode run --format json --auto`, with a separate explicit native session ID per game under `host/games/<game>/opencode/session.json`. Reopening and subsequent requests pass `--session` with that ID; global last-session continuation is never used. OpenCode owns its native history, caching, model/provider configuration and automatic compaction. Current context counts come from the latest native step usage, including cache and reasoning tokens.
+
+GameSmith's tools are exposed through a local [native MCP server](https://docs.opencode.ai/docs/mcp-servers/) as `gamesmith_reload_game`, `gamesmith_start_test_game`, and the other game/Git tools. A [native plugin](https://docs.opencode.ai/docs/plugins/) validates native read/write/edit/apply_patch/search paths, rejects workspace escapes and reserved `.git` edits, and blocks shell/delegation/other unsupported tools at execution. Native tools remain registered: hiding them with deny permissions can make OpenCode's free provider reject requests. This is the same cooperative workspace policy as the other adapters, not a sandbox. Reload keeps the host approval/auto-approval flow. MCP progress notifications keep pending approvals alive across OpenCode's request deadline; Stop kills the adapter, CLI and MCP process tree. Native tool failures include host diagnostics so the agent can repair and retry during the same request.
+
+OpenCode regressions: `node --test tests/opencode.test.mjs`; UI and deterministic lifecycle tests run in the host suite. Live acceptance: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe opencode_integration_runner.gd`. This creates isolated GameSmith application data, contacts the CLI's configured/default provider, checks editing, headless testing, same-session resume, and holds reload approval for 65 seconds before approving it. The runner isolates OpenCode data as well; use the normal app for your existing native configuration.
 
 ## Windows
 
@@ -36,7 +44,7 @@ Pi games expect a global `pi` executable. Install the pinned build with:
 npm install -g @earendil-works/pi-coding-agent@1.0.0
 ```
 
-On Windows, `GameSmith.exe` checks for Pi or Command-code at startup. If neither is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
+On Windows, `GameSmith.exe` checks for Pi, Command-code, or OpenCode at startup. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
 
 For development on Linux:
 
@@ -58,7 +66,7 @@ Use **Settings** from the library sidebar or an open game's chat toolbar. Prefer
 - Pi thinking/reasoning level;
 - **Pi turn limit per request**, default **150**, configurable from 1 to 500;
 - **Delay between Pi provider calls**, default **6 seconds**;
-- **Automatic compaction threshold (both harnesses)**, default **100,000 current-context tokens**; set to **0** to disable GameSmith's threshold;
+- **Automatic compaction threshold (Pi and Command-code)**, default **100,000 current-context tokens**; set to **0** to disable GameSmith's threshold;
 - **Recent tokens kept verbatim by Pi compaction**, default **20,000**;
 - **Compact now** when a game is open.
 
@@ -83,7 +91,7 @@ The model receives Pi's built-in coding tools such as `read`, `edit`, `write`, `
 
 No shell/bash/PowerShell tool is exposed to the model.
 
-The harness decides when its turn is complete. Both harnesses are instructed to run a successful headless test of the current edits, inspect results and stop the test before requesting `reload_game`, then normally reload before the final player summary. Further edits require another headless test. Discussion-only turns, failed tests, and explicit player requests not to reload are exceptions. This is an instruction to the agent, not a host-enforced test gate. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain harness-owned.
+The harness decides when its turn is complete. All harnesses are instructed to run a successful headless test of the current edits, inspect results and stop the test before requesting `reload_game`, then normally reload before the final player summary. Further edits require another headless test. Discussion-only turns, failed tests, and explicit player requests not to reload are exceptions. This is an instruction to the agent, not a host-enforced test gate. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain harness-owned.
 
 Games always open in chat without executing generated code, so after a game crashes GameSmith you can reopen its chat and ask Pi to repair it. **Run Game** starts execution; **Reload Game** is available in chat and gameplay once a game is running. Both manual controls are disabled while the agent is working. Pi's `reload_game` waits indefinitely for approval: a notice over the game leaves gameplay input and mouse untouched; press **Shift+F5**, or **F1** and click **Allow Reload** in chat. **Stop** cancels the waiting agent. Generated games still share the host process: running broken code can crash GameSmith again.
 
@@ -91,7 +99,7 @@ Run is available only when workspace `main.gd` or a last working snapshot exists
 
 **Allow Reload** gives GameSmith permission to attempt loading the game's current workspace, including any edits made while the request was waiting. A reload request does not freeze a revision. To cancel the waiting request, use **Stop**.
 
-Settings → **Agent & testing** → **Automatically approve agent reload requests** skips the approval wait for either harness. It defaults to off and is saved globally. Manual Run/Reload behavior is unchanged.
+Settings → **Agent & testing** → **Automatically approve agent reload requests** skips the approval wait for any harness. It defaults to off and is saved globally. Manual Run/Reload behavior is unchanged.
 
 During an agent turn, rejected reloads return their error and diagnostics to the harness without a raw player error toast. The agent is instructed to repair, repeat headless testing, and retry reload in that same request. Tool completion clears the running-tool status while the model continues. Manual load failures still show their error to the player; the previous accepted game remains running on rejection.
 

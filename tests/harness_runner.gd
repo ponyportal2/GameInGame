@@ -43,6 +43,30 @@ func run() -> void:
     for key in before:
         check(after.get(key) == before[key], "command-code preserves setting " + key)
     app._show_library()
+    check(app.harness_option.item_count == 3, "new games offer OpenCode as the third harness")
+    if app.harness_option.item_count >= 3:
+        app.name_edit.text = "OpenCode fixture"
+        app.harness_option.select(2)
+        app._create_game()
+        check(app.metadata.read_game(app.current_game).get("harness") == "opencode", "OpenCode selection persists")
+        check(app.agent.get_script().resource_path.ends_with("opencode_agent_controller.gd"), "OpenCode game uses its own controller")
+        app._open_settings()
+        check(app.provider_option.disabled and not app.model_edit.editable and not app.key_edit.editable, "OpenCode disables model and provider overrides")
+        check(not app.compaction_auto_spin.editable and not app.compaction_keep_spin.editable and app.compact_now_button.disabled, "OpenCode disables all host compaction controls")
+        check(app.reasoning_option.disabled and not app.agent_steps_spin.editable and not app.llm_delay_spin.editable, "OpenCode owns agent policy")
+        var opencode_before = app.metadata.global_settings()
+        app.model_edit.text = "must not save"
+        app.compaction_auto_spin.value = 999
+        app.compaction_keep_spin.value = 999
+        app.auto_reload_check.button_pressed = true
+        app._save_settings()
+        var opencode_after = app.metadata.global_settings()
+        for key in opencode_before:
+            if key != "auto_approve_reloads":
+                check(opencode_after.get(key) == opencode_before[key], "OpenCode preserves setting " + key)
+        check(opencode_after.auto_approve_reloads, "OpenCode host reload setting remains editable")
+        app.metadata.save_global_settings(opencode_before)
+        app._show_library()
     app.name_edit.text = "Pi fixture"
     app.harness_option.select(0)
     app._create_game()

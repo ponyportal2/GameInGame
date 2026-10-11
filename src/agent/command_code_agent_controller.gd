@@ -15,11 +15,11 @@ func send_player_request(text: String) -> void:
     result_text = ""
     last_error = ""
     streamed_text = false
-    status_changed.emit("Starting Command-code…")
+    status_changed.emit("Starting " + _harness_name() + "…")
     var ready = _start_command_runtime()
     transcript.append(game_name, "user", text)
     if not ready.get("ok", false):
-        _fail(str(ready.get("error", "Command-code is unavailable.")))
+        _fail(str(ready.get("error", _harness_name() + " is unavailable.")))
         return
     await _maybe_auto_compact("before_request")
     if operation != operation_id:
@@ -27,12 +27,12 @@ func send_player_request(text: String) -> void:
     if auto_compaction_failed_operation == operation:
         _fail("Could not compact the conversation before this request. History and edits were kept. Retry Compact now before continuing.")
         return
-    status_changed.emit("Command-code is working…")
+    status_changed.emit(_harness_name() + " is working…")
     var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text})
     if operation != operation_id:
         return
     if not accepted.get("success", false):
-        _fail(str(accepted.get("error", "Command-code rejected the request.")))
+        _fail(str(accepted.get("error", _harness_name() + " rejected the request.")))
         return
     while operation == operation_id and not result_received and rpc != null and rpc.running:
         await get_tree().process_frame
@@ -41,7 +41,7 @@ func send_player_request(text: String) -> void:
     llm_stream_end.emit("assistant")
     llm_stream_end.emit("thinking")
     if not result_received or last_error != "":
-        _fail(last_error if last_error != "" else "Command-code stopped unexpectedly.")
+        _fail(last_error if last_error != "" else _harness_name() + " stopped unexpectedly.")
         return
     if result_text != "":
         transcript.append(game_name, "assistant", result_text)
@@ -113,7 +113,7 @@ func _on_command_record(record: Dictionary) -> void:
             result_received = true
             result_text = str(record.get("text", ""))
             if not record.get("ok", false):
-                last_error = str(record.get("error", "Command-code request failed."))
+                last_error = str(record.get("error", _harness_name() + " request failed."))
 
 func compact_now() -> Dictionary:
     if busy:
@@ -160,4 +160,7 @@ func settings_changed() -> void:
 func approve_reload() -> void:
     super.approve_reload()
     if busy:
-        status_changed.emit("Command-code is working…")
+        status_changed.emit(_harness_name() + " is working…")
+
+func _harness_name() -> String:
+    return "Command-code"

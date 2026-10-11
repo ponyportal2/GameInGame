@@ -103,7 +103,7 @@ static func build(app) -> void:
     app.auto_reload_check = CheckBox.new()
     app.auto_reload_check.text = "Automatically approve agent reload requests"
     agent_page.add_child(app.auto_reload_check)
-    U.paragraph(agent_page, "Start or reload the live game without waiting for Shift+F5 or Allow Reload. Applies to both harnesses. Off by default.")
+    U.paragraph(agent_page, "Start or reload the live game without waiting for Shift+F5 or Allow Reload. Applies to all harnesses. Off by default.")
     U.label(agent_page, "Separate game tests", 18)
     app.rendered_tests_check = CheckBox.new()
     app.rendered_tests_check.text = "Allow rendered agent tests (minimized window)"
@@ -112,7 +112,7 @@ static func build(app) -> void:
     var conversation = page(tabs, "Conversation")
     U.paragraph(conversation, "Summarize older conversation to make room for new work. Recent messages stay intact.")
     app.compaction_auto_spin = spin(0, 2000000, 1000)
-    field(conversation, "Automatically compact at · estimated tokens", app.compaction_auto_spin, "Both harnesses: checked between requests. Set to 0 to disable GameSmith’s trigger; the harness can still compact automatically.")
+    field(conversation, "Automatically compact at · estimated tokens", app.compaction_auto_spin, "Pi and Command-code: checked between requests. OpenCode handles its own compaction. Set to 0 to disable GameSmith’s trigger; the harness can still compact automatically.")
     app.compaction_keep_spin = spin(1000, 500000, 1000)
     field(conversation, "Recent tokens to keep", app.compaction_keep_spin)
     conversation.add_child(HSeparator.new())
@@ -146,7 +146,9 @@ static func build_new_game(app) -> void:
     app.harness_option.set_item_metadata(0, "pi")
     app.harness_option.add_item("Command-code")
     app.harness_option.set_item_metadata(1, "command-code")
-    field(root, "Coding harness", app.harness_option, "Command-code uses its own model, provider, and summarization settings. GameSmith's compaction threshold applies to both harnesses.")
+    app.harness_option.add_item("OpenCode")
+    app.harness_option.set_item_metadata(2, "opencode")
+    field(root, "Coding harness", app.harness_option, "Command-code and OpenCode use their own model and provider settings. OpenCode also handles its own compaction.")
     app.name_edit.text_submitted.connect(func(_text): app._create_game())
     U.space(root, true)
     var actions = U.row(root)

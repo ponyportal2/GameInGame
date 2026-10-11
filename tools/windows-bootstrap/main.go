@@ -64,8 +64,8 @@ func main() {
 	if _, err := exec.LookPath("git.exe"); err != nil {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
-	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), exec.LookPath) {
-		warningf("No coding harness was found. GameSmith will open; install Pi or Command-code to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\n\nThen restart GameSmith and choose the installed harness when creating a game.")
+	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), exec.LookPath) {
+		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, or OpenCode to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\n\nThen restart GameSmith and choose the installed harness when creating a game.")
 	}
 
 	args := append([]string{"--main-pack", packPath}, os.Args[1:]...)
@@ -77,19 +77,21 @@ func main() {
 	}
 }
 
-func hasAgentHarness(piConfigured, commandConfigured string, lookPath func(string) (string, error)) bool {
+func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured string, lookPath func(string) (string, error)) bool {
 	if _, err := resolvePiExecutable(piConfigured, lookPath); err == nil {
 		return true
 	}
-	command := strings.TrimSpace(commandConfigured)
-	if command == "" {
-		command = "command-code"
-	}
-	if _, err := lookPath(command); err == nil {
-		return true
-	}
-	if info, err := os.Stat(command); err == nil && !info.IsDir() {
-		return true
+	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}} {
+		command := strings.TrimSpace(harness.configured)
+		if command == "" {
+			command = harness.fallback
+		}
+		if _, err := lookPath(command); err == nil {
+			return true
+		}
+		if info, err := os.Stat(command); err == nil && !info.IsDir() {
+			return true
+		}
 	}
 	return false
 }

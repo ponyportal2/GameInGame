@@ -11,7 +11,12 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing Command-code " + module)
             quit(1)
             return
-    for script in ["command_code_agent_controller.gd", "command_code_session.gd"]:
+    for module in ["worker.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs", "workspace-paths.mjs"]:
+        if not FileAccess.file_exists("res://tools/opencode/" + module):
+            push_error("FAIL: exported GameSmith.pck is missing OpenCode " + module)
+            quit(1)
+            return
+    for script in ["command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd"]:
         if not ResourceLoader.exists("res://src/agent/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)
@@ -48,5 +53,5 @@ func _run() -> void:
         push_error("FAIL: exported Pi extension is empty")
         quit(1)
         return
-    print("PASS: exported GameSmith.pck contains the bundled Pi extension")
+    print("PASS: exported GameSmith.pck contains all harness adapters and the bundled Pi extension")
     quit(0)
