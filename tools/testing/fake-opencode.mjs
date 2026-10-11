@@ -44,7 +44,14 @@ async function host(name,args={}) {
 async function run(prompt) {
  parts.length=0;aborted=false;
  emit({type:'step_start',part:{}});
- if (prompt==='wait') return await new Promise(resolve=>waiting=resolve);
+ if (prompt==='wait') {
+   const reasoning={id:'live-reasoning',sessionID:session,messageID:'live-assistant',type:'reasoning',text:'',time:{start:Date.now()}};
+   for (const response of subscribers) {
+     response.write('data: '+JSON.stringify({type:'message.part.updated',properties:{part:reasoning}})+'\n\n');
+     response.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:session,partID:reasoning.id,field:'text',delta:'Fixture is thinking before completion'}})+'\n\n');
+   }
+   return await new Promise(resolve=>waiting=resolve);
+ }
  if (prompt==='provider-error') return {info:{error:{data:{message:'Fixture provider error'}}},parts:[]};
  if (prompt==='incomplete') return {info:{},parts:[]};
  if (prompt==='tool-round-only') return {info:{finish:'tool-calls'},parts:[]};

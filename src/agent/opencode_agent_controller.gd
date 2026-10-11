@@ -46,7 +46,7 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "server.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs"]:
+    for file in ["worker.mjs", "server.mjs", "events.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs"]:
         if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/opencode/" + file)):
             return {"ok": false, "error": "Could not prepare OpenCode integration: " + file}
     if not JsonStore.write_bytes_atomic(directory.path_join("workspace-paths.mjs"), FileAccess.get_file_as_bytes("res://tools/pi/workspace-paths.mjs")):

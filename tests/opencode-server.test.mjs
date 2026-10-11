@@ -18,7 +18,7 @@ test('Chocolatey launcher resolves to the native executable without a transient 
   assert.equal(resolveExecutable(shim,'win32').bin,native);
 });
 
-test('adapter rejects overlapping prompts during Stop and EOF removes the retained backend', async () => {
+test('adapter streams before completion, rejects overlapping prompts during Stop and cleans up on EOF', {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-worker-'));
   const config={workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
@@ -35,6 +35,9 @@ test('adapter rejects overlapping prompts during Stop and EOF removes the retain
   }
   try {
     assert.equal((await send('prompt','wait')).success,true);
+    while (!records.some(record=>record.type==='delta' && record.kind==='thinking')) await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal(records.some(record=>record.type==='complete'),false);
+    assert.equal(records.find(record=>record.type==='delta').text,'Fixture is thinking before completion');
     const backend=JSON.parse(await readFile(join(workspace,'backend.json'),'utf8'));
     const cancel=send('cancel');const overlap=send('prompt','follow up');
     assert.equal((await overlap).success,false);

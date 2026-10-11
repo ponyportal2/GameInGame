@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { buildConfig, normalizeFrame } from './protocol.mjs';
 import { OpenCodeServer } from './server.mjs';
+import { createEventNormalizer } from './events.mjs';
 
 const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const emit=record=>process.stdout.write(JSON.stringify(record)+'\n');
@@ -17,8 +18,8 @@ const existing=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}'), host=bui
 const inline={...existing,...host,plugin:[...(existing.plugin || []),...host.plugin],instructions:[...(existing.instructions || []),...host.instructions],mcp:{...existing.mcp,...host.mcp}};
 const server=new OpenCodeServer({workspace:config.workspace,env:{...process.env,OPENCODE_CONFIG_CONTENT:JSON.stringify(inline),GAMESMITH_HOST_BRIDGE_DIR:config.bridge_dir},
   onStderr:line=>process.stderr.write(line+'\n'),onExit:error=>{if (!stopping) emit({type:'integration_error',error:error.message});}});
-function records(frame,operation) {
-  for (const record of normalizeFrame(frame)) {
+function emitRecords(records,operation) {
+  for (const record of records) {
     if (record.session) {session=record.session;saveSession();}
     if (record.type==='context') {contextTokens=record.tokens;saveSession();}
     if (record.type==='assistant_text') {operation.text+=record.text;continue;}
@@ -26,6 +27,7 @@ function records(frame,operation) {
     emit(record);
   }
 }
+function records(frame,operation) {emitRecords(normalizeFrame(frame),operation);}
 function ready() {
   return initializing ||= (async()=>{
     await server.start();
@@ -41,20 +43,14 @@ async function prompt(request,operation) {
     await ready();if (operation.cancelled) return;
     const status=await server.request('/session/status');
     if (status[session]?.type && status[session].type!=='idle') throw new Error('OpenCode session is already busy.');
-    const seen=new Set();
+    const normalizeEvent=createEventNormalizer(session);
     unsubscribe=await server.subscribe(event=>{
       if (active!==operation || operation.cancelled) return;
       const properties=event.properties || {};
       if (event.type==='permission.asked' && properties.sessionID===session) {
         server.request('/permission/'+properties.id+'/reply','POST',{reply:'once'}).catch(error=>{operation.error=error.message;});return;
       }
-      if (event.type==='session.error' && properties.sessionID===session) records({type:'error',error:properties.error},operation);
-      const part=properties.part;
-      if (event.type!=='message.part.updated' || part?.sessionID!==session) return;
-      const type={'step-start':'step_start','step-finish':'step_finish',tool:'tool_use',text:'text',reasoning:'reasoning'}[part.type];
-      if (!type || (['text','reasoning'].includes(type) && !part.time?.end) || (type==='tool_use' && !['completed','error'].includes(part.state?.status))) return;
-      const key=part.id+':'+type;if (seen.has(key)) return;seen.add(key);
-      records({type,sessionID:session,part},operation);
+      emitRecords(normalizeEvent(event),operation);
     },error=>{if (!operation.cancelled) operation.error=error.message;});
     if (operation.cancelled) return;
     emit({type:'response',id:request.id,success:true});operation.accepted=true;
