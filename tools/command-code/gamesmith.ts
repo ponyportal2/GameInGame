@@ -24,7 +24,7 @@ export async function callHost(command, args, signal) {
 export default async function (cmd) {
   const prompt = await readFile(process.env.GAMESMITH_PROMPT_PATH!, 'utf8');
   const tools = {
-    reload_game: {description:'Request loading the game; waits for player approval.',properties:{}},
+    reload_game: {description:'After successful headless testing of the current edits, request loading the game before handoff. Waits for player approval unless auto-approval is enabled.',properties:{}},
     read_runtime_log: {description:'Read live game errors and runtime logs.',properties:{since_sequence:{type:'integer'},limit:{type:'integer'}}},
     start_test_game: {description:'Start a separate Godot game test.',properties:{mode:{type:'string',enum:['headless','rendered']}}},
     read_test_log: {description:'Read separate game test status and logs.',properties:{run_id:{type:'string'},limit:{type:'integer'},since_sequence:{type:'integer'}}},

@@ -452,6 +452,9 @@ func _service_host_bridge() -> void:
         if command == "reload_game":
             if pending_reload.is_empty():
                 pending_reload = {"request": request, "bridge_dir": bridge_dir, "operation_id": operation_id}
+                if bool(metadata.global_settings().get("auto_approve_reloads", false)):
+                    approve_reload()
+                    continue
                 status_changed.emit("Waiting for reload approval")
                 reload_approval_changed.emit(true)
                 continue

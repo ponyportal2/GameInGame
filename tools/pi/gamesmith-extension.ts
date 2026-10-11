@@ -305,7 +305,7 @@ export default async function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "reload_game",
     label: "reload_game",
-    description: "Request permission to compile/instantiate the current workspace and replace the active game only if valid. Waits without timeout for Shift+F5 or Allow Reload in chat, or agent cancellation. Loads the workspace as it exists when allowed, including edits made while waiting; the request does not freeze a revision.",
+    description: "After successful headless testing of the current edits, request compiling/instantiating the workspace before handoff; replace the active game only if valid. Waits without timeout for Shift+F5 or Allow Reload in chat unless automatic approval is enabled. Stop cancels the wait. Loads the workspace as it exists when allowed, including edits made while waiting; the request does not freeze a revision.",
     promptSnippet: "reload_game: Compile and hot-reload the generated Godot game",
     parameters: Type.Object({}),
     annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },

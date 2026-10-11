@@ -10,7 +10,7 @@ Command-code games disable GameSmith's provider/model overrides, API key, reason
 
 The Command-code adapter uses headless NDJSON output and a GameSmith mod. Requests resume an explicit native session file rather than the CLI's global last conversation. Native sessions remain in Command-code's own session storage; GameSmith keeps the per-game session reference and adapter files under `host/games/<game>/command-code/`. Model history and compaction are Command-code-owned; readable UI transcripts do not reconstruct native history. Configure or compact these sessions with Command-code's CLI.
 
-Headless file editing requires Command-code's permission bypass mode. The mod exposes only native file/search tools and GameSmith's game/Git tools, blocks shell and delegation tools, and checks file paths against the game workspace (including reserved `.git` writes). This is a cooperative coding policy, consistent with the existing host policy. Reload still waits for player approval; separate headless/rendered tests and Stop use the same host bridge as Pi. No GameSmith request timeout or compaction policy is passed to Command-code.
+Headless file editing requires Command-code's permission bypass mode. The mod exposes only native file/search tools and GameSmith's game/Git tools, blocks shell and delegation tools, and checks file paths against the game workspace (including reserved `.git` writes). This is a cooperative coding policy, consistent with the existing host policy. Reload waits for player approval unless automatic approval is enabled; separate headless/rendered tests and Stop use the same host bridge as Pi. No GameSmith request timeout or compaction policy is passed to Command-code.
 
 Command-code regressions: `node --test tests/command-code.test.mjs`; isolated UI/lifecycle tests are included in the host suite. To test your selected model live: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe command_code_integration_runner.gd`. The live test creates an isolated game, runs a separate headless test, and checks native conversation resume; it contacts your configured provider.
 
@@ -83,13 +83,15 @@ The model receives Pi's built-in coding tools such as `read`, `edit`, `write`, `
 
 No shell/bash/PowerShell tool is exposed to the model.
 
-Pi decides when its turn is complete. GameSmith instructs it to call `reload_game` after editing the game. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain Pi-owned.
+The harness decides when its turn is complete. Both harnesses are instructed to run a successful headless test of the current edits, inspect results and stop the test before requesting `reload_game`, then normally reload before the final player summary. Further edits require another headless test. Discussion-only turns, failed tests, and explicit player requests not to reload are exceptions. This is an instruction to the agent, not a host-enforced test gate. Provider retries, model history, reasoning, coding-tool execution, session persistence, and generic compaction semantics remain harness-owned.
 
 Games always open in chat without executing generated code, so after a game crashes GameSmith you can reopen its chat and ask Pi to repair it. **Run Game** starts execution; **Reload Game** is available in chat and gameplay once a game is running. Both manual controls are disabled while the agent is working. Pi's `reload_game` waits indefinitely for approval: a notice over the game leaves gameplay input and mouse untouched; press **Shift+F5**, or **F1** and click **Allow Reload** in chat. **Stop** cancels the waiting agent. Generated games still share the host process: running broken code can crash GameSmith again.
 
 Run is available only when workspace `main.gd` or a last working snapshot exists. Chat and gameplay show persistent execution status: **Not running**, **Running workspace**, or **Running last working snapshot**. This identifies the loaded source, without claiming it includes later file edits.
 
 **Allow Reload** gives GameSmith permission to attempt loading the game's current workspace, including any edits made while the request was waiting. A reload request does not freeze a revision. To cancel the waiting request, use **Stop**.
+
+Settings → **Agent & testing** → **Automatically approve agent reload requests** skips the approval wait for either harness. It defaults to off and is saved globally. Manual Run/Reload behavior is unchanged.
 
 ### Separate agent testing
 

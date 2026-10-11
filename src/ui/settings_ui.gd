@@ -100,6 +100,10 @@ static func build(app) -> void:
     app.llm_delay_spin = spin(Agent.MIN_LLM_CALL_DELAY_SEC, Agent.MAX_LLM_CALL_DELAY_SEC, 0.5)
     field(agent_page, "Delay between model calls · seconds", app.llm_delay_spin, "Default: 6. Set to 0 for immediate calls.")
     agent_page.add_child(HSeparator.new())
+    app.auto_reload_check = CheckBox.new()
+    app.auto_reload_check.text = "Automatically approve agent reload requests"
+    agent_page.add_child(app.auto_reload_check)
+    U.paragraph(agent_page, "Start or reload the live game without waiting for Shift+F5 or Allow Reload. Applies to both harnesses. Off by default.")
     U.label(agent_page, "Separate game tests", 18)
     app.rendered_tests_check = CheckBox.new()
     app.rendered_tests_check.text = "Allow rendered agent tests (minimized window)"

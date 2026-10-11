@@ -59,6 +59,7 @@ var llm_delay_spin: SpinBox
 var compaction_auto_spin: SpinBox
 var compaction_keep_spin: SpinBox
 var rendered_tests_check: CheckBox
+var auto_reload_check: CheckBox
 var compact_now_button: Button
 var compaction_status_label: Label
 var library_button: Button
@@ -561,6 +562,7 @@ func _open_settings() -> void:
     compaction_auto_spin.value = clampi(int(settings.get("compaction_auto_tokens", 100000)), 0, 2000000)
     compaction_keep_spin.value = clampi(int(settings.get("compaction_keep_recent_tokens", 20000)), 1000, 500000)
     rendered_tests_check.button_pressed = bool(settings.get("allow_rendered_tests", false))
+    auto_reload_check.button_pressed = bool(settings.get("auto_approve_reloads", false))
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
         _select_game_provider_id(str(game_meta.get("provider_override", "")))
@@ -653,8 +655,9 @@ func _save_settings() -> void:
     if _uses_command_code():
         var host_settings = metadata.global_settings()
         host_settings.allow_rendered_tests = rendered_tests_check.button_pressed
+        host_settings.auto_approve_reloads = auto_reload_check.button_pressed
         if not metadata.save_global_settings(host_settings):
-            _toast("Could not save testing permissions.")
+            _toast("Could not save host permissions.")
             return
         settings_dialog.visible = false
         _toast("Settings saved. Command-code manages its own agent settings.")
@@ -670,6 +673,7 @@ func _save_settings() -> void:
     settings.compaction_auto_tokens = int(compaction_auto_spin.value)
     settings.compaction_keep_recent_tokens = int(compaction_keep_spin.value)
     settings.allow_rendered_tests = rendered_tests_check.button_pressed
+    settings.auto_approve_reloads = auto_reload_check.button_pressed
     var failures: Array[String] = []
     if not metadata.save_global_settings(settings):
         failures.append("global settings")

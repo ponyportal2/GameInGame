@@ -95,6 +95,7 @@ func global_settings() -> Dictionary:
         "compaction_auto_tokens": 100000,
         "compaction_keep_recent_tokens": 20000,
         "allow_rendered_tests": false,
+        "auto_approve_reloads": false,
     })
 
 func save_global_settings(data: Dictionary) -> bool:
