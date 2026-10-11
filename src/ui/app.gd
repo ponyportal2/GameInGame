@@ -5,6 +5,7 @@ const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
+const CommandCodeAgentControllerScript = preload("res://src/agent/command_code_agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
@@ -44,6 +45,7 @@ var delete_dialog: Control
 var delete_game_label: Label
 var settings_dialog: Control
 var name_edit: LineEdit
+var harness_option: OptionButton
 var rename_edit: LineEdit
 var provider_option: OptionButton
 var model_edit: LineEdit
@@ -251,7 +253,7 @@ func _show_library() -> void:
     _refresh_library()
 
 func _create_game() -> void:
-    var result = store.create_game(name_edit.text)
+    var result = store.create_game(name_edit.text, str(harness_option.get_item_metadata(harness_option.selected)))
     if result.ok:
         new_game_dialog.visible = false
         _open_game(result.name)
@@ -279,7 +281,9 @@ func _open_game(name: String) -> void:
     runner.load_succeeded.connect(_on_load_success)
     runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _toast(msg))
     tools = GameToolsScript.new(store.game_path(name), runner)
-    agent = PiAgentControllerScript.new(); add_child(agent); agent.configure(name, tools)
+    agent = CommandCodeAgentControllerScript.new() if metadata.read_game(name).get("harness", "pi") == "command-code" else PiAgentControllerScript.new()
+    add_child(agent)
+    agent.configure(name, tools)
     agent.status_changed.connect(func(text): status_label.text = text)
     agent.assistant_message.connect(func(text): _append_chat("assistant", text))
     agent.llm_snippet.connect(func(kind, text): _append_chat(kind, text))
@@ -570,7 +574,25 @@ func _open_settings() -> void:
         game_override_model.editable = false
         compaction_status_label.text = "Open a game to compact its conversation manually."
         compact_now_button.disabled = true
+    var command_code = _uses_command_code()
+    provider_option.disabled = command_code
+    reasoning_option.disabled = command_code
+    model_edit.editable = not command_code
+    key_edit.editable = not command_code
+    custom_base_edit.editable = not command_code
+    agent_steps_spin.editable = not command_code
+    llm_delay_spin.editable = not command_code
+    compaction_auto_spin.editable = not command_code
+    compaction_keep_spin.editable = not command_code
+    if command_code:
+        game_override_provider.disabled = true
+        game_override_model.editable = false
+        compact_now_button.disabled = true
+        compaction_status_label.text = "Command-code manages model selection, providers, reasoning, and compaction. Configure them in the command-code CLI."
     settings_dialog.visible = true
+
+func _uses_command_code() -> bool:
+    return current_game != "" and metadata.read_game(current_game).get("harness", "pi") == "command-code"
 
 func _close_settings() -> void:
     settings_dialog.visible = false
@@ -578,6 +600,8 @@ func _close_settings() -> void:
         chat_input.grab_focus()
 
 func _compact_now_from_settings() -> void:
+    if _uses_command_code():
+        return
     if current_game == "" or not is_instance_valid(agent):
         compaction_status_label.text = "Open a game first."
         return
@@ -614,12 +638,23 @@ func _compact_now_from_settings() -> void:
 
 
 func _provider_changed(index: int) -> void:
+    if _uses_command_code():
+        return
     var id = str(provider_option.get_item_metadata(index)); var settings = metadata.global_settings(); var creds = metadata.credentials()
     model_edit.text = str(PiProviderCatalogScript.defaults().get(id, settings.get("model", "")))
     key_edit.text = str(creds.get(id, ""))
     custom_base_edit.get_parent().visible = id == "custom"
 
 func _save_settings() -> void:
+    if _uses_command_code():
+        var host_settings = metadata.global_settings()
+        host_settings.allow_rendered_tests = rendered_tests_check.button_pressed
+        if not metadata.save_global_settings(host_settings):
+            _toast("Could not save testing permissions.")
+            return
+        settings_dialog.visible = false
+        _toast("Settings saved. Command-code manages its own agent settings.")
+        return
     var id = str(provider_option.get_item_metadata(provider_option.selected))
     var settings = metadata.global_settings()
     settings.provider = id

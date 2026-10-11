@@ -1,8 +1,18 @@
 # GameSmith
 
-GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Production agent behavior is provided by a globally installed **Pi coding agent** process; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls.
+GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi** or **Command-code** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
 
 The integration/test target is `@earendil-works/pi-coding-agent@1.0.0`.
+
+Command-code integration is tested with `command-code@1.79.2`. Install it with `npm install -g command-code` and configure/sign in through its CLI. GameSmith uses the CLI's selected model and native provider configuration. `GAMESMITH_COMMAND_CODE_BIN` can point to its npm `.cmd` shim, an executable, or its `dist/index.mjs` entry point. Node.js must be on PATH.
+
+Command-code games disable GameSmith's provider/model overrides, API key, reasoning, turn limit, model-call delay, and all compaction controls. These settings remain available for Pi games and from the library. Rendered game-test permission remains host-owned for both harnesses. Saving settings in a Command-code game only saves that testing permission.
+
+The Command-code adapter uses headless NDJSON output and a GameSmith mod. Requests resume an explicit native session file rather than the CLI's global last conversation. Native sessions remain in Command-code's own session storage; GameSmith keeps the per-game session reference and adapter files under `host/games/<game>/command-code/`. Model history and compaction are Command-code-owned; readable UI transcripts do not reconstruct native history. Configure or compact these sessions with Command-code's CLI.
+
+Headless file editing requires Command-code's permission bypass mode. The mod exposes only native file/search tools and GameSmith's game/Git tools, blocks shell and delegation tools, and checks file paths against the game workspace (including reserved `.git` writes). This is a cooperative coding policy, consistent with the existing host policy. Reload still waits for player approval; separate headless/rendered tests and Stop use the same host bridge as Pi. No GameSmith request timeout or compaction policy is passed to Command-code.
+
+Command-code regressions: `node --test tests/command-code.test.mjs`; isolated UI/lifecycle tests are included in the host suite. To test your selected model live: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe command_code_integration_runner.gd`. The live test creates an isolated game, runs a separate headless test, and checks native conversation resume; it contacts your configured provider.
 
 ## Windows
 
@@ -20,13 +30,13 @@ GameSmith-Windows/
 
 Clone/download the repository, open `GameSmith-Windows`, and double-click **`GameSmith.exe`**. The bundled Godot runtime means normal startup needs no Godot download. Git for Windows must be installed and available on `PATH` for generated-game repositories.
 
-GameSmith also expects a global `pi` executable. Install the pinned build with:
+Pi games expect a global `pi` executable. Install the pinned build with:
 
 ```bash
 npm install -g @earendil-works/pi-coding-agent@1.0.0
 ```
 
-On Windows, `GameSmith.exe` checks for Pi at startup. If Pi is missing, it shows a non-blocking warning with this install command and still opens GameSmith; chat build/edit becomes available after Pi is installed and GameSmith is restarted. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
+On Windows, `GameSmith.exe` checks for Pi or Command-code at startup. If neither is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
 
 For development on Linux:
 
@@ -179,7 +189,7 @@ Portable host, reliability, and diagnostics suites with isolated application dat
 
 ```bash
 node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
-node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs tests/empty-response-retry.test.mjs
+node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs tests/empty-response-retry.test.mjs tests/command-code.test.mjs
 ```
 
 Full source verification:

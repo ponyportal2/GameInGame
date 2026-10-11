@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,24 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestEitherHarnessAvailable(t *testing.T) {
+	for _, available := range []string{"pi", "command-code"} {
+		lookup := func(name string) (string, error) {
+			if name == available {
+				return name, nil
+			}
+			return "", errors.New("missing")
+		}
+		if !hasAgentHarness("", "", lookup) {
+			t.Fatalf("%s should allow startup without a missing-harness warning", available)
+		}
+	}
+	missing := func(string) (string, error) { return "", errors.New("missing") }
+	if hasAgentHarness("", "", missing) {
+		t.Fatal("both missing should show a warning")
+	}
+}
 
 func runtimeZip(t *testing.T, entries map[string]string) ([]byte, string) {
 	t.Helper()
@@ -144,7 +163,6 @@ func TestExtractZipRejectsTraversal(t *testing.T) {
 		t.Fatal("expected zip traversal rejection")
 	}
 }
-
 
 func TestResolvePiExecutablePrefersExplicitOverride(t *testing.T) {
 	calls := []string{}

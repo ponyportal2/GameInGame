@@ -6,6 +6,16 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
+    for module in ["worker.mjs", "protocol.mjs", "gamesmith.ts"]:
+        if not FileAccess.file_exists("res://tools/command-code/" + module):
+            push_error("FAIL: exported GameSmith.pck is missing Command-code " + module)
+            quit(1)
+            return
+    for script in ["command_code_agent_controller.gd", "command_code_session.gd"]:
+        if not ResourceLoader.exists("res://src/agent/" + script):
+            push_error("FAIL: exported GameSmith.pck is missing " + script)
+            quit(1)
+            return
     for script in ["workspace_ui.gd", "settings_ui.gd", "theme_factory.gd"]:
         if not ResourceLoader.exists("res://src/ui/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)

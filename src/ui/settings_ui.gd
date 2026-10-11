@@ -130,13 +130,19 @@ static func build(app) -> void:
 
 static func build_new_game(app) -> void:
     app.new_game_dialog = overlay(app, "NewGameOverlay")
-    var root = U.column(U.margin(panel(app.new_game_dialog, 500, 310), 22, 20), 16)
+    var root = U.column(U.margin(panel(app.new_game_dialog, 500, 410), 22, 20), 16)
     U.label(root, "A NEW BEGINNING", 11, T.ACCENT)
     U.label(root, "What will you make?", 28)
     U.paragraph(root, "Give your game a name. You can shape the idea with the agent in chat and rename it anytime.")
     app.name_edit = LineEdit.new()
     app.name_edit.placeholder_text = "Neon Asteroids"
     field(root, "Game name", app.name_edit)
+    app.harness_option = OptionButton.new()
+    app.harness_option.add_item("Pi")
+    app.harness_option.set_item_metadata(0, "pi")
+    app.harness_option.add_item("Command-code")
+    app.harness_option.set_item_metadata(1, "command-code")
+    field(root, "Coding harness", app.harness_option, "Command-code uses its own model, provider, and compaction settings.")
     app.name_edit.text_submitted.connect(func(_text): app._create_game())
     U.space(root, true)
     var actions = U.row(root)

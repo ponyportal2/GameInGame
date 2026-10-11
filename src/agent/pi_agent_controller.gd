@@ -458,6 +458,8 @@ func _service_host_bridge() -> void:
             result = {"ok": false, "error": "Another reload is already waiting for player approval."}
         elif command == "read_runtime_log":
             result = tools.execute(command, request.get("args", {}))
+        elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
+            result = tools.execute(command, request.get("args", {}))
         elif command in ["start_test_game", "read_test_log", "stop_test_game", "test_game_action"]:
             result = tools.execute(command, request.get("args", {}))
             if result.get("ok", false) and command == "stop_test_game" and result.get("state", "") != "exited":

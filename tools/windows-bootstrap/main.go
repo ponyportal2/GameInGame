@@ -64,8 +64,8 @@ func main() {
 	if _, err := exec.LookPath("git.exe"); err != nil {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
-	if _, err := resolvePiExecutable(os.Getenv("GAMESMITH_PI_BIN"), exec.LookPath); err != nil {
-		warningf("Pi coding agent was not found. GameSmith will open, but chat cannot build or edit games until Pi is available.\n\n%v", err)
+	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), exec.LookPath) {
+		warningf("No coding harness was found. GameSmith will open; install Pi or Command-code to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\n\nThen restart GameSmith and choose the installed harness when creating a game.")
 	}
 
 	args := append([]string{"--main-pack", packPath}, os.Args[1:]...)
@@ -77,6 +77,22 @@ func main() {
 	}
 }
 
+func hasAgentHarness(piConfigured, commandConfigured string, lookPath func(string) (string, error)) bool {
+	if _, err := resolvePiExecutable(piConfigured, lookPath); err == nil {
+		return true
+	}
+	command := strings.TrimSpace(commandConfigured)
+	if command == "" {
+		command = "command-code"
+	}
+	if _, err := lookPath(command); err == nil {
+		return true
+	}
+	if info, err := os.Stat(command); err == nil && !info.IsDir() {
+		return true
+	}
+	return false
+}
 
 func resolvePiExecutable(configured string, lookPath func(string) (string, error)) (string, error) {
 	target := strings.TrimSpace(configured)
