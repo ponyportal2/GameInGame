@@ -540,7 +540,8 @@ func _delete_game_confirmed() -> void:
         if is_instance_valid(runner):
             runner.runtime_log.close()
         current_game = ""
-    store.delete_game(target)
+    if not store.delete_game(target):
+        _toast("Could not delete the game. Close programs using its files and try again.")
     _show_library()
 
 func _open_settings() -> void:
@@ -589,6 +590,7 @@ func _open_settings() -> void:
         game_override_model.editable = false
         compact_now_button.disabled = true
         compaction_status_label.text = "Command-code manages model selection, providers, reasoning, and compaction. Configure them in the command-code CLI."
+    settings_dialog.move_to_front()
     settings_dialog.visible = true
 
 func _uses_command_code() -> bool:

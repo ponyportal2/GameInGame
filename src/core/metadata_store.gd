@@ -116,6 +116,7 @@ func _remove_tree_abs(abs: String) -> Error:
     var dir = DirAccess.open(abs)
     if dir == null:
         return ERR_CANT_OPEN
+    dir.include_hidden = true
     dir.list_dir_begin()
     var item = dir.get_next()
     while item != "":
