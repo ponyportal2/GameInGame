@@ -13,6 +13,12 @@ export function normalizeFrame(frame) {
   }
   const e = frame.type === 'event' ? frame.event : null;
   if (!e) return [];
+  if (e.type === 'model_request_end') {
+    const usage = e.usage || {};
+    const tokens = ['inputTokens','cacheReadTokens','cacheWriteTokens','outputTokens'].reduce((sum,key) => sum + Math.max(0,Number(usage[key]) || 0),0);
+    return tokens > 0 ? [{type:'context',tokens}] : [];
+  }
+  if (e.type === 'compaction_outcome' && e.outcome === 'summarized') return [{type:'context',tokens:null}];
   if (e.type === 'text_delta' || e.type === 'thinking_delta') return [{type:'delta',kind:e.type === 'text_delta' ? 'assistant' : 'thinking',text:e.delta || ''}];
   if (e.type === 'tool_running') return [{type:'tool',name:e.toolName,description:e.description || ''}];
   if (['tool_completed','tool_errored','model_request_start'].includes(e.type)) return [{type:'status',text:'Command-code is working…'}];

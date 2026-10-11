@@ -6,9 +6,9 @@ The integration/test target is `@earendil-works/pi-coding-agent@1.0.0`.
 
 Command-code integration is tested with `command-code@1.79.2`. Install it with `npm install -g command-code` and configure/sign in through its CLI. GameSmith uses the CLI's selected model and native provider configuration. `GAMESMITH_COMMAND_CODE_BIN` can point to its npm `.cmd` shim, an executable, or its `dist/index.mjs` entry point. Node.js must be on PATH.
 
-Command-code games disable GameSmith's provider/model overrides, API key, reasoning, turn limit, model-call delay, and all compaction controls. These settings remain available for Pi games and from the library. Rendered game-test permission remains host-owned for both harnesses. Saving settings in a Command-code game only saves that testing permission.
+Command-code games disable GameSmith's provider/model overrides, API key, reasoning, turn limit, model-call delay, and retained-context policy. GameSmith's automatic compaction threshold and Compact now remain available for both harnesses, along with rendered-test permission and automatic reload approval. Saving Command-code settings preserves Pi/provider settings.
 
-The Command-code adapter uses headless NDJSON output and a GameSmith mod. Requests resume an explicit native session file rather than the CLI's global last conversation. Native sessions remain in Command-code's own session storage; GameSmith keeps the per-game session reference and adapter files under `host/games/<game>/command-code/`. Model history and compaction are Command-code-owned; readable UI transcripts do not reconstruct native history. Configure or compact these sessions with Command-code's CLI.
+The Command-code adapter uses headless NDJSON output and a GameSmith mod. Requests resume an explicit native session file rather than the CLI's global last conversation. Native sessions remain in Command-code's own session storage; GameSmith keeps the per-game session reference and adapter files under `host/games/<game>/command-code/`. Model history and summarization are Command-code-owned; readable UI transcripts do not reconstruct native history. GameSmith checks the saved current-context token count before a player request and after its completed turn, including cached tokens. At the configured threshold it loads the same native session through ACP and executes `/compact`. A threshold of 0 disables this host trigger while leaving native automatic compaction intact. Manual Compact now uses the same native command. The native model, retained context, and fast/default policy remain configured in Command-code. For Command-code 1.79.2, ACP ignores `--mod`; GameSmith installs an inert user drop-in outcome observer under `.commandcode/mods/gamesmith-compaction-observer-v2.ts`, enabled only in its marked compaction subprocess. Native no-op and failure outcomes are reported separately, and Stop cancels compaction.
 
 Headless file editing requires Command-code's permission bypass mode. The mod exposes only native file/search tools and GameSmith's game/Git tools, blocks shell and delegation tools, and checks file paths against the game workspace (including reserved `.git` writes). This is a cooperative coding policy, consistent with the existing host policy. Reload waits for player approval unless automatic approval is enabled; separate headless/rendered tests and Stop use the same host bridge as Pi. No GameSmith request timeout or compaction policy is passed to Command-code.
 
@@ -58,7 +58,7 @@ Use **Settings** from the library sidebar or an open game's chat toolbar. Prefer
 - Pi thinking/reasoning level;
 - **Pi turn limit per request**, default **150**, configurable from 1 to 500;
 - **Delay between Pi provider calls**, default **6 seconds**;
-- **Automatic Pi compaction threshold**, default **100,000 current-context tokens**; set to **0** to disable GameSmith's threshold;
+- **Automatic compaction threshold (both harnesses)**, default **100,000 current-context tokens**; set to **0** to disable GameSmith's threshold;
 - **Recent tokens kept verbatim by Pi compaction**, default **20,000**;
 - **Compact now** when a game is open.
 

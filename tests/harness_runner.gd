@@ -29,15 +29,19 @@ func run() -> void:
     check(app.agent.get_script().resource_path.ends_with("command_code_agent_controller.gd"), "command-code game uses its own controller")
     app._open_settings()
     check(app.provider_option.disabled and not app.model_edit.editable and not app.key_edit.editable, "command-code disables provider, model, and credentials")
-    check(app.compaction_auto_spin.editable == false and app.compaction_keep_spin.editable == false and app.compact_now_button.disabled, "command-code owns compaction")
+    check(app.compaction_auto_spin.editable and not app.compaction_keep_spin.editable and not app.compact_now_button.disabled, "command-code exposes host threshold and native manual compaction")
     check(app.agent_steps_spin.editable == false and app.llm_delay_spin.editable == false and app.reasoning_option.disabled, "command-code owns reasoning and turn policy")
     check(not app.rendered_tests_check.disabled, "host testing permissions remain available")
     app.metadata.save_global_settings(app.metadata.global_settings())
     var before = app.metadata.global_settings()
     app.model_edit.text = "must not save"
-    app.compaction_auto_spin.value = 123
+    app.compaction_auto_spin.value = 42000
     app._save_settings()
-    check(JSON.stringify(app.metadata.global_settings()) == JSON.stringify(before), "saving command-code settings preserves Pi settings")
+    var after = app.metadata.global_settings()
+    check(after.compaction_auto_tokens == 42000, "command-code threshold persists")
+    before.compaction_auto_tokens = 42000
+    for key in before:
+        check(after.get(key) == before[key], "command-code preserves setting " + key)
     app._show_library()
     app.name_edit.text = "Pi fixture"
     app.harness_option.select(0)

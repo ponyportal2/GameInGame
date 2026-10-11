@@ -576,7 +576,7 @@ func _open_settings() -> void:
         game_override_provider.disabled = false
         game_override_model.editable = true
         var estimated = agent.context_tokens() if is_instance_valid(agent) and agent.has_method("context_tokens") else 0
-        compaction_status_label.text = "Current Pi context: ~%d tokens." % estimated if estimated > 0 else "Pi context size is available after the first provider response."
+        compaction_status_label.text = "Current context: ~%d tokens." % estimated if estimated > 0 else "Context size is available after the first provider response."
         compact_now_button.disabled = not is_instance_valid(agent) or agent.busy
     else:
         game_override_provider.select(0)
@@ -593,13 +593,12 @@ func _open_settings() -> void:
     custom_base_edit.editable = not command_code
     agent_steps_spin.editable = not command_code
     llm_delay_spin.editable = not command_code
-    compaction_auto_spin.editable = not command_code
+    compaction_auto_spin.editable = true
     compaction_keep_spin.editable = not command_code
     if command_code:
         game_override_provider.disabled = true
         game_override_model.editable = false
-        compact_now_button.disabled = true
-        compaction_status_label.text = "Command-code manages model selection, providers, reasoning, and compaction. Configure them in the command-code CLI."
+        compaction_status_label.text += " GameSmith's threshold triggers native Command-code compaction between requests. Retained context, model, and provider settings belong to Command-code."
     settings_dialog.move_to_front()
     settings_dialog.visible = true
 
@@ -612,8 +611,6 @@ func _close_settings() -> void:
         chat_input.grab_focus()
 
 func _compact_now_from_settings() -> void:
-    if _uses_command_code():
-        return
     if current_game == "" or not is_instance_valid(agent):
         compaction_status_label.text = "Open a game first."
         return
@@ -660,10 +657,11 @@ func _provider_changed(index: int) -> void:
 func _save_settings() -> void:
     if _uses_command_code():
         var host_settings = metadata.global_settings()
+        host_settings.compaction_auto_tokens = int(compaction_auto_spin.value)
         host_settings.allow_rendered_tests = rendered_tests_check.button_pressed
         host_settings.auto_approve_reloads = auto_reload_check.button_pressed
         if not metadata.save_global_settings(host_settings):
-            _toast("Could not save host permissions.")
+            _toast("Could not save host settings.")
             return
         settings_dialog.visible = false
         _toast("Settings saved. Command-code manages its own agent settings.")

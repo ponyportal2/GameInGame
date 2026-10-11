@@ -1,6 +1,24 @@
-import { writeFile, readFile, rename, rm } from 'node:fs/promises';
+import { writeFile, readFile, rename, rm, appendFile } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 const argv = process.argv.slice(2);
+if (argv.includes('acp')) {
+  createInterface({input:process.stdin}).on('line',async line => {
+    const r=JSON.parse(line);
+    const emit=v=>process.stdout.write(JSON.stringify(v)+'\n');
+    if(r.method==='session/load' && r.params.sessionId!=='fixture-session') process.exit(3);
+    if(r.method==='session/prompt') {
+      if(r.params.prompt[0].text!=='/compact') process.exit(4);
+      await appendFile('.compaction-fixture.jsonl',JSON.stringify({session:r.params.sessionId,pid:process.pid})+'\n');
+      emit({type:'gamesmith_compaction',event:{type:'compaction_start'}});
+      const outcome=process.env.GAMESMITH_FAKE_COMPACTION || 'summarized';
+      if(outcome==='slow') return;
+      emit({type:'gamesmith_compaction',event:{type:'compaction_outcome',outcome,tokensBefore:65020}});
+      emit({method:'session/update',params:{update:{sessionUpdate:'usage_update',used:25000}}});
+    }
+    emit({jsonrpc:'2.0',id:r.id,result:{}});
+  });
+} else {
 const prompt = argv[argv.indexOf('--print') + 1];
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
 const event = value => emit({type:'event',event:value});
@@ -43,4 +61,6 @@ if (prompt === 'test') {
   if (stopped.state !== 'exited') throw new Error('Stop bridge did not wait for confirmed exit');
 }
 event({type:'text_delta',delta:'Fixture finished'});
+event({type:'model_request_end',usage:{inputTokens:prompt==='large-context'?60000:100,cacheReadTokens:5000,outputTokens:20}});
 emit({type:'result',subtype:'success',stopReason:'end_turn',sessionId:'fixture-session',finalText:'Fixture finished'});
+}

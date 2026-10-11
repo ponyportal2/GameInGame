@@ -3,6 +3,7 @@ extends "res://src/agent/pi_agent_controller.gd"
 const CommandSession = preload("res://src/agent/command_code_session.gd")
 var result_received := false
 var result_text := ""
+var compaction_attempted_operation := -1
 
 func send_player_request(text: String) -> void:
     if busy:
@@ -19,6 +20,12 @@ func send_player_request(text: String) -> void:
     transcript.append(game_name, "user", text)
     if not ready.get("ok", false):
         _fail(str(ready.get("error", "Command-code is unavailable.")))
+        return
+    await _maybe_auto_compact("before_request")
+    if operation != operation_id:
+        return
+    if auto_compaction_failed_operation == operation:
+        _fail("Could not compact the conversation before this request. History and edits were kept. Retry Compact now before continuing.")
         return
     status_changed.emit("Command-code is working…")
     var accepted: Dictionary = await rpc.command({"type": "prompt", "message": text})
@@ -40,6 +47,9 @@ func send_player_request(text: String) -> void:
         transcript.append(game_name, "assistant", result_text)
         if not streamed_text:
             assistant_message.emit(result_text)
+    await _maybe_auto_compact("after_turn")
+    if operation != operation_id:
+        return
     busy = false
     status_changed.emit("Ready")
     finished.emit(true)
@@ -54,7 +64,7 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "protocol.mjs", "gamesmith.ts"]:
+    for file in ["worker.mjs", "protocol.mjs", "gamesmith.ts", "compaction.mjs", "compaction.ts"]:
         if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/command-code/" + file)):
             return {"ok": false, "error": "Could not prepare Command-code integration: " + file}
     if not JsonStore.write_bytes_atomic(directory.path_join("workspace-paths.mjs"), FileAccess.get_file_as_bytes("res://tools/pi/workspace-paths.mjs")):
@@ -63,10 +73,14 @@ func _start_command_runtime() -> Dictionary:
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write Command-code game instructions."}
     var session_file = absolute.path_join("session.json")
+    var saved = JsonStore.read_dict(session_file, {})
+    last_context_tokens = int(saved.context_tokens) if saved.get("context_tokens") != null else 0
     var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge,
         "mod": absolute.path_join("gamesmith.ts"), "worker": absolute.path_join("worker.mjs"),
+        "compaction_mod": absolute.path_join("compaction.ts"), "context_tokens": saved.get("context_tokens"),
         "prompt_path": absolute.path_join("prompt.md"), "name": game_name,
-        "session": JsonStore.read_dict(session_file, {}).get("path", JsonStore.read_dict(session_file, {}).get("session", "")), "session_file": session_file,
+        "session_id": saved.get("session", ""),
+        "session": saved.get("path", saved.get("session", "")), "session_file": session_file,
         "config_path": absolute.path_join("runtime.json")}
     if not JsonStore.write_dict(config.config_path, config):
         return {"ok": false, "error": "Could not write Command-code runtime configuration."}
@@ -93,6 +107,8 @@ func _on_command_record(record: Dictionary) -> void:
             status_changed.emit("Running %s…" % str(record.get("name", "tool")))
         "status":
             status_changed.emit(str(record.get("text", "")))
+        "context":
+            last_context_tokens = int(record.tokens) if record.get("tokens") != null else 0
         "complete":
             result_received = true
             result_text = str(record.get("text", ""))
@@ -100,7 +116,43 @@ func _on_command_record(record: Dictionary) -> void:
                 last_error = str(record.get("error", "Command-code request failed."))
 
 func compact_now() -> Dictionary:
-    return {"ok": false, "error": "Command-code manages its own compaction."}
+    if busy:
+        return {"ok": false, "error": "Agent is busy."}
+    busy = true
+    operation_id += 1
+    var operation = operation_id
+    var ready = _start_command_runtime()
+    if not ready.get("ok", false):
+        busy = false
+        return ready
+    status_changed.emit("Compacting Command-code session…")
+    var response: Dictionary = await rpc.command({"type": "compact"})
+    if operation != operation_id:
+        return {"ok": false, "cancelled": true, "error": "Compaction cancelled."}
+    busy = false
+    status_changed.emit("Ready")
+    var result: Dictionary = response.get("data", {"ok": false, "error": response.get("error", "Command-code compaction failed.")})
+    if result.get("no_op", false):
+        result.ok = false
+    return result
+
+func _maybe_auto_compact(phase: String) -> void:
+    var threshold = maxi(0, int(metadata.global_settings().get("compaction_auto_tokens", 100000)))
+    if threshold <= 0 or last_context_tokens < threshold or compaction_attempted_operation == operation_id:
+        return
+    compaction_attempted_operation = operation_id
+    var operation = operation_id
+    status_changed.emit("Auto-compacting Command-code session…")
+    AppLoggerScript.game_event(game_name, "command-code.compaction.auto", "phase=%s context_tokens=%d threshold=%d" % [phase, last_context_tokens, threshold])
+    var response: Dictionary = await rpc.command({"type": "compact"})
+    if operation != operation_id:
+        return
+    if not response.get("success", false) and not response.get("data", {}).get("no_op", false):
+        auto_compaction_failed_operation = operation_id
+        var message = "Automatic compaction failed: " + str(response.get("error", "unknown")) + ". Conversation history was kept."
+        transcript.append(game_name, "system", message)
+        assistant_message.emit(message)
+        AppLoggerScript.game_event(game_name, "command-code.compaction.error", message, "WARN")
 
 func settings_changed() -> void:
     pass

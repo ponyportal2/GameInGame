@@ -18,6 +18,11 @@ test('streams text and thinking and ignores unfamiliar events', () => {
   assert.deepEqual(normalizeFrame({type:'event',event:{type:'thinking_delta',delta:'hmm'}}), [{type:'delta',kind:'thinking',text:'hmm'}]);
   assert.deepEqual(normalizeFrame({type:'event',event:{type:'future'}}), []);
 });
+test('context accounting uses the latest request including cached input, never run totals', () => {
+  assert.deepEqual(normalizeFrame({type:'event',event:{type:'model_request_end',usage:{inputTokens:100,cacheReadTokens:200,cacheWriteTokens:50,outputTokens:20}}}), [{type:'context',tokens:370}]);
+  assert.deepEqual(normalizeFrame({type:'event',event:{type:'model_request_end',usage:{inputTokens:0,outputTokens:0}}}), []);
+  assert.equal(normalizeFrame({type:'result',subtype:'success',usage:{inputTokens:999999}}).some(r => r.type === 'context'),false);
+});
 test('completed and failed tools release stale running status for the next model call', () => {
   for (const type of ['tool_completed','tool_errored','model_request_start']) {
     assert.equal(normalizeFrame({type:'event',event:{type,toolName:'reload_game'}})[0]?.type, 'status');

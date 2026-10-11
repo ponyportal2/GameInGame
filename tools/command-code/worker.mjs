@@ -4,11 +4,13 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { buildArguments, normalizeFrame } from './protocol.mjs';
+import { compactNative } from './compaction.mjs';
 
 const config = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const emit = record => process.stdout.write(JSON.stringify(record) + '\n');
 let child;
-let session = config.session || '';
+let session = config.session_id || config.session || '';
+let contextTokens = config.context_tokens ?? null;
 function sessionPath(id) {
   if (!id || existsSync(id)) return id;
   for (const home of new Set([process.env.HOME, process.env.USERPROFILE, homedir()].filter(Boolean))) {
@@ -25,7 +27,7 @@ function sessionPath(id) {
 function saveSession(id) {
   if (!id) return;
   session = id;
-  writeFileSync(config.session_file + '.tmp', JSON.stringify({session:id,path:sessionPath(id)}));
+  writeFileSync(config.session_file + '.tmp', JSON.stringify({session:id,path:sessionPath(id),context_tokens:contextTokens}));
   renameSync(config.session_file + '.tmp', config.session_file);
 }
 function executable() {
@@ -41,15 +43,27 @@ function executable() {
   if (!existsSync(entry)) throw new Error('Could not resolve command-code npm entry point beside its shim. Set GAMESMITH_COMMAND_CODE_BIN to dist/index.mjs.');
   return {bin:process.execPath,prefix:[entry]};
 }
-createInterface({input:process.stdin}).on('line', line => {
+createInterface({input:process.stdin}).on('line', async line => {
   let request;
   try { request = JSON.parse(line); } catch { return; }
-  if (request.type !== 'prompt' || child) {
+  if (!['prompt','compact'].includes(request.type) || child) {
     emit({type:'response',id:request.id,success:false,error:'Command-code is busy or command is unsupported.'});
     return;
   }
   try {
     const exe = executable();
+    if (request.type === 'compact') {
+      const result = await compactNative({executable:exe,workspace:config.workspace,session,
+        mod:config.compaction_mod,onChild:process => {child=process;},
+        onStderr:line => process.stderr.write(line),onRecord:record => {
+          if (record.type === 'context') contextTokens = record.tokens;
+          emit(record);
+        }});
+      child = undefined;
+      saveSession(session);
+      emit({type:'response',id:request.id,success:result.ok,data:result,error:result.error || ''});
+      return;
+    }
     let completed;
     let integrationError = '';
     child = spawn(exe.bin, [...exe.prefix,...buildArguments({...config,session:sessionPath(session)},request.message)], {
@@ -58,6 +72,7 @@ createInterface({input:process.stdin}).on('line', line => {
     createInterface({input:child.stdout}).on('line', raw => {
       try {
         for (const record of normalizeFrame(JSON.parse(raw))) {
+          if (record.type === 'context') contextTokens = record.tokens;
           if (record.session) saveSession(record.session);
           if (record.type === 'integration_error') integrationError = record.error;
           if (record.type === 'complete') {
