@@ -15,7 +15,9 @@ const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd
 const WorkspaceUIScript = preload("res://src/ui/workspace_ui.gd")
 const SettingsUIScript = preload("res://src/ui/settings_ui.gd")
 
-const HOST_UI_CANVAS_LAYER = 524287
+# Embedded PopupMenu windows render at 1024. Keep host controls below them,
+# while clamping generated game layers below the host.
+const HOST_UI_CANVAS_LAYER = 1023
 
 var store = WorkspaceStoreScript.new()
 var metadata = MetadataStoreScript.new()

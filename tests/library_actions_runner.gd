@@ -46,6 +46,24 @@ func run() -> void:
     for node in app.library_layer.find_children("*", "MenuButton", true, false):
         menu = node
     check(menu != null and menu.get_popup().get_item_text(2).begins_with("Delete game"), "game card offers Delete game")
+    for frame in range(5):
+        await process_frame
+    point = menu.get_global_rect().get_center()
+    motion.position = point
+    root.push_input(motion)
+    for pressed in [true, false]:
+        var event = InputEventMouseButton.new()
+        event.position = point
+        event.button_index = MOUSE_BUTTON_LEFT
+        event.pressed = pressed
+        root.push_input(event)
+        await process_frame
+    check(menu.get_popup().visible, "mouse click opens the game actions popup")
+    check(app.host_ui_canvas.layer < 1024, "embedded menu windows render above the host UI")
+    if OS.get_environment("GAMESMITH_MENU_CAPTURE") != "":
+        await RenderingServer.frame_post_draw
+        root.get_texture().get_image().save_png(OS.get_environment("GAMESMITH_MENU_CAPTURE"))
+    menu.get_popup().hide()
     menu.get_popup().id_pressed.emit(2)
     check(app.delete_dialog.visible and app.pending_delete == created.name, "Delete asks for confirmation for the selected game")
     app._delete_game_confirmed()
