@@ -1,5 +1,38 @@
 extends "res://src/agent/command_code_agent_controller.gd"
 
+var cancelling = false
+
+func cancel() -> void:
+    if not busy or cancelling:
+        return
+    cancelling = true
+    operation_id += 1
+    restart_after_finish = false
+    var cancelled_result = {"ok": false, "cancelled": true, "error": "Cancelled by the player."}
+    if not pending_reload.is_empty():
+        _write_host_response(pending_reload.bridge_dir, pending_reload.request, cancelled_result)
+    for pending in pending_test_commands:
+        _write_host_response(pending.bridge_dir, pending.request, cancelled_result)
+    _clear_pending_reload()
+    pending_test_commands.clear()
+    if tools != null and is_instance_valid(tools.test_supervisor):
+        tools.test_supervisor.stop_all()
+    status_changed.emit("Stopping OpenCode...")
+    var result: Dictionary = {"success": false}
+    if rpc != null and rpc.running:
+        result = await rpc.command({"type": "cancel"})
+    if not result.get("success", false):
+        restart_runtime()
+    cancelling = false
+    busy = false
+    last_error = ""
+    pending_provider_error = ""
+    llm_stream_end.emit("assistant")
+    llm_stream_end.emit("thinking")
+    assistant_message.emit("Cancelled. File edits already made were kept.")
+    status_changed.emit("Ready")
+    finished.emit(false)
+
 func _harness_name() -> String:
     return "OpenCode"
 
@@ -13,7 +46,7 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs"]:
+    for file in ["worker.mjs", "server.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs"]:
         if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/opencode/" + file)):
             return {"ok": false, "error": "Could not prepare OpenCode integration: " + file}
     if not JsonStore.write_bytes_atomic(directory.path_join("workspace-paths.mjs"), FileAccess.get_file_as_bytes("res://tools/pi/workspace-paths.mjs")):

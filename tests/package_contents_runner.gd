@@ -11,7 +11,7 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing Command-code " + module)
             quit(1)
             return
-    for module in ["worker.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs", "workspace-paths.mjs"]:
+    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs", "workspace-paths.mjs"]:
         if not FileAccess.file_exists("res://tools/opencode/" + module):
             push_error("FAIL: exported GameSmith.pck is missing OpenCode " + module)
             quit(1)

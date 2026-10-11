@@ -18,6 +18,13 @@ func wait_reload() -> void:
     while app.agent.busy and app.agent.pending_reload.is_empty():
         await process_frame
 
+func process_alive(pid: int) -> bool:
+    if OS.get_name() != "Windows":
+        return OS.is_process_running(pid)
+    var output: Array = []
+    OS.execute("tasklist", ["/FI", "PID eq %d" % pid, "/FO", "CSV", "/NH"], output, true)
+    return not output.is_empty() and ('"%d"' % pid) in str(output[0])
+
 func run() -> void:
     OS.set_environment("GAMESMITH_OPENCODE_BIN", ProjectSettings.globalize_path("res://tools/testing/fake-opencode.mjs"))
     app = load("res://main.tscn").instantiate()
@@ -33,18 +40,20 @@ func run() -> void:
     app.agent.approve_reload()
     await wait_idle()
     check(app.agent.last_error == "" and app.runner.has_active_game(), "approved reload finishes the OpenCode request")
+    var backend_before = JsonStore.read_dict(app.metadata.game_meta_dir(app.current_game).path_join("opencode/backend.json"), {})
     app.agent.send_player_request("test")
     await wait_idle()
     check(app.agent.last_error == "", "OpenCode bridge starts and gracefully stops a test")
+    check(not backend_before.is_empty() and JsonStore.read_dict(app.metadata.game_meta_dir(app.current_game).path_join("opencode/backend.json"), {}).get("pid") == backend_before.get("pid"), "consecutive messages reuse one OpenCode backend")
     app.agent.send_player_request("reload")
     await wait_reload()
     var old_pid = app.agent.rpc.pid
-    var child_pids = JsonStore.read_dict(app.store.game_path(app.current_game).path_join(".opencode-fixture-pids.json"), {})
+    var child_pids = JsonStore.read_dict(app.tools.workspace.path_join(".opencode-fixture-pids.json"), {})
     app.agent.cancel()
-    await process_frame
+    await wait_idle()
     check(not app.agent.busy and app.agent.pending_reload.is_empty(), "Stop cancels OpenCode and pending reload")
-    check(not OS.is_process_running(old_pid), "Stop terminates the adapter process")
-    check(not OS.is_process_running(int(child_pids.get("cli", -1))) and not OS.is_process_running(int(child_pids.get("mcp", -1))), "Stop terminates OpenCode and its MCP child")
+    check(OS.is_process_running(old_pid), "native Stop retains the adapter for the next request")
+    check(process_alive(int(child_pids.get("cli", -1))) and process_alive(int(child_pids.get("mcp", -1))), "native Stop retains the backend and MCP connection")
     var session_file = app.metadata.game_meta_dir(app.current_game).path_join("opencode/session.json")
     var saved_session = JsonStore.read_dict(session_file, {}).get("session", "")
     app.agent.send_player_request("follow up")

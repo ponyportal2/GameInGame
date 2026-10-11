@@ -84,10 +84,6 @@ func command(record: Dictionary) -> Dictionary:
 func shutdown() -> void:
     running = false
     stop_message = "Pi runtime stopped."
-    if stdio != null:
-        stdio.close()
-    if stderr != null:
-        stderr.close()
     if pid > 0 and OS.is_process_running(pid):
         if OS.get_name() == "Windows":
             # cmd.exe launches npm's Pi shim, so killing only cmd leaves Node alive.
@@ -95,6 +91,11 @@ func shutdown() -> void:
             OS.execute("taskkill", ["/PID", str(pid), "/T", "/F"], output, true)
         if OS.is_process_running(pid):
             OS.kill(pid)
+    # Keep the parent alive until taskkill has enumerated its descendants.
+    if stdio != null:
+        stdio.close()
+    if stderr != null:
+        stderr.close()
     stdio = null
     stderr = null
     pid = -1
