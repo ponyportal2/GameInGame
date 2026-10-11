@@ -363,6 +363,7 @@ func _on_pi_record(record: Dictionary) -> void:
             status_changed.emit("Running %s…" % name)
         "tool_execution_end":
             AppLoggerScript.game_event(game_name, "pi.tool", "name=%s error=%s" % [str(record.get("toolName", "")), str(record.get("isError", false))], "WARN" if bool(record.get("isError", false)) else "INFO")
+            status_changed.emit("Pi is working…")
         "turn_start":
             turn_count += 1
             var limit = clampi(int(metadata.global_settings().get("max_agent_steps", DEFAULT_MAX_STEPS)), MIN_AGENT_STEPS, MAX_AGENT_STEPS)

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildArguments, normalizeFrame } from '../tools/command-code/protocol.mjs';
-import { mkdtemp, copyFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, copyFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,6 +17,12 @@ test('streams text and thinking and ignores unfamiliar events', () => {
   assert.deepEqual(normalizeFrame({type:'event',event:{type:'text_delta',delta:'hi'}}), [{type:'delta',kind:'assistant',text:'hi'}]);
   assert.deepEqual(normalizeFrame({type:'event',event:{type:'thinking_delta',delta:'hmm'}}), [{type:'delta',kind:'thinking',text:'hmm'}]);
   assert.deepEqual(normalizeFrame({type:'event',event:{type:'future'}}), []);
+});
+test('completed and failed tools release stale running status for the next model call', () => {
+  for (const type of ['tool_completed','tool_errored','model_request_start']) {
+    assert.equal(normalizeFrame({type:'event',event:{type,toolName:'reload_game'}})[0]?.type, 'status');
+    assert.match(normalizeFrame({type:'event',event:{type,toolName:'reload_game'}})[0].text, /working/);
+  }
 });
 test('terminal errors and turn caps cannot masquerade as success', () => {
   assert.equal(normalizeFrame({type:'result',subtype:'max_turns',sessionId:'a',finalText:'partial'})[0].ok, false);
@@ -34,7 +40,9 @@ test('mod exposes host tools and guards native absolute paths without taking ove
   const prompt = join(dir,'prompt.md');
   await writeFile(prompt,'Stable game instructions');
   const oldPrompt = process.env.GAMESMITH_PROMPT_PATH;
+  const oldBridge = process.env.GAMESMITH_HOST_BRIDGE_DIR;
   process.env.GAMESMITH_PROMPT_PATH = prompt;
+  process.env.GAMESMITH_HOST_BRIDGE_DIR = dir;
   const tools = [];
   let hooks;
   let active;
@@ -56,8 +64,20 @@ test('mod exposes host tools and guards native absolute paths without taking ove
     assert.equal((await hooks.beforeToolCall({toolName:'read_file',input:{paths:[join(dir,'outside')]}})).block,true);
     assert.equal(hooks.prepareNextTurn,undefined);
     assert.equal(hooks.shouldStopAfterTurn,undefined);
+    const resultPending = tools.find(tool => tool.schema.name === 'reload_game').run({input:{}});
+    let request;
+    while (!request) {
+      request = (await readdir(dir)).find(name => /^request-.*\.json$/.test(name));
+      if (!request) await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    await writeFile(join(dir,request.replace('request-','response-')), JSON.stringify({ok:false,error:'startup failed',diagnostics:{errors:['bad property']}}));
+    const failed = await resultPending;
+    assert.equal(failed.ok,false,'host failure remains a failed native tool result');
+    assert.equal(JSON.parse(failed.error).diagnostics.errors[0],'bad property');
   } finally {
     if (oldPrompt === undefined) delete process.env.GAMESMITH_PROMPT_PATH;
     else process.env.GAMESMITH_PROMPT_PATH = oldPrompt;
+    if (oldBridge === undefined) delete process.env.GAMESMITH_HOST_BRIDGE_DIR;
+    else process.env.GAMESMITH_HOST_BRIDGE_DIR = oldBridge;
   }
 });

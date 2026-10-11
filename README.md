@@ -93,6 +93,8 @@ Run is available only when workspace `main.gd` or a last working snapshot exists
 
 Settings → **Agent & testing** → **Automatically approve agent reload requests** skips the approval wait for either harness. It defaults to off and is saved globally. Manual Run/Reload behavior is unchanged.
 
+During an agent turn, rejected reloads return their error and diagnostics to the harness without a raw player error toast. The agent is instructed to repair, repeat headless testing, and retry reload in that same request. Tool completion clears the running-tool status while the model continues. Manual load failures still show their error to the player; the previous accepted game remains running on rejection.
+
 ### Separate agent testing
 
 Pi can run the current workspace in a separate Godot process without replacing or pausing your game. Headless testing is always available. Enable **Allow rendered agent tests** in Settings to permit a separate rendered window. It starts minimized with NO_FOCUS, audio is muted, and screenshots do not restore it or take focus. This permission is checked on each launch and does not change the system instructions.

@@ -282,7 +282,7 @@ func _open_game(name: String) -> void:
     runner = GameRunnerScript.new(); runner.name = "GeneratedGameRunner"; runner.process_mode = Node.PROCESS_MODE_PAUSABLE; add_child(runner); move_child(runner, 2)
     runner.runtime_log.start(name, store.game_path(name))
     runner.load_succeeded.connect(_on_load_success)
-    runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _toast(msg))
+    runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _handle_load_failure(str(msg)))
     tools = GameToolsScript.new(store.game_path(name), runner)
     agent = CommandCodeAgentControllerScript.new() if metadata.read_game(name).get("harness", "pi") == "command-code" else PiAgentControllerScript.new()
     add_child(agent)
@@ -301,6 +301,12 @@ func _open_game(name: String) -> void:
     _set_chat_busy_controls(false)
     if not FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
         _append_chat("system", "This workspace is empty. Tell the agent what game to build.")
+
+func _handle_load_failure(message: String) -> void:
+    if is_instance_valid(agent) and agent.busy:
+        status_label.text = "Reload failed; agent is continuing repairs…"
+        return
+    _toast(message)
 
 func _on_load_success(_version: int) -> void:
     if current_game != "":

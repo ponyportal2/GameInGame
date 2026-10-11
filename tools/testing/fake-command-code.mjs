@@ -6,16 +6,29 @@ const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
 const event = value => emit({type:'event',event:value});
 event({type:'run_start',sessionId:'fixture-session'});
 async function host(command,args={}) {
+  event({type:'tool_running',toolName:command});
   const id = `fixture-${command}`;
   const path = join(process.env.GAMESMITH_HOST_BRIDGE_DIR,`request-${id}.json`);
   const response = join(process.env.GAMESMITH_HOST_BRIDGE_DIR,`response-${id}.json`);
   await writeFile(path+'.tmp',JSON.stringify({id,command,args}));
   await rename(path+'.tmp',path);
   for (;;) {
-    try { const result = JSON.parse(await readFile(response,'utf8')); await rm(response); return result; }
+    try { const result = JSON.parse(await readFile(response,'utf8')); await rm(response); event({type:result.ok === false ? 'tool_errored' : 'tool_completed',toolName:command}); return result; }
     catch(error) { if(error.code!=='ENOENT') throw error; }
     await new Promise(resolve=>setTimeout(resolve,25));
   }
+}
+if (prompt === 'repair-reload') {
+  await writeFile('main.gd','extends Node\nfunc broken(:\n');
+  const failed = await host('reload_game');
+  if (failed.ok || !failed.error || !failed.diagnostics) throw new Error('Missing actionable reload failure');
+  await writeFile('main.gd','extends Node\nvar repaired = true\n');
+  const tested = await host('start_test_game',{mode:'headless'});
+  if (!tested.ok) throw new Error(tested.error);
+  await host('read_test_log',{run_id:tested.run_id});
+  await host('stop_test_game',{run_id:tested.run_id});
+  const loaded = await host('reload_game');
+  if (!loaded.ok) throw new Error(loaded.error);
 }
 if (prompt === 'reload') {
   await writeFile('main.gd','extends Node\n');

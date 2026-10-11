@@ -46,6 +46,14 @@ func run() -> void:
     app.agent.send_player_request("follow up")
     await wait_idle()
     check(app.agent.last_error == "", "a new request works after cancellation")
+    var settings = app.metadata.global_settings()
+    settings.auto_approve_reloads = true
+    app.metadata.save_global_settings(settings)
+    app.agent.send_player_request("repair-reload")
+    await wait_idle()
+    check(app.agent.last_error == "" and app.runner.active_game.get("repaired") == true, "failed reload diagnostics let command-code repair, test and reload in the same request")
+    settings.auto_approve_reloads = false
+    app.metadata.save_global_settings(settings)
     app.queue_free()
     await process_frame
     OS.unset_environment("GAMESMITH_COMMAND_CODE_BIN")

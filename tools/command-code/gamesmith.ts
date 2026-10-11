@@ -42,6 +42,7 @@ export default async function (cmd) {
     readOnly:['read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),
     run:async ({input,signal}) => {
       const result = await callHost(name,input,signal);
+      if (result.ok === false) return {ok:false,error:JSON.stringify(result)};
       return {ok:true,content:[{type:'text',text:JSON.stringify(result)}]};
     },
   });

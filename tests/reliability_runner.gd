@@ -218,9 +218,11 @@ func test_reload_approval() -> void:
     put(main, "extends Node\nfunc broken(:\n")
     put(bridge.path_join("request-broken.json"), JSON.stringify({"id": "broken", "command": "reload_game"}))
     app.agent._service_host_bridge()
+    app.toast_label.visible = false
     app.approve_reload_button.pressed.emit()
     response = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-broken.json")))
     check(not response.ok and app.runner.active_game == old and app.agent.pending_reload.is_empty(), "approved broken reload returns failure and preserves accepted game")
+    check(not app.toast_label.visible, "agent reload failures return to the model without a raw player error toast")
     put(main, "extends Node\nvar answer = 4\n")
     put(bridge.path_join("request-cancelled.json"), JSON.stringify({"id": "cancelled", "command": "reload_game"}))
     app.agent._service_host_bridge()

@@ -15,6 +15,7 @@ export function normalizeFrame(frame) {
   if (!e) return [];
   if (e.type === 'text_delta' || e.type === 'thinking_delta') return [{type:'delta',kind:e.type === 'text_delta' ? 'assistant' : 'thinking',text:e.delta || ''}];
   if (e.type === 'tool_running') return [{type:'tool',name:e.toolName,description:e.description || ''}];
+  if (['tool_completed','tool_errored','model_request_start'].includes(e.type)) return [{type:'status',text:'Command-code is working…'}];
   if (e.type === 'run_start') return [{type:'session',session:e.sessionId || ''}];
   if (e.type === 'message_end') return [{type:'stream_end'}];
   if (e.type === 'compaction_start') return [{type:'status',text:'Command-code is compacting context…'}];
