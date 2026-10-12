@@ -120,6 +120,11 @@ static func build(app) -> void:
     app.compact_now_button = U.button(conversation, "Compact now", app._compact_now_from_settings)
     app.compact_now_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
     var game = page(tabs, "This game")
+    app.game_harness_option = OptionButton.new()
+    for pair in [["Pi", "pi"], ["Command-code", "command-code"], ["OpenCode", "opencode"]]:
+        app.game_harness_option.add_item(pair[0])
+        app.game_harness_option.set_item_metadata(app.game_harness_option.item_count - 1, pair[1])
+    field(game, "Coding harness", app.game_harness_option, "Switch after the agent finishes or is stopped. Files and chat stay with the game. Each harness keeps its own session; switching back resumes it. Save, then reopen settings to configure the selected harness.")
     U.paragraph(game, "Override the global model for the open game. Other games keep their own settings.")
     app.game_override_provider = provider(true)
     field(game, "Provider override", app.game_override_provider)

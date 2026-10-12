@@ -1,5 +1,10 @@
 extends SceneTree
 
+class RetiringSession extends RefCounted:
+    var retired := false
+    func retire() -> void:
+        retired = true
+
 var failures := 0
 
 func _init() -> void:
@@ -73,6 +78,62 @@ func run() -> void:
     app._open_settings()
     check(not app.provider_option.disabled and app.model_edit.editable and app.compaction_auto_spin.editable, "Pi controls restore for a Pi game")
     check(app.metadata.read_game(app.current_game).get("harness") == "pi", "Pi selection persists")
+    check(app.get("game_harness_option") != null, "existing games offer harness switching")
+    if app.get("game_harness_option") != null:
+        var name = app.current_game
+        var original_runner = app.runner
+        var original_tools = app.tools
+        app.transcript.append(name, "user", "Preserve this history")
+        var workspace_file = app.store.game_path(name).path_join("keep.txt")
+        var file = FileAccess.open(workspace_file, FileAccess.WRITE)
+        file.store_string("keep")
+        file.close()
+        var session_markers: Array[String] = []
+        for harness in ["pi", "command-code", "opencode"]:
+            var session_dir = app.metadata.game_meta_dir(name).path_join(harness)
+            DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(session_dir))
+            var session_path = session_dir.path_join("switch-preservation.txt")
+            var session_file = FileAccess.open(session_path, FileAccess.WRITE)
+            session_file.store_string("preserved native session")
+            session_file.close()
+            session_markers.append(session_path)
+        for pair in [[1, "command-code"], [2, "opencode"], [0, "pi"]]:
+            app._open_settings()
+            app.game_harness_option.select(pair[0])
+            app._close_settings()
+            check(app.metadata.read_game(name).harness != pair[1], "cancel leaves harness unchanged")
+            app._open_settings()
+            var previous_agent = app.agent
+            var previous_session = RetiringSession.new()
+            previous_agent.rpc = previous_session
+            app.game_harness_option.select(pair[0])
+            app._save_settings()
+            check(app.metadata.read_game(name).harness == pair[1], "saved switch persists " + pair[1])
+            check(app.agent != previous_agent, "saved switch replaces controller")
+            check(previous_session.retired, "switch retires the previous backend")
+            check(not previous_agent.is_inside_tree(), "previous controller shuts down synchronously")
+            for session_path in session_markers:
+                check(FileAccess.get_file_as_string(session_path) == "preserved native session", "switch retains harness session data")
+            check(app.runner == original_runner and app.tools == original_tools, "switch preserves live runner and tools")
+            check(FileAccess.get_file_as_string(workspace_file) == "keep", "switch preserves workspace")
+            check(app.transcript.read_all(name).any(func(entry): return entry.content == "Preserve this history"), "switch preserves transcript")
+            app._open_settings()
+            check(app.provider_option.disabled == (pair[0] != 0), "settings follow saved harness")
+            await process_frame
+        app.agent.busy = true
+        app._open_settings()
+        check(app.game_harness_option.disabled, "busy agent disables harness selector")
+        var busy_agent = app.agent
+        app.game_harness_option.select(2)
+        app._save_settings()
+        check(app.agent == busy_agent and app.metadata.read_game(name).harness == "pi", "save rejects switching while busy")
+        app.agent.busy = false
+        app._show_library()
+        app._open_settings()
+        check(app.game_harness_option.disabled, "library settings disable per-game harness")
+        app._close_settings()
+        app._open_game(name)
+        check(app.agent.get_script().resource_path.ends_with("pi_agent_controller.gd"), "reopening uses saved harness")
     app.queue_free()
     await process_frame
     quit(1 if failures else 0)

@@ -49,6 +49,7 @@ var delete_game_label: Label
 var settings_dialog: Control
 var name_edit: LineEdit
 var harness_option: OptionButton
+var game_harness_option: OptionButton
 var rename_edit: LineEdit
 var provider_option: OptionButton
 var model_edit: LineEdit
@@ -285,12 +286,20 @@ func _open_game(name: String) -> void:
     runner.load_succeeded.connect(_on_load_success)
     runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _handle_load_failure(str(msg)))
     tools = GameToolsScript.new(store.game_path(name), runner)
-    match str(metadata.read_game(name).get("harness", "pi")):
+    _attach_game_agent()
+    _load_transcript()
+    _set_chat_visible(true)
+    _set_chat_busy_controls(false)
+    if not FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
+        _append_chat("system", "This workspace is empty. Tell the agent what game to build.")
+
+func _attach_game_agent() -> void:
+    match str(metadata.read_game(current_game).get("harness", "pi")):
         "command-code": agent = CommandCodeAgentControllerScript.new()
         "opencode": agent = OpenCodeAgentControllerScript.new()
         _: agent = PiAgentControllerScript.new()
     add_child(agent)
-    agent.configure(name, tools)
+    agent.configure(current_game, tools)
     agent.status_changed.connect(func(text): status_label.text = text)
     agent.assistant_message.connect(func(text): _append_chat("assistant", text))
     agent.llm_snippet.connect(func(kind, text): _append_chat(kind, text))
@@ -300,11 +309,27 @@ func _open_game(name: String) -> void:
         agent.llm_stream_end.connect(_end_stream_block)
     agent.finished.connect(_on_agent_finished)
     agent.reload_approval_changed.connect(_reload_approval_changed)
-    _load_transcript()
-    _set_chat_visible(true)
-    _set_chat_busy_controls(false)
-    if not FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
-        _append_chat("system", "This workspace is empty. Tell the agent what game to build.")
+
+func _finish_settings_save() -> void:
+    if current_game != "":
+        var selected = str(game_harness_option.get_item_metadata(game_harness_option.selected))
+        var game_meta = metadata.read_game(current_game)
+        if selected != str(game_meta.get("harness", "pi")):
+            game_meta.harness = selected
+            if not metadata.write_game(current_game, game_meta):
+                _toast("Could not save the game harness. Try again after fixing storage access.")
+                return
+            if is_instance_valid(agent):
+                remove_child(agent) # _exit_tree closes the old backend before replacement.
+                agent.queue_free()
+            _end_stream_block("")
+            _reload_approval_changed(false)
+            _attach_game_agent()
+            status_label.text = "Ready"
+            _set_chat_busy_controls(false)
+            _append_chat("system", "Switched to %s. Game files and chat are shared; each harness keeps its own agent session." % game_harness_option.get_item_text(game_harness_option.selected))
+    settings_dialog.visible = false
+    _toast("Settings saved.")
 
 func _handle_load_failure(message: String) -> void:
     if is_instance_valid(agent) and agent.busy:
@@ -558,6 +583,11 @@ func _delete_game_confirmed() -> void:
     _show_library()
 
 func _open_settings() -> void:
+    game_harness_option.disabled = current_game == "" or (is_instance_valid(agent) and agent.busy)
+    var saved_harness = str(metadata.read_game(current_game).get("harness", "pi")) if current_game != "" else "pi"
+    for i in game_harness_option.item_count:
+        if str(game_harness_option.get_item_metadata(i)) == saved_harness:
+            game_harness_option.select(i)
     var settings = metadata.global_settings()
     var creds = metadata.credentials()
     var id = str(settings.get("provider", "openrouter"))
@@ -672,6 +702,10 @@ func _provider_changed(index: int) -> void:
     custom_base_edit.get_parent().visible = id == "custom"
 
 func _save_settings() -> void:
+    if current_game != "" and is_instance_valid(agent) and agent.busy:
+        if str(game_harness_option.get_item_metadata(game_harness_option.selected)) != str(metadata.read_game(current_game).get("harness", "pi")):
+            _toast("Wait for the agent to finish or stop it before switching harnesses.")
+            return
     if _uses_native_agent_settings():
         var host_settings = metadata.global_settings()
         if _uses_command_code():
@@ -681,8 +715,7 @@ func _save_settings() -> void:
         if not metadata.save_global_settings(host_settings):
             _toast("Could not save host settings.")
             return
-        settings_dialog.visible = false
-        _toast("Settings saved. The selected harness manages its own agent settings.")
+        _finish_settings_save()
         return
     var id = str(provider_option.get_item_metadata(provider_option.selected))
     var settings = metadata.global_settings()
@@ -718,8 +751,7 @@ func _save_settings() -> void:
         compaction_status_label.text = message
         _toast(message)
         return
-    settings_dialog.visible = false
-    _toast("Settings saved.")
+    _finish_settings_save()
 
 func _select_provider_id(id: String) -> void:
     for i in provider_option.item_count:
