@@ -32,7 +32,13 @@ const server=new CodexServer({workspace:config.workspace,onEvent:events,onStderr
     if(method!=='item/tool/call') throw new Error('Unsupported Codex request: '+method);
     const operation=active;
     try {
-      if(!operation || operation.cancelled || p.threadId!==session || (operation.turn && p.turnId!==operation.turn)) throw new Error('GameSmith tool cancelled or belongs to another thread.');
+      if(operation && !operation.turn && !operation.cancelled) {
+        let aborted;
+        const cancelled=new Promise(resolve=>{aborted=resolve;operation.abort.signal.addEventListener('abort',aborted,{once:true});});
+        try {await Promise.race([operation.starting,cancelled]);}
+        finally {operation.abort.signal.removeEventListener('abort',aborted);}
+      }
+      if(!operation || active!==operation || operation.cancelled || !operation.turn || p.threadId!==session || p.turnId!==operation.turn) throw new Error('GameSmith tool cancelled or does not belong to the active turn.');
       const result=await executeTool(config,p.tool,p.arguments,operation.abort.signal);
       return {success:result.ok!==false,contentItems:[{type:'inputText',text:JSON.stringify(result)}]};
     } catch(error) {return {success:false,contentItems:[{type:'inputText',text:error.message}]};}
@@ -45,10 +51,15 @@ function ready() {
     // MCP tools alongside the bounded GameSmith dynamic tools.
     const nativeConfig=await server.request('config/read',{includeLayers:false});
     params.config.mcp_servers=Object.fromEntries(Object.keys(nativeConfig.config?.mcp_servers || {}).map(name=>[name,{enabled:false}]));
-    const result=await server.request(session ? 'thread/resume' : 'thread/start',params);
+    let result;
+    try {result=await server.request(session ? 'thread/resume' : 'thread/start',params);}
+    catch(error) {
+      if(session) error.message='Codex session could not be resumed: '+error.message+'. Retry, or open Settings → This game → Start new Codex session. The old session reference and chat will be kept.';
+      throw error;
+    }
     writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,model:result.model,reasoning_effort:result.reasoningEffort}));
     session=result.thread.id;save();emit({type:'session',session});
-  })();
+  })().catch(error=>{stopping=true;server.close();error.initializationFailed=true;throw error;});
 }
 async function prompt(request,operation) {
   try {
@@ -63,8 +74,12 @@ async function prompt(request,operation) {
     emit({type:'response',id:request.id,success:true});operation.accepted=true;
     for(const [method,params] of operation.events)events(method,params);operation.events=[];
   } catch(error) {
-    if(active===operation && !operation.cancelled) {emit({type:'response',id:request.id,success:false,error:error.message});active=undefined;operation.finish();}
-  } finally {operation.started();}
+    if(active===operation && !operation.cancelled) {emit({type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed});active=undefined;operation.finish();}
+  } finally {
+    // On readiness failure the backend is already closed. Keep the host pipe
+    // readable until GameSmith receives the failure and retires this adapter.
+    operation.started();
+  }
 }
 async function cancel(request) {
   if(cancelling){emit({type:'response',id:request.id,success:false,error:'Cancellation is already in progress.'});return;}

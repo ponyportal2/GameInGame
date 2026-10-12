@@ -45,9 +45,10 @@ await writeFile('.codex-fixture-pids.json',JSON.stringify({cli:process.pid}));
 createInterface({input:process.stdin}).on('line',async line=>{
   const r=JSON.parse(line);
   if(r.method) await appendFile('.codex-fixture-requests.jsonl',JSON.stringify(r)+'\n');
-  if(!r.method && pending.has(r.id)){pending.get(r.id)(r.result);pending.delete(r.id);return;}
+  if(!r.method && pending.has(r.id)){await appendFile('.codex-fixture-results.jsonl',JSON.stringify(r)+'\n');pending.get(r.id)(r.result);pending.delete(r.id);return;}
   if(r.method==='initialized'){ready=true;return;}
   const reply=result=>emit({id:r.id,result});
+  if(r.method===process.env.GAMESMITH_CODEX_FAIL_METHOD){emit({id:r.id,error:{code:-32000,message:'Fixture readiness failure: '+r.method}});return;}
   if(r.method==='initialize'){if(process.env.GAMESMITH_CODEX_STUCK_START==='1')return;initialized=true;reply({userAgent:'fixture'});return;}
   if(!initialized || !ready){emit({id:r.id,error:{code:-32000,message:'Initialize handshake missing'}});return;}
   switch(r.method) {
@@ -56,9 +57,18 @@ createInterface({input:process.stdin}).on('line',async line=>{
       if(!r.params.dynamicTools.some(t=>t.type==='function' && t.name==='gamesmith_reload_game')) throw new Error('Missing tools');
       reply({thread:{id:session}});break;
     case 'thread/resume':
-      if(r.params.threadId!==session) throw new Error('Wrong native thread');reply({thread:{id:session}});break;
+      if(r.params.threadId!==session){emit({id:r.id,error:{code:-32000,message:'Native thread not found'}});break;}
+      if(process.env.GAMESMITH_CODEX_EARLY_TOOLS==='1')void nativeRequest('item/tool/call',{threadId:session,turnId:'old-turn',tool:'gamesmith_write',arguments:{path:'replayed.txt',content:'stale'}});
+      reply({thread:{id:session}});break;
     case 'turn/start':
-      turn='turn-'+ ++serial;interrupted=false;reply({turn:{id:turn,status:'inProgress'}});setImmediate(()=>run(r.params.input[0].text));break;
+      turn='turn-'+ ++serial;interrupted=false;
+      if(process.env.GAMESMITH_CODEX_EARLY_TOOLS==='1') {
+        const attempts=['old-turn',undefined,turn].map(turnId=>nativeRequest('item/tool/call',{threadId:session,turnId,tool:'gamesmith_write',arguments:{path:turnId===turn ? 'current.txt' : 'stale.txt',content:'early'}}));
+        if(process.env.GAMESMITH_CODEX_STUCK_TURN==='1')return;
+        await new Promise(resolve=>setTimeout(resolve,50));reply({turn:{id:turn,status:'inProgress'}});
+        await Promise.all(attempts);
+      } else reply({turn:{id:turn,status:'inProgress'}});
+      setImmediate(()=>run(r.params.input[0].text));break;
     case 'turn/interrupt':
       if(process.env.GAMESMITH_CODEX_STUCK_STOP==='1')return;
       interrupted=true;reply({});if(process.env.GAMESMITH_CODEX_STUCK_SETTLE!=='1')notify('turn/completed',{turn:{id:turn,status:'interrupted',items:[]}});break;

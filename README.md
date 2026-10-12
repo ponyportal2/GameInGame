@@ -36,6 +36,8 @@ GameSmith file and game tools are registered as native dynamic tools with the `g
 
 Codex regressions: `node --test tests/codex.test.mjs tests/codex-server.test.mjs`; creation, switching, ownership and deterministic lifecycle tests run in the default host suite. Live acceptance uses `codex_integration_runner.gd` and contacts the signed-in provider. `tools/testing/codex-luna-launcher.mjs` is a test-only launcher selecting `gpt-6-luna` with `xhigh`; set `GAMESMITH_CODEX_BIN` to its absolute path and retain your normal `CODEX_HOME` when using the isolated host runner. The live runner checks actual native model/effort, editing, headless testing, same-backend reuse, reopen history, reload approval and native Stop/resume. It leaves global Codex settings unchanged.
 
+Failed Codex initialization closes the backend and retires the adapter after delivering the error. The next message starts a clean runtime. A failed thread resume keeps the saved thread reference and provides recovery guidance. Retry a transient failure; if you want a fresh conversation, use **Settings → This game → Start new Codex session** and confirm. GameSmith archives the previous `session.json` reference as `session.previous-*.json`, preserves native Codex history, readable chat and files, and starts a new thread on the next message. Existing native threads retain their original dynamic-tool registry; tool changes will require a deliberate compatibility decision.
+
 ## Windows
 
 The repository root contains a self-contained **`GameSmith-Windows/`** folder:
@@ -58,7 +60,7 @@ Pi games expect a global `pi` executable. Install the pinned build with:
 npm install -g @earendil-works/pi-coding-agent@1.0.0
 ```
 
-On Windows, `GameSmith.exe` checks for Pi, Command-code, or OpenCode at startup. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
+On Windows, `GameSmith.exe` checks for Pi, Command-code, OpenCode, or Codex at startup, including their `GAMESMITH_*_BIN` overrides. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
 
 For development on Linux:
 

@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, or OpenCode when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, or Codex when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -34,3 +34,15 @@ provider and compaction settings to OpenCode. Testing and automatic reload appro
 remain available. Node.js must be on PATH. For a custom installation, set
 GAMESMITH_OPENCODE_BIN to the opencode executable or npm shim. Each game resumes
 its own native OpenCode session. Restart GameSmith after updating the package.
+
+For Codex games:
+
+  npm install -g @openai/codex
+
+Sign in and configure the Codex CLI. Model, provider, reasoning and compaction remain
+owned by Codex; host testing and reload preferences remain available. Node.js must
+be on PATH. GAMESMITH_CODEX_BIN can select a custom executable or npm shim.
+Each game resumes its own native thread. If a thread cannot be resumed, retry or
+use Settings > This game > Start new Codex session and confirm. The previous
+session reference, readable chat and game files are kept. Restart GameSmith after
+updating the package.

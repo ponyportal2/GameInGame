@@ -36,8 +36,10 @@ export class CodexServer {
         if(record.error) pending.reject(new Error(record.error.message));else pending.resolve(record.result);
       } else if(record.method) this.onEvent(record.method,record.params || {});
     });
-    await this.request('initialize',{clientInfo:{name:'gamesmith',title:'GameSmith',version:'1.0.0'},capabilities:{experimentalApi:true}});
-    this.send({method:'initialized'});
+    try {
+      await this.request('initialize',{clientInfo:{name:'gamesmith',title:'GameSmith',version:'1.0.0'},capabilities:{experimentalApi:true}});
+      this.send({method:'initialized'});
+    } catch(error) {this.close();throw error;}
   }
   send(record) {if(this.child?.stdin.writable)this.child.stdin.write(JSON.stringify(record)+'\n');}
   request(method,params={}) {

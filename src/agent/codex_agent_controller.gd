@@ -3,6 +3,28 @@ extends "res://src/agent/opencode_agent_controller.gd"
 func _harness_name() -> String:
     return "Codex"
 
+func _on_command_record(record: Dictionary) -> void:
+    if record.get("initialization_failed", false):
+        restart_after_finish = true
+    super._on_command_record(record)
+
+func _fail(message: String) -> void:
+    last_error = message
+    super._fail(message)
+
+func start_new_session() -> Dictionary:
+    if busy: return {"ok": false, "error": "Stop Codex before starting a new session."}
+    if not acquire_editor(): return {"ok": false, "error": last_error}
+    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join("codex"))
+    var session_file = directory.path_join("session.json")
+    var archive = ""
+    if FileAccess.file_exists(session_file):
+        archive = directory.path_join("session.previous-%d-%d.json" % [Time.get_unix_time_from_system(), Time.get_ticks_usec()])
+        if DirAccess.rename_absolute(session_file, archive) != OK:
+            return {"ok": false, "error": "Could not preserve the previous Codex session reference. No session was reset."}
+    restart_runtime()
+    return {"ok": true, "archive": archive}
+
 func _start_command_runtime() -> Dictionary:
     if not acquire_editor(): return {"ok": false, "error": last_error}
     if rpc != null and rpc.running:
@@ -39,7 +61,8 @@ func _start_command_runtime() -> Dictionary:
     add_child(rpc)
     rpc.record_received.connect(_on_command_record)
     rpc.stderr_line.connect(func(line): AppLoggerScript.game_event(game_name, "codex.stderr", line, "WARN"))
-    rpc.process_stopped.connect(func(message): last_error = message.replace("Pi", "Codex adapter"))
+    rpc.process_stopped.connect(func(message):
+        if last_error == "": last_error = message.replace("Pi", "Codex adapter"))
     return rpc.start(config)
 
 func compact_now() -> Dictionary:

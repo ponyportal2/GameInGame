@@ -52,6 +52,9 @@ var name_edit: LineEdit
 var harness_option: OptionButton
 var game_edit_guard
 var game_harness_option: OptionButton
+var codex_new_session_button: Button
+var codex_session_dialog: Control
+var codex_session_game := ""
 var rename_edit: LineEdit
 var provider_option: OptionButton
 var model_edit: LineEdit
@@ -114,6 +117,10 @@ func _process(_delta: float) -> void:
 func _input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
         return
+    if event.keycode == KEY_ESCAPE and codex_session_dialog.visible:
+        _cancel_new_codex_session()
+        get_viewport().set_input_as_handled()
+        return
     if event.keycode == KEY_ESCAPE and (rename_dialog.visible or delete_dialog.visible):
         get_viewport().set_input_as_handled()
         rename_dialog.visible = false
@@ -137,7 +144,7 @@ func _input(event: InputEvent) -> void:
         _send_chat()
 
 func _host_modal_open() -> bool:
-    return settings_dialog.visible or new_game_dialog.visible or rename_dialog.visible or delete_dialog.visible
+    return settings_dialog.visible or codex_session_dialog.visible or new_game_dialog.visible or rename_dialog.visible or delete_dialog.visible
 
 func _build_ui() -> void:
     host_ui_canvas = CanvasLayer.new(); host_ui_canvas.layer = HOST_UI_CANVAS_LAYER; add_child(host_ui_canvas)
@@ -621,9 +628,34 @@ func _delete_game_confirmed() -> void:
         _toast("Could not delete the game. Close programs using its files and try again.")
     _show_library()
 
+func _request_new_codex_session() -> void:
+    if current_game == "" or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") != "codex":
+        return
+    codex_session_game = current_game
+    codex_session_dialog.move_to_front()
+    codex_session_dialog.visible = true
+
+func _cancel_new_codex_session() -> void:
+    codex_session_game = ""
+    codex_session_dialog.visible = false
+
+func _confirm_new_codex_session() -> void:
+    if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") != "codex":
+        _cancel_new_codex_session()
+        return
+    var result = agent.start_new_session()
+    _cancel_new_codex_session()
+    if not result.get("ok", false):
+        _toast(str(result.get("error", "Could not start a new Codex session.")))
+        return
+    _append_chat("system", "A new Codex session will start with your next message. The previous session reference, chat and game files were kept.")
+    _close_settings()
+
 func _open_settings() -> void:
     game_harness_option.disabled = current_game == "" or (is_instance_valid(agent) and agent.busy)
     var saved_harness = str(metadata.read_game(current_game).get("harness", "pi")) if current_game != "" else "pi"
+    codex_new_session_button.visible = current_game != "" and saved_harness == "codex"
+    codex_new_session_button.disabled = not is_instance_valid(agent) or agent.busy
     for i in game_harness_option.item_count:
         if str(game_harness_option.get_item_metadata(i)) == saved_harness:
             game_harness_option.select(i)
@@ -695,6 +727,7 @@ func _native_harness_label() -> String:
     return "Codex" if metadata.read_game(current_game).get("harness", "pi") == "codex" else "OpenCode"
 
 func _close_settings() -> void:
+    _cancel_new_codex_session()
     settings_dialog.visible = false
     if chat_overlay.visible and chat_input.editable:
         chat_input.grab_focus()

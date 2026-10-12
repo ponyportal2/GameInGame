@@ -18,20 +18,35 @@ import (
 )
 
 func TestEitherHarnessAvailable(t *testing.T) {
-	for _, available := range []string{"pi", "command-code", "opencode"} {
+	for _, available := range []string{"pi", "command-code", "opencode", "codex"} {
 		lookup := func(name string) (string, error) {
 			if name == available {
 				return name, nil
 			}
 			return "", errors.New("missing")
 		}
-		if !hasAgentHarness("", "", "", lookup) {
+		if !hasAgentHarness("", "", "", "", lookup) {
 			t.Fatalf("%s should allow startup without a missing-harness warning", available)
 		}
 	}
 	missing := func(string) (string, error) { return "", errors.New("missing") }
-	if hasAgentHarness("", "", "", missing) {
-		t.Fatal("both missing should show a warning")
+	if hasAgentHarness("", "", "", "", missing) {
+		t.Fatal("all missing should show a warning")
+	}
+	if !hasAgentHarness("", "", "", "custom-codex", func(name string) (string, error) {
+		if name == "custom-codex" {
+			return name, nil
+		}
+		return "", os.ErrNotExist
+	}) {
+		t.Fatal("explicit Codex override should allow startup")
+	}
+	fixture := filepath.Join(t.TempDir(), "codex-fixture.mjs")
+	if err := os.WriteFile(fixture, []byte("// fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !hasAgentHarness("", "", "", fixture, missing) {
+		t.Fatal("Codex JS entry point outside PATH should allow startup")
 	}
 }
 

@@ -125,6 +125,8 @@ static func build(app) -> void:
         app.game_harness_option.add_item(pair[0])
         app.game_harness_option.set_item_metadata(app.game_harness_option.item_count - 1, pair[1])
     field(game, "Coding harness", app.game_harness_option, "Switch after the agent finishes or is stopped. Files and chat stay with the game. Each harness keeps its own session; switching back resumes it. Save, then reopen settings to configure the selected harness.")
+    app.codex_new_session_button = U.button(game, "Start new Codex session", app._request_new_codex_session, "QuietButton")
+    app.codex_new_session_button.visible = false
     U.paragraph(game, "Override the global model for the open game. Other games keep their own settings.")
     app.game_override_provider = provider(true)
     field(game, "Provider override", app.game_override_provider)
@@ -136,6 +138,15 @@ static func build(app) -> void:
     U.space(footer)
     U.button(footer, "Cancel", app._close_settings, "QuietButton")
     U.button(footer, "Save", app._save_settings, "PrimaryButton")
+    app.codex_session_dialog = overlay(app, "CodexSessionOverlay")
+    var confirmation = U.column(U.margin(panel(app.codex_session_dialog, 540, 290), 22, 20), 16)
+    U.label(confirmation, "Start a new Codex session?", 24)
+    U.paragraph(confirmation, "The next message starts a fresh Codex conversation. The previous session reference is archived, and your chat and game files are kept. The old conversation will not be included in the new agent context.")
+    U.space(confirmation, true)
+    var actions = U.row(confirmation)
+    U.space(actions)
+    U.button(actions, "Cancel", app._cancel_new_codex_session, "QuietButton")
+    U.button(actions, "Start new session", app._confirm_new_codex_session, "PrimaryButton")
 
 static func build_new_game(app) -> void:
     app.new_game_dialog = overlay(app, "NewGameOverlay")

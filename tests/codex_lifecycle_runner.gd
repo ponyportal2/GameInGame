@@ -65,6 +65,55 @@ func run() -> void:
     app.agent.send_player_request("provider-error")
     await wait_idle()
     check(app.agent.last_error == "Fixture provider error", "Codex native provider failure ends as failure")
+    for phase in ["initialize", "config/read", "thread/resume"]:
+        OS.set_environment("GAMESMITH_CODEX_FAIL_METHOD", phase)
+        app.agent.restart_runtime()
+        app.agent.send_player_request("follow up")
+        await wait_idle()
+        check("Fixture readiness failure" in app.agent.last_error and app.agent.rpc == null, "failed Codex readiness retires runtime: " + phase)
+        OS.unset_environment("GAMESMITH_CODEX_FAIL_METHOD")
+        app.agent.send_player_request("follow up")
+        await wait_idle()
+        check(app.agent.last_error == "", "next player message recovers without reopening: " + phase)
+    var session_file = directory.path_join("session.json")
+    JsonStore.write_dict(session_file, {"session": "missing-native-thread", "context_tokens": 5120})
+    app.agent.restart_runtime()
+    app.agent.send_player_request("follow up")
+    await wait_idle()
+    check("Start new Codex session" in app.agent.last_error, "unresumable Codex session explains the recovery action")
+    check(JsonStore.read_dict(session_file, {}).get("session") == "missing-native-thread", "failed resume preserves the saved session")
+    check(app.has_method("_confirm_new_codex_session"), "settings expose a confirmed Codex new-session action")
+    if app.has_method("_confirm_new_codex_session"):
+        var history = app.transcript.read_all(app.current_game).size()
+        app._open_settings()
+        app.codex_new_session_button.pressed.emit()
+        check(app.codex_session_dialog.visible and FileAccess.file_exists(session_file), "new-session button waits for confirmation")
+        app._cancel_new_codex_session()
+        check(not app.codex_session_dialog.visible and FileAccess.file_exists(session_file), "cancelling preserves the old session")
+        app._request_new_codex_session()
+        check(app.codex_session_dialog.get_index() > app.settings_dialog.get_index(), "session confirmation renders above settings")
+        var escape = InputEventKey.new()
+        escape.keycode = KEY_ESCAPE
+        escape.pressed = true
+        app._input(escape)
+        check(not app.codex_session_dialog.visible and app.settings_dialog.visible and FileAccess.file_exists(session_file), "Escape cancels session reset while retaining settings and history")
+        app._request_new_codex_session()
+        app.agent.busy = true
+        app._confirm_new_codex_session()
+        check(FileAccess.file_exists(session_file), "busy Codex session cannot be reset")
+        check(not app.agent.start_new_session().get("ok", true), "controller rejects new session while busy")
+        app.agent.busy = false
+        app._request_new_codex_session()
+        app._confirm_new_codex_session()
+        check(not FileAccess.file_exists(session_file), "confirmed new session clears only the current reference")
+        var archived = false
+        for file in DirAccess.get_files_at(directory):
+            if file.begins_with("session.previous-"):
+                archived = JsonStore.read_dict(directory.path_join(file), {}).get("session") == "missing-native-thread"
+        check(archived and app.transcript.read_all(app.current_game).size() >= history, "new session archives the old reference and preserves chat")
+        app.agent.send_player_request("follow up")
+        await wait_idle()
+        check(app.agent.last_error == "", "new Codex thread works after explicit recovery")
     for mode in ["START", "STOP", "SETTLE"]:
         var flag = "GAMESMITH_CODEX_STUCK_" + mode
         OS.set_environment(flag, "1")

@@ -32,6 +32,8 @@ func run() -> void:
         second.agent.send_player_request("Must not start")
         check(not second.agent.busy and second.agent.rpc == null, "second writer rejected for " + harness)
         check("another GameSmith" in second.agent.last_error, "ownership rejection explains " + harness)
+        if harness == "codex":
+            check(not second.agent.start_new_session().get("ok", true), "other window cannot reset the Codex session")
     second._open_settings()
     second.game_harness_option.select(2)
     second._save_settings()
