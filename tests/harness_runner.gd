@@ -48,7 +48,7 @@ func run() -> void:
     for key in before:
         check(after.get(key) == before[key], "command-code preserves setting " + key)
     app._show_library()
-    check(app.harness_option.item_count == 3, "new games offer OpenCode as the third harness")
+    check(app.harness_option.item_count == 4, "new games offer Pi, Command-code, OpenCode and Codex")
     if app.harness_option.item_count >= 3:
         app.name_edit.text = "OpenCode fixture"
         app.harness_option.select(2)
@@ -72,6 +72,28 @@ func run() -> void:
         check(opencode_after.auto_approve_reloads, "OpenCode host reload setting remains editable")
         app.metadata.save_global_settings(opencode_before)
         app._show_library()
+    if app.harness_option.item_count >= 4:
+        app.name_edit.text = "Codex fixture"
+        app.harness_option.select(3)
+        app._create_game()
+        check(app.metadata.read_game(app.current_game).get("harness") == "codex", "Codex selection persists")
+        check(app.agent.get_script().resource_path.ends_with("codex_agent_controller.gd"), "Codex uses its own controller")
+        app._open_settings()
+        check(app.provider_option.disabled and not app.model_edit.editable and not app.key_edit.editable and app.reasoning_option.disabled, "Codex owns provider, model, credentials and reasoning")
+        check(not app.compaction_auto_spin.editable and not app.compaction_keep_spin.editable and app.compact_now_button.disabled, "Codex owns all compaction settings")
+        var codex_before = app.metadata.global_settings()
+        app.model_edit.text = "must not save"
+        app.compaction_auto_spin.value = 999
+        app.compaction_keep_spin.value = 999
+        app.auto_reload_check.button_pressed = true
+        app._save_settings()
+        var codex_after = app.metadata.global_settings()
+        for key in codex_before:
+            if key != "auto_approve_reloads":
+                check(codex_after.get(key) == codex_before[key], "Codex preserves setting " + key)
+        check(codex_after.auto_approve_reloads, "Codex host reload setting remains editable")
+        app.metadata.save_global_settings(codex_before)
+        app._show_library()
     app.name_edit.text = "Pi fixture"
     app.harness_option.select(0)
     app._create_game()
@@ -89,7 +111,7 @@ func run() -> void:
         file.store_string("keep")
         file.close()
         var session_markers: Array[String] = []
-        for harness in ["pi", "command-code", "opencode"]:
+        for harness in ["pi", "command-code", "opencode", "codex"]:
             var session_dir = app.metadata.game_meta_dir(name).path_join(harness)
             DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(session_dir))
             var session_path = session_dir.path_join("switch-preservation.txt")
@@ -97,7 +119,7 @@ func run() -> void:
             session_file.store_string("preserved native session")
             session_file.close()
             session_markers.append(session_path)
-        for pair in [[1, "command-code"], [2, "opencode"], [0, "pi"]]:
+        for pair in [[1, "command-code"], [2, "opencode"], [3, "codex"], [0, "pi"]]:
             app._open_settings()
             app.game_harness_option.select(pair[0])
             app._close_settings()

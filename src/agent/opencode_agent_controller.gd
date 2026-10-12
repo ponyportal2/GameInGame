@@ -20,7 +20,7 @@ func cancel() -> void:
     pending_test_commands.clear()
     if tools != null and is_instance_valid(tools.test_supervisor):
         tools.test_supervisor.stop_all()
-    status_changed.emit("Stopping OpenCode...")
+    status_changed.emit("Stopping " + _harness_name() + "...")
     var result: Dictionary = {"success": false}
     if rpc != null and rpc.running:
         result = await rpc.command({"type": "cancel"})
@@ -39,7 +39,7 @@ func cancel() -> void:
 func _process(delta: float) -> void:
     super._process(delta)
     if cancelling and Time.get_ticks_msec() >= cancel_deadline:
-        AppLoggerScript.game_event(game_name, "opencode.cancel.forced", "Native cancellation did not settle within the Stop grace period; terminating the backend tree.", "WARN")
+        AppLoggerScript.game_event(game_name, _harness_name().to_lower() + ".cancel.forced", "Native cancellation did not settle within the Stop grace period; terminating the backend tree.", "WARN")
         restart_runtime()
 
 func _harness_name() -> String:

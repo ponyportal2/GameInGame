@@ -21,7 +21,12 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing OpenCode " + module)
             quit(1)
             return
-    for script in ["command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd"]:
+    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "tools.mjs", "host-tools.mjs", "workspace-paths.mjs", "process-tree.mjs"]:
+        if not FileAccess.file_exists("res://tools/codex/" + module):
+            push_error("FAIL: exported GameSmith.pck is missing Codex " + module)
+            quit(1)
+            return
+    for script in ["command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd", "codex_agent_controller.gd"]:
         if not ResourceLoader.exists("res://src/agent/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)

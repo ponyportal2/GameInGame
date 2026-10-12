@@ -112,7 +112,7 @@ static func build(app) -> void:
     var conversation = page(tabs, "Conversation")
     U.paragraph(conversation, "Summarize older conversation to make room for new work. Recent messages stay intact.")
     app.compaction_auto_spin = spin(0, 2000000, 1000)
-    field(conversation, "Automatically compact at · estimated tokens", app.compaction_auto_spin, "Pi and Command-code: checked between requests. OpenCode handles its own compaction. Set to 0 to disable GameSmith’s trigger; the harness can still compact automatically.")
+    field(conversation, "Automatically compact at · estimated tokens", app.compaction_auto_spin, "Pi and Command-code: checked between requests. OpenCode and Codex handle their own compaction. Set to 0 to disable GameSmith’s trigger; the harness can still compact automatically.")
     app.compaction_keep_spin = spin(1000, 500000, 1000)
     field(conversation, "Recent tokens to keep", app.compaction_keep_spin)
     conversation.add_child(HSeparator.new())
@@ -121,7 +121,7 @@ static func build(app) -> void:
     app.compact_now_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
     var game = page(tabs, "This game")
     app.game_harness_option = OptionButton.new()
-    for pair in [["Pi", "pi"], ["Command-code", "command-code"], ["OpenCode", "opencode"]]:
+    for pair in [["Pi", "pi"], ["Command-code", "command-code"], ["OpenCode", "opencode"], ["Codex", "codex"]]:
         app.game_harness_option.add_item(pair[0])
         app.game_harness_option.set_item_metadata(app.game_harness_option.item_count - 1, pair[1])
     field(game, "Coding harness", app.game_harness_option, "Switch after the agent finishes or is stopped. Files and chat stay with the game. Each harness keeps its own session; switching back resumes it. Save, then reopen settings to configure the selected harness.")
@@ -153,7 +153,9 @@ static func build_new_game(app) -> void:
     app.harness_option.set_item_metadata(1, "command-code")
     app.harness_option.add_item("OpenCode")
     app.harness_option.set_item_metadata(2, "opencode")
-    field(root, "Coding harness", app.harness_option, "Command-code and OpenCode use their own model and provider settings. OpenCode also handles its own compaction.")
+    app.harness_option.add_item("Codex")
+    app.harness_option.set_item_metadata(3, "codex")
+    field(root, "Coding harness", app.harness_option, "Command-code, OpenCode and Codex use their own model and provider settings. OpenCode and Codex also handle their own compaction.")
     app.name_edit.text_submitted.connect(func(_text): app._create_game())
     U.space(root, true)
     var actions = U.row(root)

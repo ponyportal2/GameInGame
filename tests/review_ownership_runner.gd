@@ -23,9 +23,9 @@ func run() -> void:
     first.agent.busy = true
     first.agent.cancel()
     check(not second.game_edit_guard.acquire(), "Stop does not release ownership")
-    for harness in ["pi", "command-code", "opencode"]:
+    for harness in ["pi", "command-code", "opencode", "codex"]:
         second.agent.free()
-        var script = {"pi":"pi", "command-code":"command_code", "opencode":"opencode"}[harness]
+        var script = {"pi":"pi", "command-code":"command_code", "opencode":"opencode", "codex":"codex"}[harness]
         second.agent = load("res://src/agent/" + script + "_agent_controller.gd").new()
         second.add_child(second.agent)
         second.agent.configure(name, second.tools)

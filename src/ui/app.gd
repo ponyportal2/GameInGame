@@ -6,6 +6,7 @@ const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const OpenCodeAgentControllerScript = preload("res://src/agent/opencode_agent_controller.gd")
+const CodexAgentControllerScript = preload("res://src/agent/codex_agent_controller.gd")
 const CommandCodeAgentControllerScript = preload("res://src/agent/command_code_agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
@@ -308,6 +309,7 @@ func _attach_game_agent() -> void:
     match str(metadata.read_game(current_game).get("harness", "pi")):
         "command-code": agent = CommandCodeAgentControllerScript.new()
         "opencode": agent = OpenCodeAgentControllerScript.new()
+        "codex": agent = CodexAgentControllerScript.new()
         _: agent = PiAgentControllerScript.new()
     add_child(agent)
     agent.editor_guard = game_edit_guard
@@ -664,11 +666,11 @@ func _open_settings() -> void:
     custom_base_edit.editable = not native_settings
     agent_steps_spin.editable = not native_settings
     llm_delay_spin.editable = not native_settings
-    compaction_auto_spin.editable = not _uses_opencode()
+    compaction_auto_spin.editable = not _uses_native_compaction()
     compaction_keep_spin.editable = not native_settings
-    if _uses_opencode():
+    if _uses_native_compaction():
         compact_now_button.disabled = true
-        compaction_status_label.text = "OpenCode manages its own compaction, model, and provider settings."
+        compaction_status_label.text = _native_harness_label() + " manages its own compaction, model, and provider settings."
     if native_settings:
         game_override_provider.disabled = true
         game_override_model.editable = false
@@ -684,7 +686,13 @@ func _uses_opencode() -> bool:
     return current_game != "" and metadata.read_game(current_game).get("harness", "pi") == "opencode"
 
 func _uses_native_agent_settings() -> bool:
-    return _uses_command_code() or _uses_opencode()
+    return _uses_command_code() or _uses_native_compaction()
+
+func _uses_native_compaction() -> bool:
+    return current_game != "" and metadata.read_game(current_game).get("harness", "pi") in ["opencode", "codex"]
+
+func _native_harness_label() -> String:
+    return "Codex" if metadata.read_game(current_game).get("harness", "pi") == "codex" else "OpenCode"
 
 func _close_settings() -> void:
     settings_dialog.visible = false
@@ -692,8 +700,8 @@ func _close_settings() -> void:
         chat_input.grab_focus()
 
 func _compact_now_from_settings() -> void:
-    if _uses_opencode():
-        compaction_status_label.text = "OpenCode manages its own compaction."
+    if _uses_native_compaction():
+        compaction_status_label.text = _native_harness_label() + " manages its own compaction."
         return
     if current_game == "" or not is_instance_valid(agent):
         compaction_status_label.text = "Open a game first."
