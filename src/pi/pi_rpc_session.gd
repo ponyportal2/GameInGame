@@ -89,6 +89,15 @@ func shutdown() -> void:
             # cmd.exe launches npm's Pi shim, so killing only cmd leaves Node alive.
             var output: Array = []
             OS.execute("taskkill", ["/PID", str(pid), "/T", "/F"], output, true)
+        else:
+            var helper = "user://host/process-tree.mjs"
+            var source = FileAccess.get_file_as_bytes("res://tools/agent/process-tree.mjs")
+            if not FileAccess.file_exists(helper) or FileAccess.get_file_as_bytes(helper) != source:
+                JsonStore.write_bytes_atomic(helper, source)
+            var output: Array = []
+            var code = OS.execute("node", [ProjectSettings.globalize_path(helper), str(pid)], output, true)
+            if code != 0:
+                push_error("Could not terminate the complete agent process tree: " + str(output))
         if OS.is_process_running(pid):
             OS.kill(pid)
     # Keep the parent alive until taskkill has enumerated its descendants.

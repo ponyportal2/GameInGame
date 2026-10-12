@@ -26,6 +26,8 @@ class FakeRpc extends Node:
         running = false
 
 class Agent extends PiAgentController:
+    func acquire_editor() -> bool:
+        return true # This unit fixture has no workspace or native agent session.
     func _ensure_runtime() -> Dictionary:
         return {"ok": true}
 

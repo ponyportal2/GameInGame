@@ -31,3 +31,23 @@ test('running tools appear immediately and repeated updates do not repeat activi
   assert.deepEqual(normalize(running),[]);
   assert.equal(normalize(event('message.part.updated',{part:part('tool','tool',{tool:'read',state:{status:'completed'}})}))[0].type,'tool');
 });
+
+test('final reconciliation fills only the final message suffix and leaves earlier messages alone',()=>{
+  const normalize=createEventNormalizer('s');
+  normalize(event('message.part.updated',{part:part('text','earlier',{text:'Checking files.',time:{end:1}})}));
+  normalize(event('message.part.updated',{part:part('text','final',{text:'Fixed',time:{start:1}})}));
+  const result={info:{id:'m'},parts:[part('text','final',{text:'Fixed collisions.'})]};
+  assert.deepEqual(normalize.reconcile(result),[
+    {type:'delta',kind:'assistant',text:' collisions.'},
+    {type:'assistant_text',text:' collisions.'},
+  ]);
+  assert.deepEqual(normalize.reconcile(result),[]);
+});
+
+test('a divergent final snapshot requests a canonical transcript refresh rather than appending incorrect text',()=>{
+  const normalize=createEventNormalizer('s');
+  normalize(event('message.part.updated',{part:part('text','final',{text:'Incorrect draft.',time:{start:1}})}));
+  const result={info:{id:'m'},parts:[part('text','final',{text:'Correct answer.'})]};
+  assert.deepEqual(normalize.reconcile(result),[{type:'transcript_reconcile'}]);
+  assert.deepEqual(normalize.reconcile(result),[]);
+});

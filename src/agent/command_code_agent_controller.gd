@@ -1,6 +1,9 @@
 extends "res://src/agent/pi_agent_controller.gd"
 
 const CommandSession = preload("res://src/agent/command_code_session.gd")
+signal transcript_reconciled
+
+var result_corrected := false
 var result_received := false
 var result_text := ""
 var compaction_attempted_operation := -1
@@ -8,9 +11,14 @@ var compaction_attempted_operation := -1
 func send_player_request(text: String) -> void:
     if busy:
         return
+    if not acquire_editor():
+        assistant_message.emit(last_error)
+        finished.emit(false)
+        return
     busy = true
     operation_id += 1
     var operation = operation_id
+    result_corrected = false
     result_received = false
     result_text = ""
     last_error = ""
@@ -45,7 +53,9 @@ func send_player_request(text: String) -> void:
         return
     if result_text != "":
         transcript.append(game_name, "assistant", result_text)
-        if not streamed_text:
+        if result_corrected:
+            transcript_reconciled.emit()
+        elif not streamed_text:
             assistant_message.emit(result_text)
     await _maybe_auto_compact("after_turn")
     if operation != operation_id:
@@ -55,6 +65,7 @@ func send_player_request(text: String) -> void:
     finished.emit(true)
 
 func _start_command_runtime() -> Dictionary:
+    if not acquire_editor(): return {"ok": false, "error": last_error}
     if rpc != null and rpc.running:
         return {"ok": true}
     if rpc != null:
@@ -110,12 +121,14 @@ func _on_command_record(record: Dictionary) -> void:
         "context":
             last_context_tokens = int(record.tokens) if record.get("tokens") != null else 0
         "complete":
+            result_corrected = bool(record.get("corrected", false))
             result_received = true
             result_text = str(record.get("text", ""))
             if not record.get("ok", false):
                 last_error = str(record.get("error", _harness_name() + " request failed."))
 
 func compact_now() -> Dictionary:
+    if not acquire_editor(): return {"ok": false, "error": last_error}
     if busy:
         return {"ok": false, "error": "Agent is busy."}
     busy = true

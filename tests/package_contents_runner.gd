@@ -6,6 +6,11 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
+    for module in ["ownership.mjs", "process-tree.mjs"]:
+        if not FileAccess.file_exists("res://tools/agent/" + module):
+            push_error("FAIL: exported GameSmith.pck is missing " + module)
+            quit(1)
+            return
     for module in ["worker.mjs", "protocol.mjs", "gamesmith.ts", "compaction.mjs", "compaction.ts"]:
         if not FileAccess.file_exists("res://tools/command-code/" + module):
             push_error("FAIL: exported GameSmith.pck is missing Command-code " + module)

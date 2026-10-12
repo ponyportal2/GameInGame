@@ -70,3 +70,19 @@ test('persistent transport retains one server and native Stop aborts before anot
     assert.equal(server.pid,pid);
   } finally {await server.close();}
 });
+
+for (const message of ['partial-stream','lost-stream']) test(`HTTP final answer repairs ${message}`, {timeout:10000}, async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-final-'));
+  const config={workspace,bridge_dir:workspace,name:'Final fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
+  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
+  const records=[]; const closed=once(worker,'close');
+  const completion=new Promise(resolve=>createInterface({input:worker.stdout}).on('line',line=>{const record=JSON.parse(line);records.push(record);if(record.type==='complete') resolve(record);}));
+  try {
+    worker.stdin.write(JSON.stringify({id:'final',type:'prompt',message})+'\n');
+    const result=await completion;
+    assert.equal(result.ok,true);
+    assert.equal(result.text,'I changed the player movement and fixed collisions.');
+    assert.equal(records.filter(r=>r.type==='delta' && r.kind==='assistant').map(r=>r.text).join(''),result.text);
+  } finally {worker.stdin.end();await closed;}
+});

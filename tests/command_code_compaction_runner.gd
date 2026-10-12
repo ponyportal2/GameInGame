@@ -14,6 +14,15 @@ func idle() -> void:
     while app.agent.busy:
         await process_frame
 
+func process_alive(pid: int) -> bool:
+    var output: Array = []
+    if OS.get_name() != "Windows":
+        var code = OS.execute("ps", ["-p", str(pid), "-o", "stat="], output)
+        var state = str(output[0]).strip_edges() if not output.is_empty() else ""
+        return code == 0 and state != "" and not state.begins_with("Z")
+    OS.execute("tasklist", ["/FI", "PID eq %d" % pid, "/FO", "CSV", "/NH"], output, true)
+    return not output.is_empty() and ('"%d"' % pid) in str(output[0])
+
 func count_compactions() -> int:
     var path = app.agent.tools.workspace.path_join(".compaction-fixture.jsonl")
     return FileAccess.get_file_as_string(path).strip_edges().split("\n").size() if FileAccess.file_exists(path) else 0
@@ -76,8 +85,8 @@ func run() -> void:
     var last_line = FileAccess.get_file_as_string(log_path).strip_edges().split("\n")[-1]
     var child_pid = int(JSON.parse_string(last_line).pid)
     app.agent.cancel()
-    await process_frame
-    check(not app.agent.busy and not OS.is_process_running(pid) and not OS.is_process_running(child_pid), "Stop cancels adapter and native compaction child")
+    await create_timer(0.2).timeout
+    check(not app.agent.busy and not process_alive(pid) and not process_alive(child_pid), "Stop cancels adapter and native compaction child")
     OS.unset_environment("GAMESMITH_FAKE_COMPACTION")
     app.agent.send_player_request("follow up")
     await idle()

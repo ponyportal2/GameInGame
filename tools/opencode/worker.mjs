@@ -24,6 +24,7 @@ function emitRecords(records,operation) {
     if (record.type==='context') {contextTokens=record.tokens;saveSession();}
     if (record.type==='assistant_text') {operation.text+=record.text;continue;}
     if (record.type==='integration_error') operation.error=record.error;
+    if (record.type==='transcript_reconcile') {operation.corrected=true;continue;}
     emit(record);
   }
 }
@@ -51,16 +52,17 @@ async function prompt(request,operation) {
         server.request('/permission/'+properties.id+'/reply','POST',{reply:'once'}).catch(error=>{operation.error=error.message;});return;
       }
       emitRecords(normalizeEvent(event),operation);
-    },error=>{if (!operation.cancelled) operation.error=error.message;});
+    },error=>{if (!operation.cancelled) process.stderr.write('OpenCode event stream interrupted: '+error.message+'\n');});
     if (operation.cancelled) return;
     emit({type:'response',id:request.id,success:true});operation.accepted=true;
     const result=await server.request('/session/'+session+'/message','POST',{parts:[{type:'text',text:request.message}]});
     if (operation.cancelled) return;
     if (result.info?.error) operation.error=result.info.error.data?.message || result.info.error.message || result.info.error.name;
+    emitRecords(normalizeEvent.reconcile(result),operation);
     records({type:'step_finish',part:{tokens:result.info?.tokens}},operation);
-    const text=operation.text || (result.parts || []).filter(p=>p.type==='text').map(p=>p.text).join('');
+    const text=(result.parts || []).filter(p=>p.type==='text').map(p=>p.text).join('');
     const ok=result.info?.finish==='stop' && !operation.error;
-    emit({type:'complete',ok,text,error:operation.error || (ok ? '' : 'OpenCode ended without a completed response.')});
+    emit({type:'complete',ok,text,corrected:!!operation.corrected,error:operation.error || (ok ? '' : 'OpenCode ended without a completed response.')});
   } catch(error) {
     if (!operation.cancelled) emit(operation.accepted ? {type:'complete',ok:false,text:operation.text,error:error.message} : {type:'response',id:request.id,success:false,error:error.message});
   } finally {unsubscribe?.();if (active===operation) active=undefined;}

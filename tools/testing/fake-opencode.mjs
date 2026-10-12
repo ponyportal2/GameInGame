@@ -52,6 +52,12 @@ async function run(prompt) {
    }
    return await new Promise(resolve=>waiting=resolve);
  }
+ if (prompt==='partial-stream' || prompt==='lost-stream') {
+   emit({type:'text',part:{text:'I changed the player'}});
+   if (prompt==='lost-stream') for (const response of subscribers) response.destroy();
+   return {info:{finish:'stop'},parts:[{id:String(partId),sessionID:session,type:'text',text:'I changed the player movement and fixed collisions.'}]};
+ }
+ if (prompt==='stuck-abort' || prompt==='settle-stall') return await new Promise(()=>{});
  if (prompt==='provider-error') return {info:{error:{data:{message:'Fixture provider error'}}},parts:[]};
  if (prompt==='incomplete') return {info:{},parts:[]};
  if (prompt==='tool-round-only') return {info:{finish:'tool-calls'},parts:[]};
@@ -82,6 +88,8 @@ const server=http.createServer(async(req,res)=>{
  const reply=value=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(value));};
  if (req.url==='/session/status') return reply({[session]:{type:currentResponse?'busy':'idle'}});
  if (req.url.endsWith('/abort')) {
+   if (process.env.GAMESMITH_FIXTURE_STUCK_ABORT==='1') return;
+   if (process.env.GAMESMITH_FIXTURE_STUCK_SETTLE==='1') return reply(true);
    aborted=true;
    const result={info:{error:{name:'MessageAbortedError'}},parts:[]};
    waiting?.(result);waiting=undefined;
@@ -97,4 +105,4 @@ const server=http.createServer(async(req,res)=>{
  }
  reply({id:session});
 });
-server.listen(0,'127.0.0.1',()=>console.log('opencode server listening on http://127.0.0.1:'+server.address().port));
+server.listen(0,'127.0.0.1',()=>{if (process.env.GAMESMITH_FIXTURE_STUCK_START!=='1') console.log('opencode server listening on http://127.0.0.1:'+server.address().port);});

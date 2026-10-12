@@ -22,6 +22,8 @@ const DEFAULT_LLM_CALL_DELAY_SEC = 6.0
 const MIN_LLM_CALL_DELAY_SEC = 0.0
 const MAX_LLM_CALL_DELAY_SEC = 300.0
 
+const GameEditGuardScript = preload("res://src/core/game_edit_guard.gd")
+var editor_guard
 var game_name := ""
 var tools
 var metadata = MetadataStoreScript.new()
@@ -46,11 +48,27 @@ var auto_compaction_failed_operation := -1
 
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
+    if editor_guard == null:
+        editor_guard = GameEditGuardScript.new()
+    editor_guard.workspace = p_tools.workspace
     tools = p_tools
     process_mode = Node.PROCESS_MODE_ALWAYS
 
+func acquire_editor() -> bool:
+    if editor_guard == null:
+        editor_guard = GameEditGuardScript.new()
+        editor_guard.workspace = tools.workspace
+    if editor_guard.acquire(): return true
+    last_error = editor_guard.error
+    status_changed.emit(last_error)
+    return false
+
 func send_player_request(text: String) -> void:
     if busy:
+        return
+    if not acquire_editor():
+        assistant_message.emit(last_error)
+        finished.emit(false)
         return
     busy = true
     operation_id += 1
@@ -129,6 +147,7 @@ func send_player_request(text: String) -> void:
     finished.emit(true)
 
 func compact_now() -> Dictionary:
+    if not acquire_editor(): return {"ok": false, "error": last_error}
     if busy:
         return {"ok": false, "error": "Agent is busy."}
     busy = true
@@ -203,11 +222,13 @@ func context_tokens() -> int:
 
 func _exit_tree() -> void:
     restart_runtime()
+    if editor_guard != null: editor_guard.release()
 
 func _process(_delta: float) -> void:
     _service_host_bridge()
 
 func _ensure_runtime() -> Dictionary:
+    if not acquire_editor(): return {"ok": false, "error": last_error}
     if rpc != null and rpc.running:
         return {"ok": true}
     var settings = metadata.global_settings()

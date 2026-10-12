@@ -1,11 +1,14 @@
 extends "res://src/agent/command_code_agent_controller.gd"
 
+const STOP_GRACE_MS = 5000
+var cancel_deadline := 0
 var cancelling = false
 
 func cancel() -> void:
     if not busy or cancelling:
         return
     cancelling = true
+    cancel_deadline = Time.get_ticks_msec() + STOP_GRACE_MS
     operation_id += 1
     restart_after_finish = false
     var cancelled_result = {"ok": false, "cancelled": true, "error": "Cancelled by the player."}
@@ -33,10 +36,17 @@ func cancel() -> void:
     status_changed.emit("Ready")
     finished.emit(false)
 
+func _process(delta: float) -> void:
+    super._process(delta)
+    if cancelling and Time.get_ticks_msec() >= cancel_deadline:
+        AppLoggerScript.game_event(game_name, "opencode.cancel.forced", "Native cancellation did not settle within the Stop grace period; terminating the backend tree.", "WARN")
+        restart_runtime()
+
 func _harness_name() -> String:
     return "OpenCode"
 
 func _start_command_runtime() -> Dictionary:
+    if not acquire_editor(): return {"ok": false, "error": last_error}
     if rpc != null and rpc.running:
         return {"ok": true}
     if rpc != null:

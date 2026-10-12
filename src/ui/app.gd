@@ -49,6 +49,7 @@ var delete_game_label: Label
 var settings_dialog: Control
 var name_edit: LineEdit
 var harness_option: OptionButton
+var game_edit_guard
 var game_harness_option: OptionButton
 var rename_edit: LineEdit
 var provider_option: OptionButton
@@ -250,8 +251,12 @@ func _show_library() -> void:
         runner.runtime_log.close()
         runner.queue_free()
     runner = null
-    if is_instance_valid(agent): agent.queue_free()
+    if is_instance_valid(agent):
+        remove_child(agent)
+        agent.queue_free()
     agent = null
+    if game_edit_guard != null: game_edit_guard.release()
+    game_edit_guard = null
     get_tree().paused = false
     background.visible = true
     library_layer.visible = true; play_hud.visible = false; chat_overlay.visible = false
@@ -276,7 +281,10 @@ func _open_game(name: String) -> void:
     workspace_title_label.text = name
     workspace_title_label.tooltip_text = name
     status_label.text = "Ready"
-    var git_state = store.ensure_game_repo(name)
+    game_edit_guard = preload("res://src/core/game_edit_guard.gd").new()
+    game_edit_guard.workspace = store.game_path(name)
+    var editable = game_edit_guard.acquire()
+    var git_state = store.ensure_game_repo(name) if editable else {"ok": true}
     if not bool(git_state.get("ok", false)):
         AppLoggerScript.game_event(name, "git.recovery_failed", "code=%s output=%s" % [str(git_state.get("code", "")), str(git_state.get("output", "")).left(1000)], "WARN")
     elif bool(git_state.get("recovered", false)):
@@ -290,6 +298,9 @@ func _open_game(name: String) -> void:
     _load_transcript()
     _set_chat_visible(true)
     _set_chat_busy_controls(false)
+    if not editable:
+        status_label.text = game_edit_guard.error
+        _append_chat("system", game_edit_guard.error)
     if not FileAccess.file_exists(store.game_path(name).path_join("main.gd")):
         _append_chat("system", "This workspace is empty. Tell the agent what game to build.")
 
@@ -299,6 +310,7 @@ func _attach_game_agent() -> void:
         "opencode": agent = OpenCodeAgentControllerScript.new()
         _: agent = PiAgentControllerScript.new()
     add_child(agent)
+    agent.editor_guard = game_edit_guard
     agent.configure(current_game, tools)
     agent.status_changed.connect(func(text): status_label.text = text)
     agent.assistant_message.connect(func(text): _append_chat("assistant", text))
@@ -307,6 +319,8 @@ func _attach_game_agent() -> void:
         agent.llm_stream_delta.connect(_append_stream_delta)
     if agent.has_signal("llm_stream_end"):
         agent.llm_stream_end.connect(_end_stream_block)
+    if agent.has_signal("transcript_reconciled"):
+        agent.transcript_reconciled.connect(_load_transcript)
     agent.finished.connect(_on_agent_finished)
     agent.reload_approval_changed.connect(_reload_approval_changed)
 
@@ -320,6 +334,7 @@ func _finish_settings_save() -> void:
                 _toast("Could not save the game harness. Try again after fixing storage access.")
                 return
             if is_instance_valid(agent):
+                agent.editor_guard = null # Transfer ownership without releasing it.
                 remove_child(agent) # _exit_tree closes the old backend before replacement.
                 agent.queue_free()
             _end_stream_block("")
@@ -343,7 +358,7 @@ func _on_load_success(_version: int) -> void:
         _reserve_host_canvas_layers()
         # A fallback load must preserve the snapshot that rescued this game.
         if runner.active_source_path == store.game_path(current_game).path_join("main.gd"):
-            if not store.save_working_snapshot(current_game):
+            if game_edit_guard != null and game_edit_guard.acquire() and not store.save_working_snapshot(current_game):
                 AppLoggerScript.game_event(current_game, "snapshot.failed", "Could not save the working snapshot.", "WARN")
                 _append_chat("system", "Game loaded, but its working snapshot could not be saved.")
         if chat_overlay.visible:
@@ -536,6 +551,16 @@ func _rename_game() -> void:
         return
     var old = rename_target
     if old == "": return
+    var edit_guard = game_edit_guard if current_game == old else preload("res://src/core/game_edit_guard.gd").new()
+    edit_guard.workspace = store.game_path(old)
+    if not edit_guard.acquire():
+        _toast(edit_guard.error)
+        return
+    var destination_guard = preload("res://src/core/game_edit_guard.gd").new()
+    destination_guard.workspace = store.game_path(PathUtils.sanitize_game_name(rename_edit.text))
+    if destination_guard.workspace != edit_guard.workspace and not destination_guard.acquire():
+        _toast(destination_guard.error)
+        return
     if current_game == old:
         # Release Pi's cwd and session handles before moving their directories.
         agent.restart_runtime()
@@ -548,6 +573,10 @@ func _rename_game() -> void:
         return
     var new_name = str(result.get("name", old))
     if current_game == old:
+        if new_name != old:
+            edit_guard.release()
+            game_edit_guard = destination_guard
+            agent.editor_guard = game_edit_guard
         current_game = new_name
         game_title_label.text = current_game
         game_title_label.tooltip_text = current_game
@@ -572,6 +601,14 @@ func _ask_delete(name: String) -> void:
 func _delete_game_confirmed() -> void:
     if pending_delete == "": return
     var target = pending_delete
+    if current_game == target and is_instance_valid(agent) and agent.busy:
+        _toast("Stop the agent before deleting its game.")
+        return
+    var edit_guard = game_edit_guard if current_game == target else preload("res://src/core/game_edit_guard.gd").new()
+    edit_guard.workspace = store.game_path(target)
+    if not edit_guard.acquire():
+        _toast(edit_guard.error)
+        return
     pending_delete = ""
     delete_dialog.visible = false
     if current_game == target:
@@ -702,6 +739,9 @@ func _provider_changed(index: int) -> void:
     custom_base_edit.get_parent().visible = id == "custom"
 
 func _save_settings() -> void:
+    if current_game != "" and not game_edit_guard.acquire():
+        _toast(game_edit_guard.error)
+        return
     if current_game != "" and is_instance_valid(agent) and agent.busy:
         if str(game_harness_option.get_item_metadata(game_harness_option.selected)) != str(metadata.read_game(current_game).get("harness", "pi")):
             _toast("Wait for the agent to finish or stop it before switching harnesses.")

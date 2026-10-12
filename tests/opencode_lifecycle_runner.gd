@@ -19,9 +19,11 @@ func wait_reload() -> void:
         await process_frame
 
 func process_alive(pid: int) -> bool:
-    if OS.get_name() != "Windows":
-        return OS.is_process_running(pid)
     var output: Array = []
+    if OS.get_name() != "Windows":
+        var code = OS.execute("ps", ["-p", str(pid), "-o", "stat="], output)
+        var state = str(output[0]).strip_edges() if not output.is_empty() else ""
+        return code == 0 and state != "" and not state.begins_with("Z")
     OS.execute("tasklist", ["/FI", "PID eq %d" % pid, "/FO", "CSV", "/NH"], output, true)
     return not output.is_empty() and ('"%d"' % pid) in str(output[0])
 

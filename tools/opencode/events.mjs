@@ -10,7 +10,7 @@ export function createEventNormalizer(session) {
     const kind=record.type==='reasoning' ? 'thinking' : 'assistant';
     return [{type:'delta',kind,text:delta},...(kind==='assistant' ? [{type:'assistant_text',text:delta}] : [])];
   }
-  return event=>{
+  const normalize=event=>{
     const properties=event.properties || {};
     if (event.type==='message.updated') {
       if (properties.info?.sessionID===session) roles.set(properties.info.id,properties.info.role);
@@ -42,4 +42,21 @@ export function createEventNormalizer(session) {
     if (seen.has(key)) return [];seen.add(key);
     return normalizeFrame({type,part});
   };
+  normalize.reconcile=result=>{
+    const records=[];
+    for (const part of result.parts || []) {
+      if (part.type!=='text') continue;
+      const saved=parts.get(part.id);
+      const full=part.text || '';
+      if (saved && !full.startsWith(saved.text)) {
+        saved.text=full;
+        records.push({type:'transcript_reconcile'});
+        continue;
+      }
+      roles.set(part.messageID || result.info?.id,'assistant');
+      records.push(...normalize({type:'message.part.updated',properties:{part:{...part,sessionID:session,messageID:part.messageID || result.info?.id,time:part.time || {end:1}}}}));
+    }
+    return records;
+  };
+  return normalize;
 }

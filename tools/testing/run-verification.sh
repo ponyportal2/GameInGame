@@ -24,7 +24,8 @@ HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://test
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/cache_edge_regression_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/script_load_policy_runner.gd
 HOME="$TMP/unit-home" "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/maintenance_runner.gd
-node --test "$ROOT/tests/workspace-paths.test.mjs" "$ROOT/tests/model-capabilities.test.mjs" "$ROOT/tests/diagnostic-delivery.test.mjs"
+(cd "$ROOT" && node --test tests/*.test.mjs)
+node "$ROOT/tools/testing/run-host-tests.mjs" "$GODOT_BIN" harness_runner.gd review_ownership_runner.gd review_stop_runner.gd command_code_lifecycle_runner.gd command_code_compaction_runner.gd opencode_lifecycle_runner.gd agent_shutdown_runner.gd
 if command -v xvfb-run >/dev/null 2>&1; then
   mkdir -p "$TMP/windowed-home"
   xvfb-run -a env HOME="$TMP/unit-home" GODOT_SILENCE_ROOT_WARNING=1 \
