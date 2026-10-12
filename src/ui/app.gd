@@ -6,6 +6,7 @@ const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const OpenCodeAgentControllerScript = preload("res://src/agent/opencode_agent_controller.gd")
+const ClineAgentControllerScript = preload("res://src/agent/cline_agent_controller.gd")
 const CodexAgentControllerScript = preload("res://src/agent/codex_agent_controller.gd")
 const CommandCodeAgentControllerScript = preload("res://src/agent/command_code_agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
@@ -55,6 +56,8 @@ var game_harness_option: OptionButton
 var codex_new_session_button: Button
 var codex_session_dialog: Control
 var codex_session_game := ""
+var native_session_title: Label
+var native_session_description: Label
 var rename_edit: LineEdit
 var provider_option: OptionButton
 var model_edit: LineEdit
@@ -317,6 +320,7 @@ func _attach_game_agent() -> void:
         "command-code": agent = CommandCodeAgentControllerScript.new()
         "opencode": agent = OpenCodeAgentControllerScript.new()
         "codex": agent = CodexAgentControllerScript.new()
+        "cline": agent = ClineAgentControllerScript.new()
         _: agent = PiAgentControllerScript.new()
     add_child(agent)
     agent.editor_guard = game_edit_guard
@@ -629,8 +633,10 @@ func _delete_game_confirmed() -> void:
     _show_library()
 
 func _request_new_codex_session() -> void:
-    if current_game == "" or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") != "codex":
+    if current_game == "" or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["codex", "cline"]:
         return
+    native_session_title.text = "Start a new %s session?" % _native_harness_label()
+    native_session_description.text = "The next message starts a fresh %s conversation. The previous session reference is archived, and your chat and game files are kept. The old conversation will not be included in the new agent context." % _native_harness_label()
     codex_session_game = current_game
     codex_session_dialog.move_to_front()
     codex_session_dialog.visible = true
@@ -640,21 +646,22 @@ func _cancel_new_codex_session() -> void:
     codex_session_dialog.visible = false
 
 func _confirm_new_codex_session() -> void:
-    if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") != "codex":
+    if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["codex", "cline"]:
         _cancel_new_codex_session()
         return
     var result = agent.start_new_session()
     _cancel_new_codex_session()
     if not result.get("ok", false):
-        _toast(str(result.get("error", "Could not start a new Codex session.")))
+        _toast(str(result.get("error", "Could not start a new native session.")))
         return
-    _append_chat("system", "A new Codex session will start with your next message. The previous session reference, chat and game files were kept.")
+    _append_chat("system", "A new %s session will start with your next message. The previous session reference, chat and game files were kept." % _native_harness_label())
     _close_settings()
 
 func _open_settings() -> void:
     game_harness_option.disabled = current_game == "" or (is_instance_valid(agent) and agent.busy)
     var saved_harness = str(metadata.read_game(current_game).get("harness", "pi")) if current_game != "" else "pi"
-    codex_new_session_button.visible = current_game != "" and saved_harness == "codex"
+    codex_new_session_button.visible = current_game != "" and saved_harness in ["codex", "cline"]
+    codex_new_session_button.text = "Start new %s session" % _native_harness_label()
     codex_new_session_button.disabled = not is_instance_valid(agent) or agent.busy
     for i in game_harness_option.item_count:
         if str(game_harness_option.get_item_metadata(i)) == saved_harness:
@@ -721,10 +728,10 @@ func _uses_native_agent_settings() -> bool:
     return _uses_command_code() or _uses_native_compaction()
 
 func _uses_native_compaction() -> bool:
-    return current_game != "" and metadata.read_game(current_game).get("harness", "pi") in ["opencode", "codex"]
+    return current_game != "" and metadata.read_game(current_game).get("harness", "pi") in ["opencode", "codex", "cline"]
 
 func _native_harness_label() -> String:
-    return "Codex" if metadata.read_game(current_game).get("harness", "pi") == "codex" else "OpenCode"
+    return {"codex": "Codex", "cline": "Cline", "opencode": "OpenCode"}.get(metadata.read_game(current_game).get("harness", "pi"), "OpenCode")
 
 func _close_settings() -> void:
     _cancel_new_codex_session()

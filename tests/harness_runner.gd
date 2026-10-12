@@ -48,7 +48,7 @@ func run() -> void:
     for key in before:
         check(after.get(key) == before[key], "command-code preserves setting " + key)
     app._show_library()
-    check(app.harness_option.item_count == 4, "new games offer Pi, Command-code, OpenCode and Codex")
+    check(app.harness_option.item_count == 5, "new games offer Pi, Command-code, OpenCode, Codex and Cline")
     if app.harness_option.item_count >= 3:
         app.name_edit.text = "OpenCode fixture"
         app.harness_option.select(2)
@@ -94,6 +94,28 @@ func run() -> void:
         check(codex_after.auto_approve_reloads, "Codex host reload setting remains editable")
         app.metadata.save_global_settings(codex_before)
         app._show_library()
+    if app.harness_option.item_count >= 5:
+        app.name_edit.text = "Cline fixture"
+        app.harness_option.select(4)
+        app._create_game()
+        check(app.metadata.read_game(app.current_game).get("harness") == "cline", "Cline selection persists")
+        check(app.agent.get_script().resource_path.ends_with("cline_agent_controller.gd"), "Cline uses its own controller")
+        app._open_settings()
+        check(app.provider_option.disabled and not app.model_edit.editable and not app.key_edit.editable and app.reasoning_option.disabled, "Cline owns provider, model, credentials and reasoning")
+        check(not app.compaction_auto_spin.editable and not app.compaction_keep_spin.editable and app.compact_now_button.disabled, "Cline owns all compaction settings")
+        var cline_before = app.metadata.global_settings()
+        app.model_edit.text = "must not save"
+        app.compaction_auto_spin.value = 999
+        app.compaction_keep_spin.value = 999
+        app.auto_reload_check.button_pressed = true
+        app._save_settings()
+        var cline_after = app.metadata.global_settings()
+        for key in cline_before:
+            if key != "auto_approve_reloads":
+                check(cline_after.get(key) == cline_before[key], "Cline preserves setting " + key)
+        check(cline_after.auto_approve_reloads, "Cline host reload setting remains editable")
+        app.metadata.save_global_settings(cline_before)
+        app._show_library()
     app.name_edit.text = "Pi fixture"
     app.harness_option.select(0)
     app._create_game()
@@ -111,7 +133,7 @@ func run() -> void:
         file.store_string("keep")
         file.close()
         var session_markers: Array[String] = []
-        for harness in ["pi", "command-code", "opencode", "codex"]:
+        for harness in ["pi", "command-code", "opencode", "codex", "cline"]:
             var session_dir = app.metadata.game_meta_dir(name).path_join(harness)
             DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(session_dir))
             var session_path = session_dir.path_join("switch-preservation.txt")
@@ -119,7 +141,7 @@ func run() -> void:
             session_file.store_string("preserved native session")
             session_file.close()
             session_markers.append(session_path)
-        for pair in [[1, "command-code"], [2, "opencode"], [3, "codex"], [0, "pi"]]:
+        for pair in [[1, "command-code"], [2, "opencode"], [3, "codex"], [4, "cline"], [0, "pi"]]:
             app._open_settings()
             app.game_harness_option.select(pair[0])
             app._close_settings()

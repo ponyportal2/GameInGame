@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, or Codex when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, or Cline when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -46,3 +46,14 @@ Each game resumes its own native thread. If a thread cannot be resumed, retry or
 use Settings > This game > Start new Codex session and confirm. The previous
 session reference, readable chat and game files are kept. Restart GameSmith after
 updating the package.
+
+For Cline games:
+  npm install -g cline
+Sign in and select a model in Cline, then choose Cline for a new game or in
+Settings > This game > Coding harness. Cline owns provider/model/reasoning and
+compaction; GameSmith's testing and reload preferences remain available. Native
+ACP sessions persist per game and resume when reopening or switching back.
+Reload approval waits without a timer. Stop retains a healthy backend; stalled
+cancellation force-stops it after five seconds. A failed resume can be recovered
+with Settings > This game > Start new Cline session (confirmation preserves the
+old reference and chat). Restart GameSmith after updating this package.

@@ -18,22 +18,22 @@ import (
 )
 
 func TestEitherHarnessAvailable(t *testing.T) {
-	for _, available := range []string{"pi", "command-code", "opencode", "codex"} {
+	for _, available := range []string{"pi", "command-code", "opencode", "codex", "cline"} {
 		lookup := func(name string) (string, error) {
 			if name == available {
 				return name, nil
 			}
 			return "", errors.New("missing")
 		}
-		if !hasAgentHarness("", "", "", "", lookup) {
+		if !hasAgentHarness("", "", "", "", "", lookup) {
 			t.Fatalf("%s should allow startup without a missing-harness warning", available)
 		}
 	}
 	missing := func(string) (string, error) { return "", errors.New("missing") }
-	if hasAgentHarness("", "", "", "", missing) {
+	if hasAgentHarness("", "", "", "", "", missing) {
 		t.Fatal("all missing should show a warning")
 	}
-	if !hasAgentHarness("", "", "", "custom-codex", func(name string) (string, error) {
+	if !hasAgentHarness("", "", "", "custom-codex", "", func(name string) (string, error) {
 		if name == "custom-codex" {
 			return name, nil
 		}
@@ -45,8 +45,11 @@ func TestEitherHarnessAvailable(t *testing.T) {
 	if err := os.WriteFile(fixture, []byte("// fixture"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !hasAgentHarness("", "", "", fixture, missing) {
+	if !hasAgentHarness("", "", "", fixture, "", missing) {
 		t.Fatal("Codex JS entry point outside PATH should allow startup")
+	}
+	if !hasAgentHarness("", "", "", "", fixture, missing) {
+		t.Fatal("explicit Cline entry point outside PATH should allow startup")
 	}
 }
 

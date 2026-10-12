@@ -64,8 +64,8 @@ func main() {
 	if _, err := exec.LookPath("git.exe"); err != nil {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
-	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), os.Getenv("GAMESMITH_CODEX_BIN"), exec.LookPath) {
-		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, or Codex to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\n\nThen restart GameSmith and choose the installed harness when creating a game.")
+	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), os.Getenv("GAMESMITH_CODEX_BIN"), os.Getenv("GAMESMITH_CLINE_BIN"), exec.LookPath) {
+		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, or Cline to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\n\nThen restart GameSmith and choose the installed harness when creating a game.")
 	}
 
 	args := append([]string{"--main-pack", packPath}, os.Args[1:]...)
@@ -77,11 +77,11 @@ func main() {
 	}
 }
 
-func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexConfigured string, lookPath func(string) (string, error)) bool {
+func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexConfigured, clineConfigured string, lookPath func(string) (string, error)) bool {
 	if _, err := resolvePiExecutable(piConfigured, lookPath); err == nil {
 		return true
 	}
-	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}, {codexConfigured, "codex"}} {
+	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}, {codexConfigured, "codex"}, {clineConfigured, "cline"}} {
 		command := strings.TrimSpace(harness.configured)
 		if command == "" {
 			command = harness.fallback
