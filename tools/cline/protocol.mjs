@@ -1,6 +1,7 @@
 import {readFileSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {homedir} from 'node:os';
+import {isDeepStrictEqual} from 'node:util';
 import {toolSpecs} from './workspace-tools.mjs';
 
 export function nativeSettings(env=process.env) {
@@ -15,9 +16,43 @@ export function nativeSettings(env=process.env) {
     thinking:settings.reasoning?.enabled ? settings.reasoning.effort || 'medium' : 'none'};
 }
 const allowed=new Set(toolSpecs().map(t=>t.name.replace('gamesmith_','gamesmith__')));
-export function permissionResult(params,active) {
-  const name=(params.toolCall?.title || '').split(':')[0];
-  const kind=active && allowed.has(name) ? 'allow_once' : 'reject_once';
+function callName(call) {
+  // Cline 3.0.70 omits ACP's optional name. Its native translator uses
+  // buildToolTitle(toolName, input) and maps MCP tools to kind=other.
+  // Never override a supplied programmatic identity with a display title.
+  return call.name ?? (call.title || '').split(':')[0];
+}
+export class PermissionCalls {
+  constructor(seen=new Set()){this.seen=seen;this.calls=new Map();}
+  update(update={}) {
+    if(!['tool_call','tool_call_update'].includes(update.sessionUpdate) || typeof update.toolCallId!=='string' || !update.toolCallId || update.toolCallId==='unknown')return;
+    const id=update.toolCallId,previous=this.calls.get(id);
+    if(previous){
+      // Identity/input changes invalidate a pending call, rather than replacing
+      // its authority. Normal status-only progress updates remain supported.
+      for(const key of ['name','kind','rawInput'])if(update[key]!=null && !isDeepStrictEqual(update[key],previous[key]))previous.invalid=true;
+      if(previous.name==null && update.title!=null && callName(update)!==callName(previous))previous.invalid=true;
+      if(update.status!=null){previous.status=update.status;if(update.status!=='pending')previous.invalid=true;}
+      return;
+    }
+    if(this.seen.has(id))return;
+    this.seen.add(id);
+    this.calls.set(id,{...update,invalid:update.status!=='pending'});
+  }
+  take(call={}) {
+    if(!call || typeof call.toolCallId!=='string')return;
+    const known=this.calls.get(call.toolCallId);
+    if(!known || known.used)return;
+    known.used=true; // Reserve before an asynchronous human reload approval.
+    if(known.invalid || known.status!=='pending' || known.kind!=='other' || !allowed.has(callName(known)))return;
+    for(const key of ['name','kind','rawInput'])if(call[key]!=null && !isDeepStrictEqual(call[key],known[key]))return;
+    if(call.status!=null && call.status!=='pending')return;
+    if(known.name==null && callName(call)!==callName(known))return;
+    return callName(known);
+  }
+}
+export function permissionResult(params,permitted) {
+  const kind=permitted ? 'allow_once' : 'reject_once';
   const option=params.options?.find(o=>o.kind===kind);
   return {outcome:option ? {outcome:'selected',optionId:option.optionId} : {outcome:'cancelled'}};
 }

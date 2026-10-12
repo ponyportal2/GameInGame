@@ -6,9 +6,13 @@ const session='cline-fixture-session',pending=new Map();let serial=0,active,canc
 function clientRequest(method,params){const id='client-'+ ++serial;const promise=new Promise(resolve=>pending.set(id,resolve));emit({id,method,params});return promise;}
 function update(u){emit({method:'session/update',params:{sessionId:session,update:u}});}
 async function tool(name,args={}) {
-  const permission=await clientRequest('session/request_permission',{sessionId:session,toolCall:{toolCallId:'tool-'+serial,title:'gamesmith__'+name},options:[{optionId:'yes',kind:'allow_once'},{optionId:'no',kind:'reject_once'}]});
+  const toolCall={toolCallId:'tool-'+serial,title:'gamesmith__'+name,kind:'other',status:'pending',rawInput:args};
+  update({sessionUpdate:'tool_call',...toolCall});
+  update({sessionUpdate:'tool_call_update',...toolCall});
+  const permission=await clientRequest('session/request_permission',{sessionId:session,toolCall,options:[{optionId:'yes',kind:'allow_once'},{optionId:'no',kind:'reject_once'}]});
   if(permission.outcome.optionId!=='yes')throw new Error('Permission was denied');
   const result=await mcp.request('tools/call',{name,arguments:args});
+  update({sessionUpdate:'tool_call_update',toolCallId:toolCall.toolCallId,status:result.isError?'failed':'completed'});
   if(result.isError)throw new Error(result.content[0].text);
   const data=JSON.parse(result.content[0].text);if(data.ok===false)throw new Error(data.error);return data;
 }
@@ -30,6 +34,14 @@ async function run(r){
     if(message==='policy'){
       const denied=await clientRequest('session/request_permission',{sessionId:session,toolCall:{title:'execute_command: echo bad'},options:[{optionId:'yes',kind:'allow_once'},{optionId:'no',kind:'reject_once'}]});
       if(denied.outcome.optionId!=='no')throw new Error('Native shell was allowed');
+      for(const [index,extra] of [{},{name:'run_commands'},{kind:'execute'}].entries()){
+        const toolCall={toolCallId:'spoof-'+serial+'-'+index,title:'gamesmith__write',kind:'other',status:'pending',rawInput:{},...extra};
+        if(index)update({sessionUpdate:'tool_call',...toolCall});
+        const denied=await clientRequest('session/request_permission',{sessionId:session,toolCall,options:[{optionId:'yes',kind:'allow_once'},{optionId:'no',kind:'reject_once'}]});
+        if(denied.outcome.optionId!=='no')throw new Error('Spoofed MCP permission was allowed');
+      }
+      const reload=await clientRequest('session/request_permission',{sessionId:session,toolCall:{toolCallId:'unannounced-reload',title:'gamesmith__reload_game',kind:'other',status:'pending',rawInput:{}},options:[{optionId:'yes',kind:'allow_once'},{optionId:'no',kind:'reject_once'}]});
+      if(reload.outcome.optionId!=='no')throw new Error('Unannounced reload reached approval');
       const result=await mcp.request('tools/call',{name:'write',arguments:{path:'../outside.txt',content:'bad'}});if(!result.isError)throw new Error('Workspace escape accepted');
     }
     if(message==='reload' || message==='test'){

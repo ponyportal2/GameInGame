@@ -2,11 +2,12 @@ import {readFileSync,writeFileSync,renameSync} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {ClineServer} from './server.mjs';
-import {permissionResult,normalizeUpdate} from './protocol.mjs';
+import {permissionResult,normalizeUpdate,PermissionCalls} from './protocol.mjs';
 import {authorizeReload} from './approval.mjs';
 const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const emit=r=>process.stdout.write(JSON.stringify(r)+'\n');
 let session=config.session || '',sessionSaved=!!session,active,initializing,cancelling=false,stopping=false;
+const seenCalls=new Set();
 function saveSession(){
   if(sessionSaved)return;
   writeFileSync(config.session_file+'.tmp',JSON.stringify({session}));renameSync(config.session_file+'.tmp',config.session_file);sessionSaved=true;
@@ -16,13 +17,15 @@ const server=new ClineServer(config,{
   onStderr:line=>process.stderr.write(line+'\n'),
   onEvent:(method,p)=>{
     if(method!=='session/update' || !active || !active.accepted || active.cancelled || p.sessionId!==session)return;
+    active.calls.update(p.update);
     for(const r of normalizeUpdate(p.update)){saveSession();if(r.type==='delta' && r.kind==='assistant')active.text+=r.text;emit(r);}
   },
   onRequest:async(method,p)=>{
     if(method==='session/request_permission'){
       const operation=active,valid=!!operation?.accepted && !operation.cancelled && p.sessionId===session;
-      let permitted=valid;
-      if(valid && (p.toolCall?.title || '').split(':')[0]==='gamesmith__reload_game'){
+      const name=valid ? operation.calls.take(p.toolCall) : undefined;
+      let permitted=!!name;
+      if(name==='gamesmith__reload_game'){
         try{await authorizeReload(config,operation.abort.signal);}catch{permitted=false;}
       }
       return permissionResult(p,permitted && active===operation && !operation?.cancelled);
@@ -80,6 +83,6 @@ createInterface({input:process.stdin}).on('line',line=>{
   let r;try{r=JSON.parse(line);}catch{return;}
   if(r.type==='cancel'){void cancel(r);return;}
   if(r.type!=='prompt' || active || cancelling || stopping){emit({type:'response',id:r.id,success:false,error:'Cline is busy or command is unsupported.'});return;}
-  const operation={request:r,text:'',abort:new AbortController()};operation.done=new Promise(resolve=>operation.finish=resolve);active=operation;void prompt(r,operation);
+  const operation={request:r,text:'',abort:new AbortController(),calls:new PermissionCalls(seenCalls)};operation.done=new Promise(resolve=>operation.finish=resolve);active=operation;void prompt(r,operation);
 });
 process.stdin.on('end',()=>{stopping=true;server.close();process.exit();});
