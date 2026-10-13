@@ -3,10 +3,11 @@ name: Bridge claim TDD
 on:
   push:
     branches: ['debug/bridge-claim-tdd-20261013']
+    paths: ['.github/workflows/verify-windows.yml']
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regression:
@@ -19,5 +20,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
+      - name: Apply base bridge claim fix in checkout
+        shell: pwsh
+        run: |
+          $path = 'src/agent/pi_agent_controller.gd'
+          $text = [IO.File]::ReadAllText($path)
+          $old = "        var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))`n        DirAccess.remove_absolute(path)`n        if typeof(parsed) != TYPE_DICTIONARY:"
+          $new = "        var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))`n        if DirAccess.remove_absolute(path) != OK:`n            continue`n        if typeof(parsed) != TYPE_DICTIONARY:"
+          if (-not $text.Contains($old)) { throw 'Expected bridge claim source block was not found.' }
+          [IO.File]::WriteAllText($path, $text.Replace($old, $new), [Text.UTF8Encoding]::new($false))
       - name: Run locked bridge request regression
         run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe bridge_claim_runner.gd
+      - name: Commit verified base fix to debug branch
+        shell: pwsh
+        run: |
+          git config user.name 'GameSmith Debug'
+          git config user.email 'gamesmith-debug@users.noreply.github.com'
+          git add src/agent/pi_agent_controller.gd
+          git commit -m 'fix: claim host bridge requests before processing'
+          git push origin HEAD:debug/bridge-claim-tdd-20261013
