@@ -3,37 +3,32 @@ extends "res://src/agent/opencode_agent_controller.gd"
 var reload_grant := ""
 var reload_grant_operation := -1
 
-func _service_host_bridge() -> void:
+func _dispatch_host_request(request: Dictionary, directory: String) -> void:
     if not _uses_reload_grants():
-        super._service_host_bridge()
+        super._dispatch_host_request(request, directory)
         return
-    if bridge_dir != "":
-        for file in DirAccess.get_files_at(bridge_dir):
-            if not file.begins_with("request-") or not file.ends_with(".json"): continue
-            var path = bridge_dir.path_join(file)
-            var request = JsonStore.read_dict(path, {})
-            var command = str(request.get("command", ""))
-            if command == "authorize_reload":
-                DirAccess.remove_absolute(path)
-                if not busy or cancelling or not pending_reload.is_empty():
-                    _write_host_response(bridge_dir, request, {"ok": false, "error": "Reload approval is unavailable."})
-                    continue
-                pending_reload = {"request": request, "bridge_dir": bridge_dir, "operation_id": operation_id}
-                if bool(metadata.global_settings().get("auto_approve_reloads", false)):
-                    approve_reload()
-                else:
-                    status_changed.emit("Waiting for reload approval")
-                    reload_approval_changed.emit(true)
-            elif command == "reload_game":
-                DirAccess.remove_absolute(path)
-                var token = str(request.get("args", {}).get("approval_token", ""))
-                var result: Dictionary = {"ok": false, "error": "Reload requires a current, single-use ACP approval."}
-                if busy and not cancelling and token != "" and token == reload_grant and reload_grant_operation == operation_id:
-                    reload_grant = ""
-                    status_changed.emit("Reloading game...")
-                    result = tools.execute("reload_game", {})
-                _write_host_response(bridge_dir, request, result)
-    super._service_host_bridge()
+    var command = str(request.get("command", ""))
+    if command == "authorize_reload":
+        if not busy or cancelling or not pending_reload.is_empty():
+            _write_host_response(directory, request, {"ok": false, "error": "Reload approval is unavailable."})
+            return
+        pending_reload = {"request": request, "bridge_dir": directory, "operation_id": operation_id}
+        if bool(metadata.global_settings().get("auto_approve_reloads", false)):
+            approve_reload()
+        else:
+            status_changed.emit("Waiting for reload approval")
+            reload_approval_changed.emit(true)
+        return
+    if command == "reload_game":
+        var token = str(request.get("args", {}).get("approval_token", ""))
+        var result: Dictionary = {"ok": false, "error": "Reload requires a current, single-use ACP approval."}
+        if busy and not cancelling and token != "" and token == reload_grant and reload_grant_operation == operation_id:
+            reload_grant = ""
+            status_changed.emit("Reloading game...")
+            result = tools.execute("reload_game", {})
+        _write_host_response(directory, request, result)
+        return
+    super._dispatch_host_request(request, directory)
 
 func _uses_reload_grants() -> bool:
     return true
