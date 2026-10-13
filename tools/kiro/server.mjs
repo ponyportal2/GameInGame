@@ -49,7 +49,7 @@ export class KiroServer {
     }catch(error){this.close();throw error;}
   }
   sessionParams(){return {cwd:this.cwd,mcpServers:[]};}
-  nativeSessionFile(session){if(!/^[a-zA-Z0-9_-]+$/.test(session))throw new Error('Invalid Kiro session ID.');return join(homedir(),'.kiro','sessions','cli',session+'.json');}
+  nativeSessionFile(session){if(!/^[a-zA-Z0-9_-]+$/.test(session))throw new Error('Invalid Kiro session ID.');return join(process.env.KIRO_HOME || join(homedir(),'.kiro'),'sessions','cli',session+'.json');}
   send(record){if(this.child?.stdin.writable)this.child.stdin.write(JSON.stringify({jsonrpc:'2.0',...record})+'\n');}
   request(method,params={}){
     if(this.closing || !this.child || this.child.exitCode!==null)return Promise.reject(new Error('Kiro ACP is unavailable.'));

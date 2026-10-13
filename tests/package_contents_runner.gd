@@ -51,7 +51,8 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing Kimi " + module)
             quit(1)
             return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "workspace-tools.mjs", "workspace-paths.mjs", "host-tools.mjs", "process-tree.mjs"]:
+    # Kiro support implementations are copied from the shared sources checked above.
+    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "workspace-tools.mjs", "process-tree.mjs"]:
         if not FileAccess.file_exists("res://tools/kiro/" + module):
             push_error("FAIL: exported GameSmith.pck is missing Kiro " + module)
             quit(1)

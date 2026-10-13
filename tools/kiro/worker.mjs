@@ -54,7 +54,7 @@ async function prompt(request,operation){
   try {
     await ready();if(operation.cancelled)return;
     operation.accepted=true;state(true);emit({type:'response',id:request.id,success:true});
-    operation.prompt=server.request('session/prompt',{sessionId:session,prompt:[{type:'text',text:readFileSync(config.prompt_path,'utf8')+'\n\nPlayer request:\n'+request.message}]});
+    operation.prompt=server.request('session/prompt',{sessionId:session,prompt:[{type:'text',text:request.message}]});
     const result=await operation.prompt;
     saveSession();
     if(!operation.cancelled)emit({type:'complete',ok:result.stopReason==='end_turn',text:operation.text,error:result.stopReason==='end_turn' ? '' : 'Kiro stopped: '+result.stopReason});
