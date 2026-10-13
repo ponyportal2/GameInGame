@@ -14,7 +14,13 @@ func _service_host_bridge() -> void:
             var request = JsonStore.read_dict(path, {})
             var command = str(request.get("command", ""))
             if command == "authorize_reload":
-                DirAccess.remove_absolute(path)
+                # On Windows, another process (including antivirus/indexing) can
+                # briefly keep a just-written request open without delete sharing.
+                # Do not act until this controller has removed it from the live
+                # request namespace; otherwise the superclass can process the same
+                # request and race a second response.
+                if DirAccess.remove_absolute(path) != OK:
+                    return
                 if not busy or cancelling or not pending_reload.is_empty():
                     _write_host_response(bridge_dir, request, {"ok": false, "error": "Reload approval is unavailable."})
                     continue
@@ -25,7 +31,8 @@ func _service_host_bridge() -> void:
                     status_changed.emit("Waiting for reload approval")
                     reload_approval_changed.emit(true)
             elif command == "reload_game":
-                DirAccess.remove_absolute(path)
+                if DirAccess.remove_absolute(path) != OK:
+                    return
                 var token = str(request.get("args", {}).get("approval_token", ""))
                 var result: Dictionary = {"ok": false, "error": "Reload requires a current, single-use ACP approval."}
                 if busy and not cancelling and token != "" and token == reload_grant and reload_grant_operation == operation_id:
