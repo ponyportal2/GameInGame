@@ -19,5 +19,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
-      - name: Run locked bridge request regression
-        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe bridge_claim_runner.gd
+      - name: Run bridge, Cline and Cursor lifecycle regressions
+        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe bridge_claim_runner.gd cline_lifecycle_runner.gd cursor_lifecycle_runner.gd
