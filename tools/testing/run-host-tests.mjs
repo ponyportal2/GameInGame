@@ -13,6 +13,12 @@ const env = { ...process.env, APPDATA: data, HOME: data, XDG_DATA_HOME: join(dat
 // Live Copilot acceptance isolates Godot data while preserving native login,
 // selected model and session storage. No credential contents are copied/read.
 if (requestedScripts.includes("copilot_integration_runner.gd")) env.COPILOT_HOME = process.env.COPILOT_HOME || join(homedir(), ".copilot");
+// Preserve native Crush configuration without copying any credential contents.
+if (requestedScripts.includes("crush_integration_runner.gd")) {
+  env.CRUSH_GLOBAL_CONFIG = process.env.CRUSH_GLOBAL_CONFIG || join(homedir(), ".config", "crush");
+  env.CRUSH_GLOBAL_DATA = process.env.CRUSH_GLOBAL_DATA || join(process.env.XDG_DATA_HOME || (process.platform === "win32" ? process.env.LOCALAPPDATA : join(homedir(), ".local", "share")), "crush");
+  env.CRUSH_CACHE_DIR = process.env.CRUSH_CACHE_DIR || join(process.env.XDG_CACHE_HOME || (process.platform === "win32" ? process.env.LOCALAPPDATA : join(homedir(), ".cache")), "crush", ...(process.platform === "win32" && !process.env.XDG_CACHE_HOME ? ["cache"] : []));
+}
 console.log(`Test data: ${data}`);
 // Fresh checkouts have no global script-class cache until the editor imports them.
 const bootstrap = spawnSync(resolve(godot), ["--headless", "--path", root,
@@ -20,7 +26,7 @@ const bootstrap = spawnSync(resolve(godot), ["--headless", "--path", root,
 { env, windowsHide: true, stdio: "inherit" });
 if (bootstrap.error) throw bootstrap.error;
 if (bootstrap.status !== 0) process.exit(bootstrap.status ?? 1);
-const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd", "test_process_runner.gd", "chat_test_process_runner.gd", "bridge_claim_runner.gd", "maintenance_runner.gd", "ui_layout_runner.gd", "library_actions_runner.gd", "reload_settings_runner.gd", "harness_runner.gd", "review_ownership_runner.gd", "review_stop_runner.gd", "command_code_lifecycle_runner.gd", "command_code_compaction_runner.gd", "opencode_lifecycle_runner.gd", "codex_lifecycle_runner.gd", "cline_lifecycle_runner.gd", "cursor_lifecycle_runner.gd", "grok_build_lifecycle_runner.gd", "agy_lifecycle_runner.gd", "kimi_lifecycle_runner.gd", "kiro_lifecycle_runner.gd", "kilo_lifecycle_runner.gd", "copilot_lifecycle_runner.gd", "kilo_stop_runner.gd", "agent_shutdown_runner.gd"];
+const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd", "test_process_runner.gd", "chat_test_process_runner.gd", "bridge_claim_runner.gd", "maintenance_runner.gd", "ui_layout_runner.gd", "library_actions_runner.gd", "reload_settings_runner.gd", "harness_runner.gd", "review_ownership_runner.gd", "review_stop_runner.gd", "command_code_lifecycle_runner.gd", "command_code_compaction_runner.gd", "opencode_lifecycle_runner.gd", "codex_lifecycle_runner.gd", "cline_lifecycle_runner.gd", "cursor_lifecycle_runner.gd", "grok_build_lifecycle_runner.gd", "agy_lifecycle_runner.gd", "kimi_lifecycle_runner.gd", "kiro_lifecycle_runner.gd", "kilo_lifecycle_runner.gd", "copilot_lifecycle_runner.gd", "crush_lifecycle_runner.gd", "kilo_stop_runner.gd", "agent_shutdown_runner.gd"];
 for (const [index, script] of scripts.entries()) {
   const result = spawnSync(resolve(godot), ["--headless", "--path", root,
     "--log-file", join(data, `engine-${index}.log`), "--script", `res://tests/${script}`],
