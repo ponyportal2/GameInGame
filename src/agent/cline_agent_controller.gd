@@ -42,7 +42,7 @@ func approve_reload() -> void:
     reload_grant = str(pending.request.get("args", {}).get("token", ""))
     reload_grant_operation = operation_id
     _write_host_response(bridge_dir, pending.request, {"ok": true})
-    status_changed.emit("Cline is working...")
+    status_changed.emit(_harness_name() + " is working...")
 
 func cancel() -> void:
     reload_grant = ""
@@ -65,15 +65,15 @@ func _fail(message: String) -> void:
     super._fail(message)
 
 func start_new_session() -> Dictionary:
-    if busy: return {"ok": false, "error": "Stop Cline before starting a new session."}
+    if busy: return {"ok": false, "error": "Stop " + _harness_name() + " before starting a new session."}
     if not acquire_editor(): return {"ok": false, "error": last_error}
-    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join("cline"))
+    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join(_harness_name().to_lower()))
     var session_file = directory.path_join("session.json")
     var archive = ""
     if FileAccess.file_exists(session_file):
         archive = directory.path_join("session.previous-%d-%d.json" % [Time.get_unix_time_from_system(), Time.get_ticks_usec()])
         if DirAccess.rename_absolute(session_file, archive) != OK:
-            return {"ok": false, "error": "Could not preserve the previous Cline session reference. No session was reset."}
+            return {"ok": false, "error": "Could not preserve the previous " + _harness_name() + " session reference. No session was reset."}
     restart_runtime()
     return {"ok": true, "archive": archive}
 
@@ -84,39 +84,46 @@ func _start_command_runtime() -> Dictionary:
     if rpc != null:
         rpc.retire()
         rpc = null
-    var directory = metadata.game_meta_dir(game_name).path_join("cline")
+    var directory = metadata.game_meta_dir(game_name).path_join(_harness_name().to_lower())
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "approval.mjs"]:
-        if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/cline/" + file)):
-            return {"ok": false, "error": "Could not prepare Cline integration: " + file}
-    for pair in [["workspace-tools.mjs", "codex/tools.mjs"], ["workspace-paths.mjs", "pi/workspace-paths.mjs"], ["host-tools.mjs", "opencode/host-tools.mjs"], ["process-tree.mjs", "agent/process-tree.mjs"]]:
+    for pair in _native_modules() + [["workspace-tools.mjs", "codex/tools.mjs"], ["workspace-paths.mjs", "pi/workspace-paths.mjs"], ["host-tools.mjs", "opencode/host-tools.mjs"], ["process-tree.mjs", "agent/process-tree.mjs"]]:
         if not JsonStore.write_bytes_atomic(directory.path_join(pair[0]), FileAccess.get_file_as_bytes("res://tools/" + pair[1])):
-            return {"ok": false, "error": "Could not prepare Cline integration: " + pair[0]}
-    var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "gamesmith__read/edit/write/search/list").replace("Pi's", "Cline's").replace("Pi process", "Cline process")
-    prompt += "\nAll GameSmith tools are MCP tools named gamesmith__<command>, including gamesmith__start_test_game, gamesmith__reload_game, and gamesmith__git_commit. Use gamesmith__read with 1-based offset/limit, gamesmith__edit with path/old_text/new_text, gamesmith__write with path/content, gamesmith__search with a literal pattern, and gamesmith__list for files. Native shell, delegation and native filesystem tools are denied; use only the GameSmith tools. Model, reasoning and compaction are managed by your Cline configuration.\n"
-    prompt += "GameSmith file paths must be relative to the game workspace (for example main.gd), never absolute paths. For a headless startup check, read_test_log reporting state=running and load_result.ok=true means startup succeeded; latest_outcome=accepted also confirms acceptance. The test keeps running until you stop it: do not wait for it to finish by itself or repeatedly poll identical logs. Once your checks pass, call stop_test_game with its run_id, then reload_game for the player.\n"
+            return {"ok": false, "error": "Could not prepare " + _harness_name() + " integration: " + pair[0]}
+    var prompt = _native_prompt()
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
-        return {"ok": false, "error": "Could not write Cline game instructions."}
+        return {"ok": false, "error": "Could not write " + _harness_name() + " game instructions."}
     var session_file = absolute.path_join("session.json")
     var saved = JsonStore.read_dict(session_file, {})
     last_context_tokens = int(saved.context_tokens) if saved.get("context_tokens") != null else 0
     var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge,
         "worker": absolute.path_join("worker.mjs"), "mcp": absolute.path_join("mcp.mjs"), "prompt_path": absolute.path_join("prompt.md"),
-        "label": "Cline", "name": game_name, "context_tokens": saved.get("context_tokens"),
+        "label": _harness_name(), "name": game_name, "context_tokens": saved.get("context_tokens"),
         "session": saved.get("session", ""), "session_file": session_file,
         "config_path": absolute.path_join("runtime.json")}
     if not JsonStore.write_dict(config.config_path, config):
-        return {"ok": false, "error": "Could not write Cline runtime configuration."}
+        return {"ok": false, "error": "Could not write " + _harness_name() + " runtime configuration."}
     bridge_dir = bridge
     rpc = CommandSession.new()
     add_child(rpc)
     rpc.record_received.connect(_on_command_record)
-    rpc.stderr_line.connect(func(line): AppLoggerScript.game_event(game_name, "cline.stderr", line, "WARN"))
+    rpc.stderr_line.connect(func(line): AppLoggerScript.game_event(game_name, _harness_name().to_lower() + ".stderr", line, "WARN"))
     rpc.process_stopped.connect(func(message):
-        if last_error == "": last_error = message.replace("Pi", "Cline adapter"))
+        if last_error == "": last_error = message.replace("Pi", _harness_name() + " adapter"))
     return rpc.start(config)
 
 func compact_now() -> Dictionary:
-    return {"ok": false, "error": "Cline manages its own compaction."}
+    return {"ok": false, "error": _harness_name() + " manages its own compaction."}
+
+func _native_modules() -> Array:
+    var result: Array = []
+    for file in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "approval.mjs"]:
+        result.append([file, "cline/" + file])
+    return result
+
+func _native_prompt() -> String:
+    var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "gamesmith__read/edit/write/search/list").replace("Pi's", "Cline's").replace("Pi process", "Cline process")
+    prompt += "\nAll GameSmith tools are MCP tools named gamesmith__<command>, including gamesmith__start_test_game, gamesmith__reload_game, and gamesmith__git_commit. Use gamesmith__read with 1-based offset/limit, gamesmith__edit with path/old_text/new_text, gamesmith__write with path/content, gamesmith__search with a literal pattern, and gamesmith__list for files. Native shell, delegation and native filesystem tools are denied; use only the GameSmith tools. Model, reasoning and compaction are managed by your Cline configuration.\n"
+    prompt += "GameSmith file paths must be relative to the game workspace (for example main.gd), never absolute paths. For a headless startup check, read_test_log reporting state=running and load_result.ok=true means startup succeeded; latest_outcome=accepted also confirms acceptance. The test keeps running until you stop it: do not wait for it to finish by itself or repeatedly poll identical logs. Once your checks pass, call stop_test_game with its run_id, then reload_game for the player.\n"
+    return prompt

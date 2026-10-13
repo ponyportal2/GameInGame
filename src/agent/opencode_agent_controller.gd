@@ -24,7 +24,7 @@ func cancel() -> void:
     var result: Dictionary = {"success": false}
     if rpc != null and rpc.running:
         result = await rpc.command({"type": "cancel"})
-    if not result.get("success", false):
+    if not result.get("success", false) or _retire_after_cancel():
         restart_runtime()
     cancelling = false
     busy = false
@@ -89,3 +89,6 @@ func _maybe_auto_compact(_phase: String) -> void:
 
 func compact_now() -> Dictionary:
     return {"ok": false, "error": "OpenCode manages its own compaction."}
+
+func _retire_after_cancel() -> bool:
+    return false

@@ -1,8 +1,8 @@
 # GameSmith
 
-GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, or **Cline** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
+GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, **Cline**, or **Cursor** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
 
-For an existing game, open **Settings → This game → Coding harness**, choose Pi, Command-code, OpenCode, Codex, or Cline, then **Save**. Wait for the current request to finish or Stop it first. Switching closes the previous backend while preserving the running game, workspace, Git history, readable chat, and each harness's separate native session. Switching back resumes that harness's session; native agent histories are not merged. Reopen settings after switching to see the selected harness's provider/model/compaction controls.
+For an existing game, open **Settings → This game → Coding harness**, choose Pi, Command-code, OpenCode, Codex, Cline, or Cursor, then **Save**. Wait for the current request to finish or Stop it first. Switching closes the previous backend while preserving the running game, workspace, Git history, readable chat, and each harness's separate native session. Switching back resumes that harness's session; native agent histories are not merged. Reopen settings after switching to see the selected harness's provider/model/compaction controls.
 
 The integration/test target is `@earendil-works/pi-coding-agent@1.0.0`.
 
@@ -50,6 +50,16 @@ Initialization failures retire the backend so the next request can retry. Failed
 
 Cline regressions: `node --test tests/cline.test.mjs tests/cline-server.test.mjs`; UI, switching, ownership and deterministic lifecycle checks run in the default host suite. Live acceptance: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe cline_integration_runner.gd`. The host runner isolates HOME, so set `CLINE_PROVIDER_SETTINGS_PATH` to your normal Cline `data/settings/providers.json` first (and `CLINE_GLOBAL_SETTINGS_PATH` if needed). The test contacts your selected free model and checks real editing, headless testing, conversation/backend reuse, reopening, reload approval held for 65 seconds, and native Stop/resume.
 
+Cursor integration targets Cursor Agent CLI `2026.10.01-e373342`. Install the [Agent CLI](https://cursor.com/docs/cli/installation), sign in with `cursor-agent login`, and select your model in Cursor. The desktop app alone does not supply the CLI. Choose **Cursor** for a new game or in **Settings > This game > Coding harness**. GameSmith discovers the standard Windows `%LOCALAPPDATA%/cursor-agent` installation and uses its bundled Node runtime; `GAMESMITH_CURSOR_BIN` can select an installed shim, executable or JavaScript entry point. It does not mistake an unrelated `agent` executable for Cursor. Node.js remains required for the GameSmith adapter and MCP bridge.
+
+A persistent native ACP backend streams assistant and available thought/tool updates. Ordinary messages reuse that process and the explicit native session; reopening or switching back loads the saved reference in `cursor/session.json`. Cursor owns native history, caching, model/provider/reasoning and compaction; GameSmith disables its overrides and leaves Cursor's global settings intact. Host testing and automatic reload approval remain editable. ACP does not supply token usage here, so no context count is invented.
+
+GameSmith supplies its bounded workspace and game/Git tools through MCP. Permission must match a current, single-use call ID and the announced structured `rawInput.providerIdentifier`/`toolName`/arguments; display titles cannot authorize tools. Native filesystem/shell and external MCP access is denied by project permissions in a private host working directory, without editing the game's or your global Cursor configuration. Reload approval waits through ACP before the finite MCP call begins; the subsequent reload consumes an operation-bound host grant. This is cooperative agent policy, not a sandbox for generated GDScript.
+
+Stop cancels the native turn and retires the backend process tree, with a five-second fallback if cancellation stalls. The next message resumes the same conversation in a fresh backend. This clears Cursor's cancelled MCP execution queue; ordinary messages remain persistent. Readiness failures retire the backend for a clean retry. An unresumable reference is preserved with **Settings > This game > Start new Cursor session** recovery and confirmation/archive.
+
+Cursor regressions: `node --test tests/cursor.test.mjs tests/cursor-server.test.mjs`; lifecycle, switching and ownership run in the default host suite. Live acceptance: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe cursor_integration_runner.gd`. For this isolated Windows test, first set `$env:GAMESMITH_TEST_NATIVE_APPDATA = $env:APPDATA`, `$env:GAMESMITH_CURSOR_BIN = "$PWD/tools/testing/live-cursor.mjs"`, and `$env:CURSOR_CONFIG_DIR = "$env:USERPROFILE/.cursor"` so the native CLI can use its normal saved login while Godot's test data remains isolated. It checks editing/headless testing, streaming, process/history reuse, reopen, approval held for 65 seconds and Stop/resume, using the native selected model.
+
 ## Windows
 
 The repository root contains a self-contained **`GameSmith-Windows/`** folder:
@@ -72,7 +82,7 @@ Pi games expect a global `pi` executable. Install the pinned build with:
 npm install -g @earendil-works/pi-coding-agent@1.0.0
 ```
 
-On Windows, `GameSmith.exe` checks for Pi, Command-code, OpenCode, Codex, or Cline at startup, including their `GAMESMITH_*_BIN` overrides. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
+On Windows, `GameSmith.exe` checks for Pi, Command-code, OpenCode, Codex, Cline, or Cursor at startup, including their `GAMESMITH_*_BIN` overrides and Cursor's standard Windows installation. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
 
 For development on Linux:
 

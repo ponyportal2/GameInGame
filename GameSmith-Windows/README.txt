@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, or Cline when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, or Cursor when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -57,3 +57,17 @@ Reload approval waits without a timer. Stop retains a healthy backend; stalled
 cancellation force-stops it after five seconds. A failed resume can be recovered
 with Settings > This game > Start new Cline session (confirmation preserves the
 old reference and chat). Restart GameSmith after updating this package.
+
+For Cursor games:
+Install Cursor Agent CLI: https://cursor.com/docs/cli/installation
+The desktop app alone is insufficient. Sign in with cursor-agent login and
+configure your model in Cursor, then select Cursor in GameSmith. The standard
+Windows cursor-agent installation is detected without requiring PATH changes;
+GAMESMITH_CURSOR_BIN can select a custom entry point. Node.js is also required.
+Cursor owns model/provider/reasoning and compaction. GameSmith testing and reload
+preferences remain available. Ordinary messages reuse the native ACP backend;
+reopening or switching back resumes the saved native conversation. Stop retires
+the backend to clear cancelled MCP calls, then the next message resumes history.
+Reload approval waits without a timer. Failed resume recovery is available at
+Settings > This game > Start new Cursor session, preserving the old reference
+and readable chat. Restart GameSmith after updating this package.

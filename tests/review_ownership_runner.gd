@@ -15,7 +15,7 @@ func run() -> void:
     root.add_child(second)
     await process_frame
     second._open_game(name)
-    for choice in [1, 2, 3, 4, 0]:
+    for choice in [1, 2, 3, 4, 5, 0]:
         first._open_settings()
         first.game_harness_option.select(choice)
         first._save_settings()
@@ -23,16 +23,16 @@ func run() -> void:
     first.agent.busy = true
     first.agent.cancel()
     check(not second.game_edit_guard.acquire(), "Stop does not release ownership")
-    for harness in ["pi", "command-code", "opencode", "codex", "cline"]:
+    for harness in ["pi", "command-code", "opencode", "codex", "cline", "cursor"]:
         second.agent.free()
-        var script = {"pi":"pi", "command-code":"command_code", "opencode":"opencode", "codex":"codex", "cline":"cline"}[harness]
+        var script = {"pi":"pi", "command-code":"command_code", "opencode":"opencode", "codex":"codex", "cline":"cline", "cursor":"cursor"}[harness]
         second.agent = load("res://src/agent/" + script + "_agent_controller.gd").new()
         second.add_child(second.agent)
         second.agent.configure(name, second.tools)
         second.agent.send_player_request("Must not start")
         check(not second.agent.busy and second.agent.rpc == null, "second writer rejected for " + harness)
         check("another GameSmith" in second.agent.last_error, "ownership rejection explains " + harness)
-        if harness in ["codex", "cline"]:
+        if harness in ["codex", "cline", "cursor"]:
             check(not second.agent.start_new_session().get("ok", true), "other window cannot reset the " + harness + " session")
     second._open_settings()
     second.game_harness_option.select(2)
