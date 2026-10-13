@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  focused:
+  full-host:
     runs-on: windows-latest
-    timeout-minutes: 7
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,25 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
-      - name: Locked bridge request regression
-        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe bridge_claim_runner.gd
-      - name: Repeated Cline and Cursor initial reloads
-        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe native_reload_smoke_runner.gd
-      - name: Cline and Cursor adapter protocol tests
-        run: node --test tests/cline.test.mjs tests/cline-server.test.mjs tests/cursor.test.mjs tests/cursor-server.test.mjs
-
-  host-subset:
-    runs-on: windows-latest
-    timeout-minutes: 7
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.19.0'
-      - name: Production bridge and native lifecycle subset
-        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe test_process_runner.gd cline_lifecycle_runner.gd cursor_lifecycle_runner.gd agent_shutdown_runner.gd
+      - name: Uninterrupted complete host suite
+        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
 
   pi-v1:
     runs-on: windows-latest
