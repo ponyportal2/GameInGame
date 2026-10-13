@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
-import { appendFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
+import { appendFileSync } from 'node:fs';
 const emit=x=>process.stdout.write(JSON.stringify(x)+'\n');
 const session='codex-fixture-thread';let serial=0,turn,interrupted=false,initialized=false,ready=false;
 const pending=new Map();
@@ -44,8 +45,10 @@ async function run(message) {
 await writeFile('.codex-fixture-pids.json',JSON.stringify({cli:process.pid}));
 createInterface({input:process.stdin}).on('line',async line=>{
   const r=JSON.parse(line);
-  if(r.method) await appendFile('.codex-fixture-requests.jsonl',JSON.stringify(r)+'\n');
-  if(!r.method && pending.has(r.id)){await appendFile('.codex-fixture-results.jsonl',JSON.stringify(r)+'\n');pending.get(r.id)(r.result);pending.delete(r.id);return;}
+  // Async logging let later input overtake the initialized notification under
+  // suite load, fabricating a missing handshake in an otherwise valid client.
+  if(r.method) appendFileSync('.codex-fixture-requests.jsonl',JSON.stringify(r)+'\n');
+  if(!r.method && pending.has(r.id)){appendFileSync('.codex-fixture-results.jsonl',JSON.stringify(r)+'\n');pending.get(r.id)(r.result);pending.delete(r.id);return;}
   if(r.method==='initialized'){ready=true;return;}
   const reply=result=>emit({id:r.id,result});
   if(r.method===process.env.GAMESMITH_CODEX_FAIL_METHOD){emit({id:r.id,error:{code:-32000,message:'Fixture readiness failure: '+r.method}});return;}

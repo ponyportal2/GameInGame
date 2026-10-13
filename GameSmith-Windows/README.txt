@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, Kiro CLI, or Kilo when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, Kiro CLI, Kilo, or Copilot CLI when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -123,6 +123,17 @@ Messages reuse one native conversation; reopen, rename and Stop resume its exact
 ID. Reload waits for GameSmith approval unless automatic approval is enabled.
 Start new Kiro session in Settings archives the reference without deleting history.
 Host headless tests, reload approval and automatic reload approval remain available.
+
+For GitHub Copilot CLI games (tested with Copilot CLI 1.0.96, ACP preview):
+  npm install -g @github/copilot
+Sign in through Copilot and select Copilot CLI in GameSmith. Node.js is required.
+GAMESMITH_COPILOT_BIN selects an alternate executable or JavaScript entry point.
+Model, provider, reasoning, caching and compaction remain Copilot-owned.
+Messages reuse a persistent ACP backend and explicit per-game conversation.
+Reopen and Stop resume native history. Start new Copilot session in Settings
+asks for confirmation and archives the reference while keeping files/chat.
+Only GameSmith MCP tools can be invoked. Reload uses host approval or the
+player's auto-approve setting. Stop has a five-second forced process-tree fallback.
 
 For Kilo games (tested with Kilo CLI 7.8.8; other releases unverified):
   npm install -g @kilocode/cli@7.8.8

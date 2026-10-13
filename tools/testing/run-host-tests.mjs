@@ -1,6 +1,6 @@
 // Run host tests with isolated application data on Windows or Linux.
 import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -10,6 +10,9 @@ if (!godot) throw new Error("Usage: node tools/testing/run-host-tests.mjs <godot
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const data = mkdtempSync(join(tmpdir(), "gamesmith-tests-"));
 const env = { ...process.env, APPDATA: data, HOME: data, XDG_DATA_HOME: join(data, "data") };
+// Live Copilot acceptance isolates Godot data while preserving native login,
+// selected model and session storage. No credential contents are copied/read.
+if (requestedScripts.includes("copilot_integration_runner.gd")) env.COPILOT_HOME = process.env.COPILOT_HOME || join(homedir(), ".copilot");
 console.log(`Test data: ${data}`);
 // Fresh checkouts have no global script-class cache until the editor imports them.
 const bootstrap = spawnSync(resolve(godot), ["--headless", "--path", root,
@@ -17,7 +20,7 @@ const bootstrap = spawnSync(resolve(godot), ["--headless", "--path", root,
 { env, windowsHide: true, stdio: "inherit" });
 if (bootstrap.error) throw bootstrap.error;
 if (bootstrap.status !== 0) process.exit(bootstrap.status ?? 1);
-const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd", "test_process_runner.gd", "chat_test_process_runner.gd", "bridge_claim_runner.gd", "maintenance_runner.gd", "ui_layout_runner.gd", "library_actions_runner.gd", "reload_settings_runner.gd", "harness_runner.gd", "review_ownership_runner.gd", "review_stop_runner.gd", "command_code_lifecycle_runner.gd", "command_code_compaction_runner.gd", "opencode_lifecycle_runner.gd", "codex_lifecycle_runner.gd", "cline_lifecycle_runner.gd", "cursor_lifecycle_runner.gd", "grok_build_lifecycle_runner.gd", "agy_lifecycle_runner.gd", "kimi_lifecycle_runner.gd", "kiro_lifecycle_runner.gd", "kilo_lifecycle_runner.gd", "kilo_stop_runner.gd", "agent_shutdown_runner.gd"];
+const scripts = requestedScripts.length ? requestedScripts : ["test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd", "test_process_runner.gd", "chat_test_process_runner.gd", "bridge_claim_runner.gd", "maintenance_runner.gd", "ui_layout_runner.gd", "library_actions_runner.gd", "reload_settings_runner.gd", "harness_runner.gd", "review_ownership_runner.gd", "review_stop_runner.gd", "command_code_lifecycle_runner.gd", "command_code_compaction_runner.gd", "opencode_lifecycle_runner.gd", "codex_lifecycle_runner.gd", "cline_lifecycle_runner.gd", "cursor_lifecycle_runner.gd", "grok_build_lifecycle_runner.gd", "agy_lifecycle_runner.gd", "kimi_lifecycle_runner.gd", "kiro_lifecycle_runner.gd", "kilo_lifecycle_runner.gd", "copilot_lifecycle_runner.gd", "kilo_stop_runner.gd", "agent_shutdown_runner.gd"];
 for (const [index, script] of scripts.entries()) {
   const result = spawnSync(resolve(godot), ["--headless", "--path", root,
     "--log-file", join(data, `engine-${index}.log`), "--script", `res://tests/${script}`],
