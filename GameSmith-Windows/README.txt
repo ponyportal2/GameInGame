@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, or Grok Build when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, or AGY (experimental) when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -86,3 +86,18 @@ with a five-second fallback, and the next message resumes the same session.
 Reload waits for player approval. Start new Grok Build session in Settings
 archives an unresumable reference while keeping readable chat and game files.
 Restart GameSmith after updating the package.
+
+For AGY games (EXPERIMENTAL):
+Install/sign in to Antigravity CLI and select its model natively.
+Choose AGY (experimental) when creating a game or in Settings > This game.
+Discovery uses agy.exe at %LOCALAPPDATA%/agy/bin, agy on PATH, or GAMESMITH_AGY_BIN.
+Model/provider/reasoning and compaction remain native-owned.
+Ordinary requests reuse a stream-JSON process and explicit conversation ID.
+Stop kills its backend/MCP tree; reopen, switch back and the next message resume
+the saved conversation. Start new AGY session in Settings archives its reference.
+GameSmith MCP provides workspace, test, reload and Git tools. Reload waits for
+player approval unless automatic reload approval is enabled.
+Fixture tests and installed CLI startup/MCP discovery/explicit resume passed.
+Live model invocations returned "User location is not supported for the API use".
+No successful model/game acceptance or native tool-hook execution was verified.
+See README.md's experimental AGY section for the exact verification limits.

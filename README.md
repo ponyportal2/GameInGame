@@ -1,8 +1,8 @@
 # GameSmith
 
-GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, **Cline**, **Cursor**, or **Grok Build** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
+GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, **Cline**, **Cursor**, **Grok Build**, or **AGY (experimental)** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
 
-For an existing game, open **Settings → This game → Coding harness**, choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, or Grok Build, then **Save**. Wait for the current request to finish or Stop it first. Switching closes the previous backend while preserving the running game, workspace, Git history, readable chat, and each harness's separate native session. Switching back resumes that harness's session; native agent histories are not merged. Reopen settings after switching to see the selected harness's provider/model/compaction controls.
+For an existing game, open **Settings → This game → Coding harness**, choose an installed harness, then **Save**. Wait for the current request to finish or Stop it first. Switching closes the previous backend while preserving the running game, workspace, Git history, readable chat, and each harness's separate native session. Switching back resumes that harness's session; native agent histories are not merged. Reopen settings after switching to see the selected harness's provider/model/compaction controls.
 
 The integration/test target is `@earendil-works/pi-coding-agent@1.0.0`.
 
@@ -71,6 +71,16 @@ GameSmith supplies workspace/game/Git tools through MCP. Native tools are limite
 Grok Build regressions: `node --test tests/grok-build.test.mjs tests/grok-build-server.test.mjs`; `grok_build_lifecycle_runner.gd` runs in the default host suite. Live Windows acceptance: set `$env:GAMESMITH_TEST_NATIVE_USERPROFILE=$env:USERPROFILE`, `$env:GAMESMITH_GROK_BUILD_BIN="$PWD/tools/testing/live-grok-build.mjs"`, and `$env:GAMESMITH_TEST_GROK_BUILD_BIN="$env:USERPROFILE/.grok/bin/grok.exe"`, then run `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe grok_build_integration_runner.gd`. This uses the normal native login/model while keeping Godot test data isolated; it checks game tools, history/process reuse, reopen, delayed reload approval and Stop/resume.
 
 
+## AGY CLI — experimental
+
+AGY (Antigravity CLI) support targets installed CLI **1.3.4** and is **experimental**. Choose **AGY (experimental)** for a new game or under **Settings → This game → Coding harness**. Discovery uses `agy`, the standard Windows `%LOCALAPPDATA%/agy/bin/agy.exe`, or `GAMESMITH_AGY_BIN`. Sign in and select your model natively; GameSmith does not pass model, provider, reasoning or compaction overrides. Those settings are disabled for AGY games; host test/reload preferences remain available.
+
+The adapter uses native [persistent stream-JSON](https://antigravity.google/docs/cli/headless/) with one backend for ordinary turns and saves the explicit conversation ID in `agy/session.json`. Reopen, switching back, error recovery and Stop resume with `--conversation <id>`, never the globally most recent conversation. Streamed text is reconciled with the final native answer. Cumulative conversation token totals are not reported as current context size. Stream-JSON has no cancellation command, so Stop terminates the backend/MCP tree; the next message resumes the saved conversation. Failed resume keeps the reference and readable chat, with **Start new AGY session** confirmation/archive recovery in Settings.
+
+GameSmith prepares a private `.agents/agents/gamesmith.md` with its game instructions and MCP server, plus a [PreToolUse hook](https://antigravity.google/docs/hooks). The hook checks the current conversation, exact `call_mcp_tool` identity, `ServerName=gamesmith`, and a known `ToolName`; native filesystem/shell/browser/delegation and external MCP requests are denied by that policy. The MCP adapter separately rejects idle calls and enforces the shared workspace boundary. Reload waits for ordinary host approval (or the player's automatic approval preference). Global native configuration is not edited. **Actual native hook execution and model-driven MCP calls remain unverified** because inference is unavailable; this is not a claim of tested native tool isolation.
+
+Verification: deterministic Node and Godot fixtures cover streaming/final reconciliation, MCP edits/headless tests/reload approval, process reuse, explicit resume, ownership, reset, failures and Stop. Installed AGY successfully discovered the GameSmith MCP tools and resumed the same conversation ID, then returned `FAILED_PRECONDITION: User location is not supported for the API use` on both attempts. **No successful model invocation or live generated-game acceptance has been performed.** Run `node --test tests/agy.test.mjs tests/agy-server.test.mjs` and `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe agy_lifecycle_runner.gd` for fixture verification.
+
 ## Windows
 
 The repository root contains a self-contained **`GameSmith-Windows/`** folder:
@@ -93,7 +103,7 @@ Pi games expect a global `pi` executable. Install the pinned build with:
 npm install -g @earendil-works/pi-coding-agent@1.0.0
 ```
 
-On Windows, `GameSmith.exe` checks for Pi, Command-code, OpenCode, Codex, Cline, Cursor, or Grok Build at startup, including their `GAMESMITH_*_BIN` overrides and the standard Windows Cursor/Grok installations. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
+On Windows, `GameSmith.exe` checks for Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, or AGY at startup, including their `GAMESMITH_*_BIN` overrides and the standard Windows Cursor/Grok/AGY installations. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
 
 For development on Linux:
 

@@ -4,6 +4,9 @@ var reload_grant := ""
 var reload_grant_operation := -1
 
 func _service_host_bridge() -> void:
+    if not _uses_reload_grants():
+        super._service_host_bridge()
+        return
     if bridge_dir != "":
         for file in DirAccess.get_files_at(bridge_dir):
             if not file.begins_with("request-") or not file.ends_with(".json"): continue
@@ -31,6 +34,9 @@ func _service_host_bridge() -> void:
                     result = tools.execute("reload_game", {})
                 _write_host_response(bridge_dir, request, result)
     super._service_host_bridge()
+
+func _uses_reload_grants() -> bool:
+    return true
 
 func approve_reload() -> void:
     if pending_reload.get("request", {}).get("command") != "authorize_reload":

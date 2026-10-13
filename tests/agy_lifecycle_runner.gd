@@ -1,0 +1,91 @@
+extends SceneTree
+var failures := 0
+var app
+func _init() -> void: call_deferred("run")
+func check(value: bool, message: String) -> void:
+    print("PASS: " + message if value else "FAIL: " + message)
+    if not value: failures += 1
+func idle() -> void:
+    while app.agent.busy: await process_frame
+func run() -> void:
+    OS.set_environment("GAMESMITH_AGY_BIN", ProjectSettings.globalize_path("res://tools/testing/fake-agy.mjs"))
+    app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app.name_edit.text = "AGY lifecycle"
+    app.harness_option.select(7)
+    app._create_game()
+    app.agent.send_player_request("reload")
+    while app.agent.busy and app.agent.pending_reload.is_empty(): await process_frame
+    check(not app.agent.pending_reload.is_empty(), "AGY reload reaches player approval")
+    check(not app.runner.has_active_game(), "AGY approval waits before executing game code")
+    app.agent.approve_reload()
+    await idle()
+    check(app.agent.last_error == "" and app.runner.has_active_game(), "AGY approved MCP reload completes")
+    var directory = app.metadata.game_meta_dir(app.current_game).path_join("agy")
+    var backend = JsonStore.read_dict(directory.path_join("backend.json"), {})
+    var session_file = directory.path_join("session.json")
+    var session = JsonStore.read_dict(session_file, {}).get("session")
+    for message in ["test", "policy", "follow up"]:
+        app.agent.send_player_request(message)
+        await idle()
+        check(app.agent.last_error == "", "AGY GameSmith MCP turn completes: " + message)
+        check(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid") == backend.get("pid"), "AGY ordinary turns reuse native process")
+    check(app.agent.last_context_tokens == 0, "AGY cumulative session usage does not inflate context display")
+    app.agent.send_player_request("reload")
+    while app.agent.busy and app.agent.pending_reload.is_empty(): await process_frame
+    app.agent.cancel()
+    await idle()
+    check(app.agent.rpc == null and app.agent.pending_reload.is_empty(), "AGY Stop retires backend and pending approval")
+    app.agent.send_player_request("follow up")
+    await idle()
+    check(app.agent.last_error == "" and JsonStore.read_dict(session_file, {}).get("session") == session, "AGY Stop resumes explicit conversation")
+    check(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid") != backend.get("pid"), "AGY Stop replaces native process")
+    app.agent.send_player_request("provider-error")
+    await idle()
+    check("Fixture provider error" in app.agent.last_error and app.agent.rpc == null, "AGY model error settles request and retires runtime")
+    app.agent.send_player_request("follow up")
+    await idle()
+    check(app.agent.last_error == "", "AGY next request recovers after model failure")
+    app.agent.restart_runtime()
+    app.agent.send_player_request("follow up")
+    await idle()
+    check(app.agent.last_error == "" and JsonStore.read_dict(session_file, {}).get("session") == session, "AGY reopening resumes explicit conversation")
+    JsonStore.write_dict(session_file, {"session": "missing-native-session"})
+    app.agent.restart_runtime()
+    app.agent.send_player_request("follow up")
+    await idle()
+    check("start a new AGY session" in app.agent.last_error and JsonStore.read_dict(session_file, {}).get("session") == "missing-native-session", "AGY failed resume preserves reference and explains reset")
+    app._open_settings()
+    app._request_new_codex_session()
+    check(app.codex_session_dialog.visible and app.native_session_title.text == "Start a new AGY session?", "AGY reset asks for confirmation")
+    app._cancel_new_codex_session()
+    check(FileAccess.file_exists(session_file), "cancelled AGY reset preserves reference")
+    app._request_new_codex_session()
+    app._confirm_new_codex_session()
+    check(not FileAccess.file_exists(session_file), "confirmed AGY reset archives reference")
+    app.agent.send_player_request("follow up")
+    await idle()
+    check(app.agent.last_error == "", "AGY reset permits a fresh conversation")
+    var settings = app.metadata.global_settings()
+    settings.auto_approve_reloads = true
+    app.metadata.save_global_settings(settings)
+    app.agent.send_player_request("reload")
+    await idle()
+    check(app.agent.last_error == "" and app.agent.pending_reload.is_empty(), "AGY automatic reload approval works")
+    for flag in ["GAMESMITH_AGY_STUCK_START", "GAMESMITH_AGY_STUCK_TURN"]:
+        OS.set_environment(flag, "1")
+        app.agent.restart_runtime()
+        app.agent.send_player_request("wait")
+        await create_timer(0.5).timeout
+        var start = Time.get_ticks_msec()
+        app.agent.cancel()
+        await idle()
+        check(Time.get_ticks_msec() - start < 8000 and app.agent.rpc == null, "AGY Stop settles stuck stream: " + flag)
+        OS.unset_environment(flag)
+        app.agent.send_player_request("follow up")
+        await idle()
+        check(app.agent.last_error == "", "AGY resumes after stopping stuck stream")
+    app.queue_free()
+    await process_frame
+    quit(1 if failures else 0)

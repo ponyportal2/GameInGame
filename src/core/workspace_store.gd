@@ -26,7 +26,7 @@ func list_games() -> Array[String]:
     return names
 
 func create_game(raw_name: String, harness: String = "pi") -> Dictionary:
-    if harness not in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build"]:
+    if harness not in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy"]:
         return {"ok": false, "error": "Unknown coding harness: " + harness}
     ensure()
     var base = PathUtils.sanitize_game_name(raw_name)
