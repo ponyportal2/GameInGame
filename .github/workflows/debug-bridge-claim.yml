@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  bridge:
+  focused:
     runs-on: windows-latest
     timeout-minutes: 7
     steps:
@@ -29,3 +29,33 @@ jobs:
         run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe native_reload_smoke_runner.gd
       - name: Cline and Cursor adapter protocol tests
         run: node --test tests/cline.test.mjs tests/cline-server.test.mjs tests/cursor.test.mjs tests/cursor-server.test.mjs
+
+  host-subset:
+    runs-on: windows-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Production bridge and native lifecycle subset
+        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe test_process_runner.gd cline_lifecycle_runner.gd cursor_lifecycle_runner.gd agent_shutdown_runner.gd
+
+  pi-v1:
+    runs-on: windows-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Install supported Pi CLI
+        run: npm install -g @earendil-works/pi-coding-agent@1.0.0
+      - name: Real Pi against deterministic OpenAI-compatible v1 emulator
+        env:
+          GAMESMITH_PI_TEST_PART: '1'
+        run: node tools/testing/run-pi-e2e.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
