@@ -2,6 +2,7 @@ import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { join, relative, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { workspacePath } from './workspace-paths.mjs';
+import { POLICY_VERSION, TOOL_NAMES } from './policy.mjs';
 
 export async function callHost(command, args, signal) {
   const directory = process.env.GAMESMITH_HOST_BRIDGE_DIR;
@@ -46,20 +47,53 @@ export default async function (cmd) {
       return {ok:true,content:[{type:'text',text:JSON.stringify(result)}]};
     },
   });
-  const allowed = ['read_file','write_file','edit_file','grep','glob','read_directory',...Object.keys(tools)];
+  const allowed = TOOL_NAMES;
+  // 1.82.1 adds these discovery tools after constructing the mod registry.
+  // Register deny-only entries so setActiveTools also hides the injected schemas.
+  for (const name of ['search_tools', 'tool_search']) cmd.addTool({
+    schema:{name,description:'Unavailable inside GameSmith.',input_schema:{type:'object',properties:{},required:[]}},
+    readOnly:true,
+    run:async () => ({ok:false,error:'Tool discovery is unavailable inside GameSmith.'}),
+  });
   const activate = () => cmd.setActiveTools(cmd.getAllTools().filter(name => allowed.includes(name)));
   activate();
   cmd.hooks({
     appendSystemPrompt:() => prompt,
     onTurnStart:({state}) => { activate(); return state; },
-    beforeToolCall:async ({toolName,input}) => {
-      if (!allowed.includes(toolName)) return {block:true,additionalContext:'This tool is unavailable inside GameSmith.'};
+    beforeToolCall:async event => {
       try {
-        for (const key of ['file_path','path','from','to','target_directory']) if (typeof input[key] === 'string')
+        const {toolName,input} = event;
+        if (!allowed.includes(toolName)) return {block:true,additionalContext:'This tool is unavailable inside GameSmith.'};
+        if (!input || typeof input !== 'object' || Array.isArray(input))
+          return {block:true,additionalContext:'Invalid GameSmith tool input.'};
+        for (const key of ['absolute_path','file_path','path','from','to','target_directory']) if (typeof input[key] === 'string')
           await workspacePath(cmd.cwd,isAbsolute(input[key]) ? relative(cmd.cwd,input[key]) || '.' : input[key],{destructive:!['read_file','grep','glob','read_directory'].includes(toolName)});
         if (Array.isArray(input.paths)) for (const path of input.paths)
           await workspacePath(cmd.cwd,isAbsolute(path) ? relative(cmd.cwd,path) || '.' : path);
-      } catch (error) { return {block:true,additionalContext:String(error)}; }
+      } catch {
+        // Native 1.82.1 continues execution after an uncaught mod-hook error.
+        // Keep every guard operation inside this boundary, including decoding.
+        return {block:true,additionalContext:'GameSmith workspace validation failed; the tool was blocked.'};
+      }
     },
   });
+  if (process.env.GAMESMITH_COMMAND_ACP === 'v1') {
+    const nonce = process.env.GAMESMITH_POLICY_NONCE!;
+    const ready = async (phase, names = []) => {
+      const path = process.env.GAMESMITH_POLICY_READY!;
+      await writeFile(path + '.tmp', JSON.stringify({policy:'gamesmith',version:POLICY_VERSION,nonce,phase,tools:names}));
+      await rename(path + '.tmp', path);
+    };
+    cmd.addCommand({name:'gamesmith-ready-' + nonce,description:'Verify the private GameSmith integration without inference.',handler:async () => {
+      activate();
+      const names = cmd.getActiveTools();
+      if (names.length !== allowed.length || new Set(names).size !== allowed.length || names.some(name => !allowed.includes(name)))
+        throw new Error('Command-code did not install the exact GameSmith tool allowlist.');
+      await ready('session', names);
+      return {message:'GameSmith policy ready: ' + nonce};
+    }});
+    for (const type of ['compaction_start','compaction_outcome','mod_error'])
+      cmd.on(type,event => process.stdout.write(JSON.stringify({type:'gamesmith_policy',nonce,event}) + '\n'));
+    await ready('loaded');
+  }
 }

@@ -11,7 +11,7 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing " + module)
             quit(1)
             return
-    for module in ["worker.mjs", "protocol.mjs", "gamesmith.ts", "compaction.mjs", "compaction.ts"]:
+    for module in ["worker.mjs", "server.mjs", "policy.mjs", "gamesmith.ts", "process-tree.mjs"]:
         if not FileAccess.file_exists("res://tools/command-code/" + module):
             push_error("FAIL: exported GameSmith.pck is missing Command-code " + module)
             quit(1)

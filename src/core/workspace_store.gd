@@ -54,6 +54,8 @@ func rename_game(old_name: String, raw_new_name: String) -> Dictionary:
         return {"ok": true, "name": old_name}
     if str(JsonStore.read_dict(metadata.game_meta_dir(old_name).path_join("kilo/session.json"), {}).get("session", "")) != "":
         return {"ok": false, "error": "Kilo binds conversation history to the workspace path. Rename before starting a Kilo session; this game and its history have been kept at their original path."}
+    if str(JsonStore.read_dict(metadata.game_meta_dir(old_name).path_join("command-code/session.json"), {}).get("session", "")) != "":
+        return {"ok": false, "error": "Command-code ACP binds history to the workspace path. Start a new Command-code session in Settings before renaming; the previous session reference will be archived."}
     if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(game_path(new_name))):
         return {"ok": false, "error": "A game with that name already exists."}
     var err = DirAccess.rename_absolute(ProjectSettings.globalize_path(game_path(old_name)), ProjectSettings.globalize_path(game_path(new_name)))

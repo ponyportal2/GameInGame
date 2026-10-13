@@ -29,13 +29,20 @@ set the GAMESMITH_PI_BIN environment variable to the full Pi executable path (fo
 
 For Command-code games:
 
-  npm install -g command-code
+  npm install -g command-code@1.82.1
 
-Configure your model and provider in the command-code CLI. GameSmith leaves model,
-provider, reasoning, and compaction settings to Command-code and disables its own
-agent settings for those games. Rendered-test permission remains available.
-Node.js must be on PATH. For a custom installation, set GAMESMITH_COMMAND_CODE_BIN
-to the command-code.cmd shim or dist/index.mjs entry point. Existing games use Pi.
+Configure your model and provider in the Command-code CLI. GameSmith uses one
+persistent ACP backend and the native session for streaming turns and /compact.
+Model/provider/reasoning settings remain native-owned. GameSmith's compaction
+threshold, Compact now, rendered-test permission and reload approval remain available.
+Node.js must be on PATH. GAMESMITH_COMMAND_CODE_BIN accepts the npm shim or dist/index.mjs.
+Mod and session readiness are verified before inference (20-second startup deadline).
+Model requests have no general timeout. Stop preserves the explicit native session.
+Known 1.82.1 limitation: its system prompt still describes disabled native tools.
+Those tools are absent from callable schemas and remain blocked, but their descriptions
+may confuse the model. There is no supported option to suppress that catalog.
+Native history is workspace-bound: confirm Start new Command-code session in Settings
+before renaming. Reset archives its reference and keeps chat/game files.
 
 For OpenCode games:
 

@@ -1,44 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildArguments, normalizeFrame } from '../tools/command-code/protocol.mjs';
 import { mkdtemp, copyFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-test('uses native configuration and explicit per-game resume', () => {
-  const args = buildArguments({ mod: 'mod.ts', session: 'saved-id', name: 'game' }, 'hello');
-  assert.deepEqual(args.slice(-2), ['--session', 'saved-id']);
-  assert.ok(args.includes('--output-format'));
-  for (const flag of ['--model', '--effort', '--config', '--max-turns', '--continue']) assert.ok(!args.includes(flag));
-  assert.ok(args.includes('hello'));
-});
-test('streams text and thinking and ignores unfamiliar events', () => {
-  assert.deepEqual(normalizeFrame({type:'event',event:{type:'text_delta',delta:'hi'}}), [{type:'delta',kind:'assistant',text:'hi'}]);
-  assert.deepEqual(normalizeFrame({type:'event',event:{type:'thinking_delta',delta:'hmm'}}), [{type:'delta',kind:'thinking',text:'hmm'}]);
-  assert.deepEqual(normalizeFrame({type:'event',event:{type:'future'}}), []);
-});
-test('context accounting uses the latest request including cached input, never run totals', () => {
-  assert.deepEqual(normalizeFrame({type:'event',event:{type:'model_request_end',usage:{inputTokens:100,cacheReadTokens:200,cacheWriteTokens:50,outputTokens:20}}}), [{type:'context',tokens:370}]);
-  assert.deepEqual(normalizeFrame({type:'event',event:{type:'model_request_end',usage:{inputTokens:0,outputTokens:0}}}), []);
-  assert.equal(normalizeFrame({type:'result',subtype:'success',usage:{inputTokens:999999}}).some(r => r.type === 'context'),false);
-});
-test('completed and failed tools release stale running status for the next model call', () => {
-  for (const type of ['tool_completed','tool_errored','model_request_start']) {
-    assert.equal(normalizeFrame({type:'event',event:{type,toolName:'reload_game'}})[0]?.type, 'status');
-    assert.match(normalizeFrame({type:'event',event:{type,toolName:'reload_game'}})[0].text, /working/);
-  }
-});
-test('terminal errors and turn caps cannot masquerade as success', () => {
-  assert.equal(normalizeFrame({type:'result',subtype:'max_turns',sessionId:'a',finalText:'partial'})[0].ok, false);
-  assert.equal(normalizeFrame({type:'result',subtype:'error',error:'offline'})[0].error, 'offline');
-  assert.equal(normalizeFrame({type:'result',subtype:'success',stopReason:'permission_denied'})[0].ok, false);
-  assert.equal(normalizeFrame({type:'result',subtype:'success',stopReason:'end_turn',finalText:'done'})[0].ok, true);
-});
-
 test('mod exposes host tools and guards native absolute paths without taking over model policy', async () => {
   const dir = await mkdtemp(join(tmpdir(),'gamesmith-mod-test-'));
   await copyFile(new URL('../tools/command-code/gamesmith.ts',import.meta.url),join(dir,'gamesmith.ts'));
+  await copyFile(new URL('../tools/command-code/policy.mjs',import.meta.url),join(dir,'policy.mjs'));
   await copyFile(new URL('../tools/pi/workspace-paths.mjs',import.meta.url),join(dir,'workspace-paths.mjs'));
   const workspace = join(dir,'workspace');
   await mkdir(workspace);

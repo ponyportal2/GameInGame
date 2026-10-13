@@ -7,6 +7,7 @@ var result_corrected := false
 var result_received := false
 var result_text := ""
 var compaction_attempted_operation := -1
+var backend_pid := -1
 
 func send_player_request(text: String) -> void:
     if busy:
@@ -40,6 +41,7 @@ func send_player_request(text: String) -> void:
     if operation != operation_id:
         return
     if not accepted.get("success", false):
+        restart_after_finish = bool(accepted.get("initialization_failed", false))
         _fail(str(accepted.get("error", _harness_name() + " rejected the request.")))
         return
     while operation == operation_id and not result_received and rpc != null and rpc.running:
@@ -75,12 +77,14 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "protocol.mjs", "gamesmith.ts", "compaction.mjs", "compaction.ts"]:
+    for file in ["worker.mjs", "server.mjs", "policy.mjs", "gamesmith.ts"]:
         if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/command-code/" + file)):
             return {"ok": false, "error": "Could not prepare Command-code integration: " + file}
     if not JsonStore.write_bytes_atomic(directory.path_join("workspace-paths.mjs"), FileAccess.get_file_as_bytes("res://tools/pi/workspace-paths.mjs")):
         return {"ok": false, "error": "Could not prepare Command-code workspace policy."}
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
+    if not JsonStore.write_bytes_atomic(directory.path_join("process-tree.mjs"), FileAccess.get_file_as_bytes("res://tools/agent/process-tree.mjs")):
+        return {"ok": false, "error": "Could not prepare Command-code process cleanup."}
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write Command-code game instructions."}
     var session_file = absolute.path_join("session.json")
@@ -88,10 +92,10 @@ func _start_command_runtime() -> Dictionary:
     last_context_tokens = int(saved.context_tokens) if saved.get("context_tokens") != null else 0
     var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge,
         "mod": absolute.path_join("gamesmith.ts"), "worker": absolute.path_join("worker.mjs"),
-        "compaction_mod": absolute.path_join("compaction.ts"), "context_tokens": saved.get("context_tokens"),
+        "context_tokens": saved.get("context_tokens"),
         "prompt_path": absolute.path_join("prompt.md"), "name": game_name,
         "session_id": saved.get("session", ""),
-        "session": saved.get("path", saved.get("session", "")), "session_file": session_file,
+        "session_file": session_file,
         "config_path": absolute.path_join("runtime.json")}
     if not JsonStore.write_dict(config.config_path, config):
         return {"ok": false, "error": "Could not write Command-code runtime configuration."}
@@ -105,6 +109,8 @@ func _start_command_runtime() -> Dictionary:
 
 func _on_command_record(record: Dictionary) -> void:
     match str(record.get("type", "")):
+        "backend":
+            backend_pid = int(record.get("pid", -1))
         "delta":
             var kind = str(record.get("kind", "assistant"))
             if kind == "assistant":
@@ -121,6 +127,7 @@ func _on_command_record(record: Dictionary) -> void:
         "context":
             last_context_tokens = int(record.tokens) if record.get("tokens") != null else 0
         "complete":
+            restart_after_finish = bool(record.get("initialization_failed", false))
             result_corrected = bool(record.get("corrected", false))
             result_received = true
             result_text = str(record.get("text", ""))
@@ -177,3 +184,22 @@ func approve_reload() -> void:
 
 func _harness_name() -> String:
     return "Command-code"
+
+func _fail(message: String) -> void:
+    last_error = message
+    super._fail(message)
+
+func start_new_session() -> Dictionary:
+    if busy: return {"ok": false, "error": "Stop Command-code before starting a new session."}
+    if not acquire_editor(): return {"ok": false, "error": last_error}
+    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join("command-code"))
+    var session_file = directory.path_join("session.json")
+    var archive = ""
+    if FileAccess.file_exists(session_file):
+        archive = directory.path_join("session.previous-%d-%d.json" % [Time.get_unix_time_from_system(), Time.get_ticks_usec()])
+        if DirAccess.rename_absolute(session_file, archive) != OK:
+            return {"ok": false, "error": "Could not preserve the previous Command-code session reference. No session was reset."}
+    restart_runtime()
+    last_context_tokens = 0
+    backend_pid = -1
+    return {"ok": true, "archive": archive}
