@@ -90,6 +90,38 @@ func run() -> void:
     app.agent.send_player_request("repair-reload")
     await wait_idle()
     check(app.agent.last_error == "" and app.runner.active_game.get("repaired") == true, "failed reload diagnostics let Kilo repair, test and reload in the same request")
+    var game = app.current_game
+    app._show_library()
+    JsonStore.write_dict(session_file, {"session": "ses_missing"})
+    app._open_game(game)
+    app.agent.send_player_request("follow up")
+    await wait_idle()
+    check("Start a new Kilo session" in app.agent.last_error, "missing native Kilo session explains reset recovery")
+    check(app.agent.rpc == null or not app.agent.rpc.running, "failed Kilo initialization retires its adapter")
+    check(JsonStore.read_dict(session_file, {}).get("session") == "ses_missing", "failed resume preserves the saved reference")
+    app._open_settings()
+    check(app.codex_new_session_button.visible and "Kilo" in app.codex_new_session_button.text, "Kilo settings expose native session reset")
+    app._request_new_codex_session()
+    check(app.codex_session_dialog.visible, "Kilo reset asks for confirmation")
+    app._cancel_new_codex_session()
+    check(JsonStore.read_dict(session_file, {}).get("session") == "ses_missing", "cancelled Kilo reset preserves history reference")
+    app._request_new_codex_session()
+    app._confirm_new_codex_session()
+    check(not FileAccess.file_exists(session_file), "confirmed Kilo reset removes the active reference")
+    var archived = false
+    for file in DirAccess.get_files_at(ProjectSettings.globalize_path(session_file.get_base_dir())):
+        if file.begins_with("session.previous-"):
+            archived = JsonStore.read_dict(session_file.get_base_dir().path_join(file), {}).get("session") == "ses_missing"
+    check(archived, "confirmed Kilo reset archives the old reference")
+    app.rename_target = game
+    app.rename_edit.text = "Kilo lifecycle after reset"
+    app._rename_game()
+    check(app.current_game == "Kilo lifecycle after reset", "Kilo reset releases rename protection before a fresh turn")
+    app.agent.send_player_request("follow up")
+    await wait_idle()
+    var fresh = JsonStore.read_dict(app.metadata.game_meta_dir(app.current_game).path_join("kilo/session.json"), {}).get("session", "")
+    check(app.agent.last_error == "" and fresh != "" and fresh != "ses_missing", "fresh Kilo turn creates a different native session")
+    check(not app.store.rename_game(app.current_game, "Must stay put").get("ok", true), "fresh Kilo history restores rename protection")
     settings.auto_approve_reloads = false
     app.metadata.save_global_settings(settings)
     app.queue_free()

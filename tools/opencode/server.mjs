@@ -47,7 +47,9 @@ export class OpenCodeServer {
   }
   open(path,method,body,onResponse) {
     const data=body===undefined ? undefined : JSON.stringify(body);
-    const request=http.request(new URL(path,this.url),{method,headers:{authorization:'Basic '+Buffer.from(this.harness+':'+this.password).toString('base64'),[this.directoryHeader]:encodeURIComponent(this.workspace),...(data ? {'content-type':'application/json','content-length':Buffer.byteLength(data)} : {})}},onResponse);
+    const url=new URL(path,this.url),queryDirectory=this.harness==='kilo' && ['GET','HEAD'].includes(method);
+    if(queryDirectory)url.searchParams.set('directory',this.workspace);
+    const request=http.request(url,{method,headers:{authorization:'Basic '+Buffer.from(this.harness+':'+this.password).toString('base64'),...(!queryDirectory ? {[this.directoryHeader]:encodeURIComponent(this.workspace)} : {}),...(data ? {'content-type':'application/json','content-length':Buffer.byteLength(data)} : {})}},onResponse);
     this.requests.add(request);request.once('close',()=>this.requests.delete(request));request.end(data);return request;
   }
   request(path,method='GET',body) {

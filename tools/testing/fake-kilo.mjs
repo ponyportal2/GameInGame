@@ -84,7 +84,11 @@ return {info:{finish:'stop',tokens:{total:5120,input:100,output:20,cache:{read:5
 }
 const server=http.createServer(async(req,res)=>{
  if (req.headers.authorization!=='Basic '+Buffer.from('kilo:'+process.env.KILO_SERVER_PASSWORD).toString('base64')) {res.writeHead(401);res.end('{}');return;}
- if (decodeURIComponent(req.headers['x-kilo-directory'] || '').replaceAll('\\','/')!==process.cwd().replaceAll('\\','/')) {res.writeHead(400);res.end('{}');return;}
+ const url=new URL(req.url,'http://localhost');
+ const directory=['GET','HEAD'].includes(req.method) ? url.searchParams.get('directory') || '' : decodeURIComponent(req.headers['x-kilo-directory'] || '');
+ if (directory.replaceAll('\\','/')!==process.cwd().replaceAll('\\','/')) {res.writeHead(400);res.end('{}');return;}
+ req.url=url.pathname;
+ if(req.url==='/session/ses_missing'){res.writeHead(404);res.end(JSON.stringify({message:'Native session not found'}));return;}
  let body='';for await (const chunk of req) body+=chunk;
  if (req.url==='/event') {res.writeHead(200,{'content-type':'text/event-stream'});res.write('data: {}\n\n');subscribers.add(res);res.on('close',()=>subscribers.delete(res));return;}
  const reply=value=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(value));};

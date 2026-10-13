@@ -34,10 +34,19 @@ function ready() {
   return initializing ||= (async()=>{
     await server.start();
     writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,url:server.url}));
-    if (session) await server.request('/session/'+session);
+    if (session) {
+      try {await server.request('/session/'+session);}
+      catch(error) {
+        if(harness==='kilo')error.message='Kilo session could not be resumed: '+error.message+'. Start a new Kilo session in Settings. The previous session reference and chat are kept.';
+        throw error;
+      }
+    }
     else session=(await server.request('/session','POST',{title:config.name})).id;
     saveSession();emit({type:'session',session});
-  })();
+  })().catch(async error=>{
+    if(harness==='kilo'){stopping=true;await server.close();error.initializationFailed=true;}
+    throw error;
+  });
 }
 async function prompt(request,operation) {
   let unsubscribe;
@@ -66,7 +75,7 @@ async function prompt(request,operation) {
     const ok=result.info?.finish==='stop' && !operation.error;
     emit({type:'complete',ok,text,corrected:!!operation.corrected,error:operation.error || (ok ? '' : label+' ended without a completed response.')});
   } catch(error) {
-    if (!operation.cancelled) emit(operation.accepted ? {type:'complete',ok:false,text:operation.text,error:error.message} : {type:'response',id:request.id,success:false,error:error.message});
+    if (!operation.cancelled) emit(operation.accepted ? {type:'complete',ok:false,text:operation.text,error:error.message,initialization_failed:!!error.initializationFailed} : {type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed});
   } finally {unsubscribe?.();if (active===operation) active=undefined;}
 }
 async function cancel(request) {

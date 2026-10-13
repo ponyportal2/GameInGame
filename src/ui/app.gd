@@ -645,7 +645,7 @@ func _delete_game_confirmed() -> void:
     _show_library()
 
 func _request_new_codex_session() -> void:
-    if current_game == "" or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro"]:
+    if current_game == "" or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo"]:
         return
     native_session_title.text = "Start a new %s session?" % _native_harness_label()
     native_session_description.text = "The next message starts a fresh %s conversation. The previous session reference is archived, and your chat and game files are kept. The old conversation will not be included in the new agent context." % _native_harness_label()
@@ -658,7 +658,7 @@ func _cancel_new_codex_session() -> void:
     codex_session_dialog.visible = false
 
 func _confirm_new_codex_session() -> void:
-    if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro"]:
+    if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo"]:
         _cancel_new_codex_session()
         return
     var result = agent.start_new_session()
@@ -672,7 +672,7 @@ func _confirm_new_codex_session() -> void:
 func _open_settings() -> void:
     game_harness_option.disabled = current_game == "" or (is_instance_valid(agent) and agent.busy)
     var saved_harness = str(metadata.read_game(current_game).get("harness", "pi")) if current_game != "" else "pi"
-    codex_new_session_button.visible = current_game != "" and saved_harness in ["codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro"]
+    codex_new_session_button.visible = current_game != "" and saved_harness in ["codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo"]
     codex_new_session_button.text = "Start new %s session" % _native_harness_label()
     codex_new_session_button.disabled = not is_instance_valid(agent) or agent.busy
     for i in game_harness_option.item_count:
