@@ -1,5 +1,7 @@
 # Grok Build and Cursor separation
 
+Review cleanup (2026-10-13): README's opening harness list includes Grok Build; the controller installs Grok's own MCP/approval sources rather than unused Grok copies alongside live Cline sources. All 10 Grok Node tests, the Grok host lifecycle runner (`%TEMP%/gamesmith-tests-WExMQu`), and rebuilt Windows package contents/self-contained checks pass. No additional live-provider run was needed for equivalent-module routing and documentation cleanup.
+
 - [x] Probe installed Grok Build ACP identity, resumable sessions and structured MCP permissions.
 - [x] Add failing regressions for wrong executable identity and Grok native permissions/session lifecycle.
 - [x] Implement separate Grok Build choice, native adapter, persistent session and native-owned settings.

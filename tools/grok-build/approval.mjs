@@ -2,7 +2,7 @@ import {writeFile,rename,readFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 
-// ACP permission waits happen before Cline starts its finite MCP deadline.
+// ACP permission waits happen before Grok Build starts MCP execution.
 // A single-use grant connects that native permission to the actual host reload.
 export async function authorizeReload(config,signal) {
   const id=randomUUID(),token=randomUUID();
