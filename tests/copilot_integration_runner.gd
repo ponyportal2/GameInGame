@@ -3,12 +3,19 @@ var failures := 0
 var app
 var assistant_deltas := 0
 var thinking_deltas := 0
+var previous_agent := ""
 
 func check_model(directory: String, stage: String) -> void:
     if app.agent.last_error != "":
         check(false, "Cannot verify Copilot ACP model after failed " + stage)
         return
-    var actual = str(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("model", ""))
+    var metadata = JsonStore.read_dict(directory.path_join("backend.json"), {})
+    var agent_id = str(metadata.get("agent", ""))
+    check(agent_id.begins_with("gamesmith-") and agent_id.length() == 46 and agent_id != previous_agent, "Copilot selects a fresh unique profile on " + stage)
+    previous_agent = agent_id
+    var profile = FileAccess.get_file_as_string(directory.path_join("native-workspace/.github/agents").path_join(agent_id + ".agent.md"))
+    check("name: " + agent_id + "\n" in profile, "Copilot profile name matches its unique filename on " + stage)
+    var actual = str(metadata.get("model", ""))
     var expected = OS.get_environment("GAMESMITH_TEST_COPILOT_MODEL")
     print("Copilot native model (%s): %s" % [stage, actual])
     if expected != "":
@@ -61,6 +68,7 @@ func run() -> void:
     await request("What value did you put in acceptance_marker in our previous turn? Answer from conversation history without files or tools. Reply with only the decimal integer. Do not reload.")
     check(app.agent.last_error == "" and app.agent.result_text.strip_edges().split("\n")[-1].strip_edges() == "37", "next Copilot message reuses conversation history")
     check(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid") == backend, "live Copilot messages reuse one app-server")
+    check(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("agent") == previous_agent, "ordinary Copilot turns retain the same runtime profile")
     var game = app.current_game
     app._show_library()
     app._open_game(game)

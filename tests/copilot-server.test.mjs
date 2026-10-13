@@ -6,8 +6,27 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,copyFileSync
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {killProcessTree} from '../tools/agent/process-tree.mjs';
-function fixture(t,extra={},saved){
-  const directory=mkdtempSync(join(tmpdir(),'gs-copilot-server-'));mkdirSync(join(directory,'bridge'));
+test('higher-priority personal gamesmith profile cannot shadow runtime profile',{timeout:15000},async t=>{
+ const home=mkdtempSync(join(tmpdir(),'gs-copilot-shadow-'));mkdirSync(join(home,'agents'));
+ const shadow=join(home,'agents','gamesmith.agent.md');
+ writeFileSync(shadow,'---\nname: gamesmith\nmodel: shadow-model\n---\nSHADOW_PROFILE');
+ let directory, previousId;
+ for(const saved of [undefined,'copilot-fixture-session']){
+  const f=fixture(t,{COPILOT_HOME:home},saved,directory);directory=f.directory;f.send({type:'prompt',id:'one',message:'hello'});
+  assert((await f.until(r=>r.type==='complete')).ok);
+  const selected=JSON.parse(readFileSync(join(f.directory,'native-workspace','.copilot-fixture-selected.json')));
+  assert.match(selected.id,/^gamesmith-[0-9a-f-]{36}$/);
+  assert.notEqual(selected.id,previousId);previousId=selected.id;
+  assert.match(selected.profile,new RegExp('name: '+selected.id+'\\n'));
+  assert.match(selected.profile,/Use only GameSmith tools/);assert.equal(selected.profile.includes('SHADOW_PROFILE'),false);
+  assert.equal(JSON.parse(readFileSync(join(f.directory,'backend.json'))).model,'fixture-native-model');
+  assert.equal(JSON.parse(readFileSync(join(f.directory,'session.json'))).session,'copilot-fixture-session');
+  const exited=new Promise(resolve=>f.child.once('close',resolve));f.child.stdin.end();await exited;
+ }
+ assert.match(readFileSync(shadow,'utf8'),/SHADOW_PROFILE/);
+});
+function fixture(t,extra={},saved,directory=mkdtempSync(join(tmpdir(),'gs-copilot-server-'))){
+  mkdirSync(join(directory,'bridge'),{recursive:true});
   // Assemble exactly the files selected by the GDScript controller, rather than
   // testing source-tree relative imports that differ from the shipped runtime.
   const controller=readFileSync('src/agent/copilot_agent_controller.gd','utf8').split('func _native_modules()')[1].split('func _native_prompt()')[0];
@@ -52,7 +71,7 @@ test('first-prompt initialization failure does not save an unresumable ID',{time
 
 test('private profile restricts executable tools without changing native model config',{timeout:15000},async t=>{
  const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
- const profile=readFileSync(join(f.directory,'native-workspace','.github/agents/gamesmith.agent.md'),'utf8');
+ const profile=readFileSync(join(f.directory,'native-workspace','.github/agents',JSON.parse(readFileSync(join(f.directory,'backend.json'))).agent+'.agent.md'),'utf8');
  assert.match(profile,/gamesmith-write/);assert.match(profile,/Use only GameSmith tools/);
  const argv=JSON.parse(readFileSync(join(f.directory,'native-workspace','.copilot-fixture-argv.json')));
  assert(argv.includes('--available-tools='+JSON.parse(profile.split('tools: ')[1].split('\n')[0]).map(t=>'mcp:'+t).join(',')));
@@ -60,7 +79,7 @@ test('private profile restricts executable tools without changing native model c
  assert.equal(argv.some(a=>/model|reasoning|compaction/.test(a)),false);
  const requests=readFileSync(join(f.directory,'native-workspace','.copilot-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
  assert.equal(requests.some(r=>r.method==='session/set_model' || r.method==='authenticate'),false);
- assert.deepEqual(requests.find(r=>r.method==='session/set_config_option').params,{sessionId:'copilot-fixture-session',configId:'agent',value:'gamesmith'});
+ assert.deepEqual(requests.find(r=>r.method==='session/set_config_option').params,{sessionId:'copilot-fixture-session',configId:'agent',value:JSON.parse(readFileSync(join(f.directory,'backend.json'))).agent});
  assert.equal(JSON.parse(readFileSync(join(f.directory,'backend.json'))).model,'fixture-native-model');
  assert.equal((await f.until(r=>r.type==='context')).tokens,4321);
 });
@@ -83,7 +102,7 @@ test('persistent turns keep profile instructions out of user history',{timeout:1
  const f=fixture(t);f.send({type:'prompt',id:'one',message:'first player message'});assert((await f.until(r=>r.type==='complete')).ok);
  f.send({type:'prompt',id:'two',message:'second player message'});await f.until(r=>r.id==='two');
  while(f.records.filter(r=>r.type==='complete').length<2)await new Promise(r=>setTimeout(r,10));
- const profile=readFileSync(join(f.directory,'native-workspace','.github/agents/gamesmith.agent.md'),'utf8');
+ const profile=readFileSync(join(f.directory,'native-workspace','.github/agents',JSON.parse(readFileSync(join(f.directory,'backend.json'))).agent+'.agent.md'),'utf8');
  assert.match(profile,/Use only GameSmith tools/);
  const requests=readFileSync(join(f.directory,'native-workspace','.copilot-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
  assert.deepEqual(requests.filter(r=>r.method==='session/prompt').map(r=>r.params.prompt),[

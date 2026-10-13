@@ -1,5 +1,6 @@
 import {createInterface} from 'node:readline';
-import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
+import {readFileSync,appendFileSync,writeFileSync,existsSync,readdirSync} from 'node:fs';
+import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 if(process.argv.includes('status')){console.log(JSON.stringify({isAuthenticated:process.env.GAMESMITH_COPILOT_LOGGED_OUT!=='1'}));process.exit();}
 writeFileSync('.copilot-fixture-argv.json',JSON.stringify(process.argv.slice(2)));
@@ -71,7 +72,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
   }
   if(r.method==='session/new' || r.method==='session/load'){
     if(r.method==='session/load' && r.params.sessionId!==session){emit({id:r.id,error:{code:-32000,message:'Native session not found'}});return;}
-    const profile=readFileSync('.github/agents/gamesmith.agent.md','utf8');
+    const profile=readFileSync(join('.github/agents',readdirSync('.github/agents').find(n=>n.endsWith('.agent.md'))),'utf8');
     const names=JSON.parse(profile.split('tools: ')[1].split('\n')[0]);
     if(!names.includes('gamesmith-write') || names.some(n=>!n.startsWith('gamesmith-')))throw new Error('Unrestricted agent profile');
     if(!process.argv.includes('--available-tools='+names.map(n=>'mcp:'+n).join(',')) || !process.argv.includes('--allow-tool=gamesmith'))throw new Error('Missing exact startup tool filters');
@@ -80,12 +81,17 @@ createInterface({input:process.stdin}).on('line',async line=>{
     await connectMcp(servers.mcpServers.gamesmith);reply({sessionId:process.env.GAMESMITH_COPILOT_DIFFERENT_SESSION?'unexpected-session':session,models:{currentModelId:'fixture-native-model'},configOptions:[{id:'model',currentValue:'fixture-native-model'},{id:'agent',currentValue:''}]});return;
   }
   if(r.method==='session/set_config_option'){
-    if(r.params.configId!=='agent' || r.params.value!=='gamesmith')throw new Error('Host must not change native model settings');
-    agentSelected=true;reply({configOptions:[{id:'agent',currentValue:process.env.GAMESMITH_COPILOT_WRONG_MODE?'':'gamesmith'},{id:'model',currentValue:'fixture-native-model'}]});return;
+    if(r.params.configId!=='agent')throw new Error('Host must not change native model settings');
+    const id=r.params.value;
+    const personal=join(process.env.COPILOT_HOME || '.', 'agents',id+'.agent.md');
+    const path=existsSync(personal)?personal:join('.github/agents',id+'.agent.md');
+    const profile=readFileSync(path,'utf8');
+    writeFileSync('.copilot-fixture-selected.json',JSON.stringify({id,path,profile}));
+    agentSelected=true;reply({configOptions:[{id:'agent',currentValue:process.env.GAMESMITH_COPILOT_WRONG_MODE?'':id},{id:'model',currentValue:profile.includes('SHADOW_PROFILE')?'shadow-model':'fixture-native-model'}]});return;
   }
   if(r.method==='authenticate'){reply({});return;}
   if(r.method==='session/set_model')throw new Error('Host must not select Copilot model');
-  if(r.method==='session/prompt'){if(!agentSelected)throw new Error('Prompt arrived before agent selection');if(process.env.GAMESMITH_COPILOT_STUCK_TURN==='1')return;active=r;cancelled=false;void run(r);return;}
+  if(r.method==='session/prompt'){if(!agentSelected)throw new Error('Prompt arrived before agent selection');if(process.env.GAMESMITH_COPILOT_STUCK_TURN==='1')return;active=r;cancelled=false;update({sessionUpdate:'config_option_update',configOptions:[{id:'model',currentValue:'fixture-native-model'}]});void run(r);return;}
   if(r.method==='session/cancel'){
     if(process.env.GAMESMITH_COPILOT_STUCK_CANCEL==='1')return;
     cancelled=true;if(active){emit({id:active.id,result:{stopReason:'cancelled'}});active=undefined;}return;

@@ -3,6 +3,7 @@ import {existsSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve,dirname} from 'node:path';
 import {homedir} from 'node:os';
 import {createInterface} from 'node:readline';
+import {randomUUID} from 'node:crypto';
 import {toolSpecs} from './workspace-tools.mjs';
 import {killProcessTree} from './process-tree.mjs';
 
@@ -20,6 +21,7 @@ export class CopilotServer {
   constructor(config,{onEvent=()=>{},onRequest=async()=>{throw new Error('Unsupported ACP request');},onExit=()=>{},onStderr=()=>{}}={}){
     Object.assign(this,{config,onEvent,onRequest,onExit,onStderr});this.pending=new Map();this.serial=0;
     this.cwd=join(dirname(config.session_file),'native-workspace');
+    this.agentId='gamesmith-'+randomUUID();
   }
   get pid(){return this.child?.pid;}
   async start(){
@@ -28,8 +30,8 @@ export class CopilotServer {
     const names=toolSpecs().map(t=>'gamesmith-'+t.name.slice(10));
     // Both ACP startup filtering and the selected custom profile limit tools.
     // Model, credentials, reasoning and compaction stay native-owned.
-    writeFileSync(join(this.cwd,'.github','agents','gamesmith.agent.md'),
-      '---\nname: gamesmith\ndescription: GameSmith game editing\ntools: '+JSON.stringify(names)+'\n---\n'+readFileSync(this.config.prompt_path,'utf8'));
+    writeFileSync(join(this.cwd,'.github','agents',this.agentId+'.agent.md'),
+      '---\nname: '+this.agentId+'\ndescription: GameSmith game editing\ntools: '+JSON.stringify(names)+'\n---\n'+readFileSync(this.config.prompt_path,'utf8'));
     const mcpPath=join(dirname(this.config.session_file),'mcp-config.json');
     writeFileSync(mcpPath,JSON.stringify({mcpServers:{gamesmith:{type:'local',command:process.execPath,args:[this.config.mcp,this.config.config_path],tools:['*'],timeout:2147483647}}}));
     const options={cwd:this.cwd,env:{...process.env},windowsHide:true,stdio:['pipe','pipe','pipe']};
