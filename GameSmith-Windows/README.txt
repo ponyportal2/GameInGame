@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, or AGY (experimental) when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), or Kimi Code when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -101,3 +101,12 @@ Fixture tests and installed CLI startup/MCP discovery/explicit resume passed.
 Live model invocations returned "User location is not supported for the API use".
 No successful model/game acceptance or native tool-hook execution was verified.
 See README.md's experimental AGY section for the exact verification limits.
+
+For Kimi Code games:
+Install native Kimi Code CLI: https://moonshotai.github.io/kimi-code/
+Configure login/provider/model in Kimi Code, then choose Kimi Code in GameSmith.
+The standard %USERPROFILE%/.kimi-code/bin/kimi.exe installation is detected even
+without PATH. GAMESMITH_KIMI_BIN can specify another native executable.
+GameSmith uses persistent ACP sessions, resumes explicit per-game history and
+leaves model, provider, reasoning and compaction to Kimi. Node.js is required.
+Host headless tests, reload approval and automatic reload approval remain available.
