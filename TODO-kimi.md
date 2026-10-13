@@ -18,3 +18,11 @@
 
 - Broad host suite: first 21 runners passed; existing Grok Build fixture stalled immediately after initial reload approval and was explicitly terminated. Grok passed its separate rerun. The remainder exposed inherited auto-approval from AGY in Kimi's manual-approval fixture; Kimi now explicitly initializes that preference. AGY → Kimi → shutdown then passed together with exit 0 (`%TEMP%/gamesmith-kimi-host-final.log`). All 25 runners passed across these runs; the initial run is not claimed as an uninterrupted success. No Grok adapter changes were made.
 - Tests use isolated games; native session/history files created by the real acceptance remain in Kimi's normal native store. Global provider/model configuration was not edited.
+
+## Review follow-up
+
+- [x] Attempt all 25 host runners uninterrupted at `97c2b3f` and record the result. Reproduce any failure before changing product code.
+- Full follow-up run failed (exit 1) in runner 20, Cline lifecycle, after the preceding 19 runners passed. Initial reload failed to reach approval or complete; the host log records `Permission was denied`. Data: `%TEMP%/gamesmith-tests-knd1Wn`; output: `%TEMP%/gamesmith-review-full-host.log`. The runner finished its remaining checks; the suite stopped before Cursor/Grok/AGY/Kimi/shutdown. This is not a clean full-suite pass.
+- Cline's complete isolated rerun passed with exit 0, including initial reload and forced Stop: `%TEMP%/gamesmith-tests-oZuI18`, `%TEMP%/gamesmith-review-cline.log`. The cause of the full-run permission denial is unresolved; neither an adapter defect nor a timing-sensitive fixture has been established. No product or test code was changed in this review follow-up. One uninterrupted passing suite remains a release verification requirement.
+- AGY remains experimental: successful real inference, hook enforcement and model-driven tools are still unverified because native inference rejects the installed account's location.
+- Kimi rename/resume acceptance is a useful future regression, not an established defect; no recovery machinery is being added without a failing test.
