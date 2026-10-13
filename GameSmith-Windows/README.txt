@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), or Kimi Code when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, or Kiro CLI when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -109,4 +109,17 @@ The standard %USERPROFILE%/.kimi-code/bin/kimi.exe installation is detected even
 without PATH. GAMESMITH_KIMI_BIN can specify another native executable.
 GameSmith uses persistent ACP sessions, resumes explicit per-game history and
 leaves model, provider, reasoning and compaction to Kimi. Node.js is required.
+
+For Kiro CLI games:
+Install native Kiro CLI: https://kiro.dev/docs/cli/
+Choose Kiro CLI in GameSmith. The standard %LOCALAPPDATA%/Kiro-Cli/kiro-cli.exe
+installation is detected without PATH; GAMESMITH_KIRO_BIN selects another binary.
+Kiro CLI 2.30.0 is tested using its V2 ACP engine. Node.js is required.
+Kiro owns model/provider/reasoning/compaction. Save a model as Kiro's default with
+/model set-current-as-default or kiro-cli settings chat.defaultModel <model-id>.
+Without a saved native default, this installation uses Auto. GameSmith does not
+inherit temporary model choices from other interactive conversations.
+Messages reuse one native conversation; reopen, rename and Stop resume its exact
+ID. Reload waits for GameSmith approval unless automatic approval is enabled.
+Start new Kiro session in Settings archives the reference without deleting history.
 Host headless tests, reload approval and automatic reload approval remain available.
