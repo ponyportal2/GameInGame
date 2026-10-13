@@ -464,47 +464,64 @@ func _service_host_bridge() -> void:
     dir.list_dir_end()
     for file_name in requests:
         var path = bridge_dir.path_join(file_name)
-        var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-        DirAccess.remove_absolute(path)
+        var claimed = _claim_host_request(path)
+        if not bool(claimed.get("ok", false)):
+            continue
+        var parsed = claimed.get("request", null)
         if typeof(parsed) != TYPE_DICTIONARY:
             continue
-        var request: Dictionary = parsed
-        var command = str(request.get("command", ""))
-        var result: Dictionary
-        if command == "reload_game":
-            if pending_reload.is_empty():
-                pending_reload = {"request": request, "bridge_dir": bridge_dir, "operation_id": operation_id}
-                if bool(metadata.global_settings().get("auto_approve_reloads", false)):
-                    approve_reload()
-                    continue
-                status_changed.emit("Waiting for reload approval")
-                reload_approval_changed.emit(true)
-                continue
-            result = {"ok": false, "error": "Another reload is already waiting for player approval."}
-        elif command == "read_runtime_log":
-            result = tools.execute(command, request.get("args", {}))
-        elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
-            result = tools.execute(command, request.get("args", {}))
-        elif command in ["start_test_game", "read_test_log", "stop_test_game", "test_game_action"]:
-            result = tools.execute(command, request.get("args", {}))
-            if result.get("ok", false) and command == "stop_test_game" and result.get("state", "") != "exited":
-                pending_test_commands.append({"request": request, "run_id": request.get("args", {}).get("run_id", ""), "command": command, "bridge_dir": bridge_dir, "operation_id": operation_id})
-                continue
-        elif command == "diagnostic_notice":
-            result = tools.runner.runtime_log.prepare_notification() if tools != null and tools.runner != null else {"ok": true, "notice": ""}
-        elif command == "provider_retry":
-            var retry_args: Dictionary = request.get("args", {})
-            AppLoggerScript.game_event(game_name, "pi.retry", JSON.stringify(retry_args), "WARN")
-            status_changed.emit("Provider response was empty; retrying %d/%d…" % [int(retry_args.get("attempt", 0)), int(retry_args.get("maxRetries", 3))])
-            result = {"ok": true}
-        elif command == "compaction_status":
-            result = {"ok": true, "blocked": auto_compaction_failed_operation == operation_id}
-        elif command == "diagnostic_delivery":
-            tools.runner.runtime_log.commit_delivery(str(request.get("args", {}).get("delivery_id", "")))
-            result = {"ok": true}
-        else:
-            result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
-        _write_host_response(bridge_dir, request, result)
+        _dispatch_host_request(parsed, bridge_dir)
+
+func _claim_host_request(path: String) -> Dictionary:
+    # Moving the request out of the live request namespace is the ownership
+    # operation. On Windows this fails while the producer still holds a handle
+    # without delete sharing; do not execute the readable request until a later
+    # frame can claim it. This also prevents subclasses and the base dispatcher
+    # from acting on the same request twice.
+    var claimed_path = path + ".claimed-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()]
+    if DirAccess.rename_absolute(path, claimed_path) != OK:
+        return {"ok": false}
+    var parsed = JSON.parse_string(FileAccess.get_file_as_string(claimed_path))
+    DirAccess.remove_absolute(claimed_path)
+    return {"ok": true, "request": parsed}
+
+func _dispatch_host_request(request: Dictionary, directory: String) -> void:
+    var command = str(request.get("command", ""))
+    var result: Dictionary
+    if command == "reload_game":
+        if pending_reload.is_empty():
+            pending_reload = {"request": request, "bridge_dir": directory, "operation_id": operation_id}
+            if bool(metadata.global_settings().get("auto_approve_reloads", false)):
+                approve_reload()
+                return
+            status_changed.emit("Waiting for reload approval")
+            reload_approval_changed.emit(true)
+            return
+        result = {"ok": false, "error": "Another reload is already waiting for player approval."}
+    elif command == "read_runtime_log":
+        result = tools.execute(command, request.get("args", {}))
+    elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
+        result = tools.execute(command, request.get("args", {}))
+    elif command in ["start_test_game", "read_test_log", "stop_test_game", "test_game_action"]:
+        result = tools.execute(command, request.get("args", {}))
+        if result.get("ok", false) and command == "stop_test_game" and result.get("state", "") != "exited":
+            pending_test_commands.append({"request": request, "run_id": request.get("args", {}).get("run_id", ""), "command": command, "bridge_dir": directory, "operation_id": operation_id})
+            return
+    elif command == "diagnostic_notice":
+        result = tools.runner.runtime_log.prepare_notification() if tools != null and tools.runner != null else {"ok": true, "notice": ""}
+    elif command == "provider_retry":
+        var retry_args: Dictionary = request.get("args", {})
+        AppLoggerScript.game_event(game_name, "pi.retry", JSON.stringify(retry_args), "WARN")
+        status_changed.emit("Provider response was empty; retrying %d/%d…" % [int(retry_args.get("attempt", 0)), int(retry_args.get("maxRetries", 3))])
+        result = {"ok": true}
+    elif command == "compaction_status":
+        result = {"ok": true, "blocked": auto_compaction_failed_operation == operation_id}
+    elif command == "diagnostic_delivery":
+        tools.runner.runtime_log.commit_delivery(str(request.get("args", {}).get("delivery_id", "")))
+        result = {"ok": true}
+    else:
+        result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
+    _write_host_response(directory, request, result)
 
 func _service_pending_test_commands() -> void:
     for pending in pending_test_commands.duplicate():
