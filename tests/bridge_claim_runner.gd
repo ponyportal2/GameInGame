@@ -41,12 +41,12 @@ func run() -> void:
         quit(0)
         return
 
-    await test_cline_special_request()
+    await test_cline_special_requests()
     await test_base_request()
     print("BRIDGE CLAIM REGRESSION: %d failure(s)" % failures)
     quit(1 if failures else 0)
 
-func test_cline_special_request() -> void:
+func test_cline_special_requests() -> void:
     var bridge = ProjectSettings.globalize_path("user://bridge-claim-regression")
     DirAccess.make_dir_recursive_absolute(bridge)
     for file in DirAccess.get_files_at(bridge):
@@ -68,9 +68,9 @@ func test_cline_special_request() -> void:
     var response_path = bridge.path_join("response-locked-authorization.json")
     check(JsonStore.write_dict(request_path, request), "fixture writes reload authorization request")
 
-    var marker = bridge.path_join("lock-ready.txt")
+    var marker = bridge.path_join("authorization-lock-ready.txt")
     var lock_pid = hold_without_delete(request_path, marker)
-    check(lock_pid > 0 and await wait_for_file(marker), "fixture holds request open without delete sharing")
+    check(lock_pid > 0 and await wait_for_file(marker), "fixture holds authorization open without delete sharing")
 
     # The request is readable but cannot be deleted/renamed while the helper owns
     # it. A bridge consumer must not act on a request it failed to claim, because
@@ -79,7 +79,7 @@ func test_cline_special_request() -> void:
     check(agent.pending_reload.is_empty(), "locked authorization is not processed before exclusive claim")
     check(not FileAccess.file_exists(response_path), "locked authorization cannot receive a duplicate superclass response")
 
-    check(await wait_for_exit(lock_pid), "fixture releases the request lock")
+    check(await wait_for_exit(lock_pid), "fixture releases the authorization lock")
     clear_lock_env()
 
     agent._service_host_bridge()
@@ -88,7 +88,27 @@ func test_cline_special_request() -> void:
     agent.approve_reload()
     var response = JsonStore.read_dict(response_path, {})
     check(response.get("ok", false), "approved authorization receives one successful response")
-    check(not FileAccess.file_exists(request_path), "claimed request is removed from the live request namespace")
+    check(not FileAccess.file_exists(request_path), "claimed authorization leaves the live request namespace")
+
+    # The second ACP stage has the same claim requirement. An invalid token keeps
+    # the fixture independent of GameTools while still exercising reload_game's
+    # special bridge branch and its response path.
+    request = {"id": "locked-reload", "command": "reload_game", "args": {"approval_token": "wrong-token"}}
+    request_path = bridge.path_join("request-locked-reload.json")
+    response_path = bridge.path_join("response-locked-reload.json")
+    check(JsonStore.write_dict(request_path, request), "fixture writes grant-backed reload request")
+    marker = bridge.path_join("reload-lock-ready.txt")
+    lock_pid = hold_without_delete(request_path, marker)
+    check(lock_pid > 0 and await wait_for_file(marker), "fixture holds reload request open without delete sharing")
+    agent._service_host_bridge()
+    check(not FileAccess.file_exists(response_path), "locked reload request is not rejected before exclusive claim")
+    check(FileAccess.file_exists(request_path), "unclaimable reload request remains available for retry")
+    check(await wait_for_exit(lock_pid), "fixture releases the reload request lock")
+    clear_lock_env()
+    agent._service_host_bridge()
+    response = JsonStore.read_dict(response_path, {})
+    check(response.has("ok") and not response.get("ok", true), "claimed invalid reload receives its normal grant error")
+    check(not FileAccess.file_exists(request_path), "claimed reload request leaves the live request namespace")
 
     agent.busy = false
     agent.queue_free()
@@ -105,10 +125,10 @@ func test_base_request() -> void:
     agent.set_process(false)
     agent.bridge_dir = bridge
 
-    var request = {"id": "locked-base", "command": "unknown_bridge_command", "args": {}}
+    var request = {"id": "locked-base", "command": "compaction_status", "args": {}}
     var request_path = bridge.path_join("request-locked-base.json")
     var response_path = bridge.path_join("response-locked-base.json")
-    check(JsonStore.write_dict(request_path, request), "fixture writes base bridge request")
+    check(JsonStore.write_dict(request_path, request), "fixture writes real base bridge request")
     var marker = bridge.path_join("lock-ready.txt")
     var lock_pid = hold_without_delete(request_path, marker)
     check(lock_pid > 0 and await wait_for_file(marker), "fixture locks base request without delete sharing")
@@ -120,7 +140,8 @@ func test_base_request() -> void:
     check(await wait_for_exit(lock_pid), "fixture releases base request lock")
     clear_lock_env()
     agent._service_host_bridge()
-    check(FileAccess.file_exists(response_path), "base bridge processes request after exclusive claim")
+    var response = JsonStore.read_dict(response_path, {})
+    check(response.get("ok", false), "base bridge executes normal command after exclusive claim")
     check(not FileAccess.file_exists(request_path), "base claimed request leaves the live namespace")
 
     agent.queue_free()
