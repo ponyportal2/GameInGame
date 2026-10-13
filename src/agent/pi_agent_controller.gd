@@ -465,7 +465,8 @@ func _service_host_bridge() -> void:
     for file_name in requests:
         var path = bridge_dir.path_join(file_name)
         var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-        DirAccess.remove_absolute(path)
+        if DirAccess.remove_absolute(path) != OK:
+            continue
         if typeof(parsed) != TYPE_DICTIONARY:
             continue
         var request: Dictionary = parsed
