@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, or Cursor when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, or Grok Build when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -61,7 +61,8 @@ old reference and chat). Restart GameSmith after updating this package.
 For Cursor games:
 Install Cursor Agent CLI: https://cursor.com/docs/cli/installation
 The desktop app alone is insufficient. Sign in with cursor-agent login and
-configure your model in Cursor, then select Cursor in GameSmith. The standard
+then select Cursor in GameSmith. Cursor uses Auto (default[]) for GameSmith ACP sessions. GameSmith does not synchronize the model selected in the desktop
+editor or interactive CLI, so those choices may differ. The standard
 Windows cursor-agent installation is detected without requiring PATH changes;
 GAMESMITH_CURSOR_BIN can select a custom entry point. Node.js is also required.
 Cursor owns model/provider/reasoning and compaction. GameSmith testing and reload
@@ -71,3 +72,17 @@ the backend to clear cancelled MCP calls, then the next message resumes history.
 Reload approval waits without a timer. Failed resume recovery is available at
 Settings > This game > Start new Cursor session, preserving the old reference
 and readable chat. Restart GameSmith after updating this package.
+
+For Grok Build games:
+Install and sign in to Grok Build: https://docs.x.ai/build
+Choose Grok Build for a new game or in Settings > This game > Coding harness.
+GameSmith uses grok.exe, including the standard %USERPROFILE%/.grok/bin install,
+or GAMESMITH_GROK_BUILD_BIN. It never uses the ambiguous agent command to
+choose Cursor or Grok Build. Native ACP identity checks reject mismatched overrides.
+Model/provider/reasoning and compaction stay owned by Grok Build; host testing
+and reload preferences remain available. Messages reuse one ACP backend and
+native session. Reopen/switch back resumes history. Stop retires the backend,
+with a five-second fallback, and the next message resumes the same session.
+Reload waits for player approval. Start new Grok Build session in Settings
+archives an unresumable reference while keeping readable chat and game files.
+Restart GameSmith after updating the package.

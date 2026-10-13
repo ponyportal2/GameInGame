@@ -19,22 +19,23 @@ import (
 
 func TestEitherHarnessAvailable(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	for _, available := range []string{"pi", "command-code", "opencode", "codex", "cline", "cursor-agent"} {
+	t.Setenv("USERPROFILE", t.TempDir())
+	for _, available := range []string{"pi", "command-code", "opencode", "codex", "cline", "cursor-agent", "grok"} {
 		lookup := func(name string) (string, error) {
 			if name == available {
 				return name, nil
 			}
 			return "", errors.New("missing")
 		}
-		if !hasAgentHarness("", "", "", "", "", "", lookup) {
+		if !hasAgentHarness("", "", "", "", "", "", "", lookup) {
 			t.Fatalf("%s should allow startup without a missing-harness warning", available)
 		}
 	}
 	missing := func(string) (string, error) { return "", errors.New("missing") }
-	if hasAgentHarness("", "", "", "", "", "", missing) {
+	if hasAgentHarness("", "", "", "", "", "", "", missing) {
 		t.Fatal("all missing should show a warning")
 	}
-	if !hasAgentHarness("", "", "", "custom-codex", "", "", func(name string) (string, error) {
+	if !hasAgentHarness("", "", "", "custom-codex", "", "", "", func(name string) (string, error) {
 		if name == "custom-codex" {
 			return name, nil
 		}
@@ -46,10 +47,10 @@ func TestEitherHarnessAvailable(t *testing.T) {
 	if err := os.WriteFile(fixture, []byte("// fixture"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !hasAgentHarness("", "", "", fixture, "", "", missing) {
+	if !hasAgentHarness("", "", "", fixture, "", "", "", missing) {
 		t.Fatal("Codex JS entry point outside PATH should allow startup")
 	}
-	if !hasAgentHarness("", "", "", "", fixture, "", missing) {
+	if !hasAgentHarness("", "", "", "", fixture, "", "", missing) {
 		t.Fatal("explicit Cline entry point outside PATH should allow startup")
 	}
 }
@@ -57,6 +58,7 @@ func TestEitherHarnessAvailable(t *testing.T) {
 func TestCursorDetection(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("LOCALAPPDATA", directory)
+	t.Setenv("USERPROFILE", t.TempDir())
 	missing := func(string) (string, error) { return "", os.ErrNotExist }
 	agent := func(name string) (string, error) {
 		if name == "agent" {
@@ -64,14 +66,14 @@ func TestCursorDetection(t *testing.T) {
 		}
 		return "", os.ErrNotExist
 	}
-	if hasAgentHarness("", "", "", "", "", "", agent) {
+	if hasAgentHarness("", "", "", "", "", "", "", agent) {
 		t.Fatal("unrelated agent executable must not count as Cursor")
 	}
 	fixture := filepath.Join(directory, "cursor.mjs")
 	if err := os.WriteFile(fixture, []byte("// fixture"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if !hasAgentHarness("", "", "", "", "", fixture, missing) {
+	if !hasAgentHarness("", "", "", "", "", fixture, "", missing) {
 		t.Fatal("explicit Cursor entry must count")
 	}
 	installed := filepath.Join(directory, "cursor-agent", "cursor-agent.cmd")
@@ -81,8 +83,32 @@ func TestCursorDetection(t *testing.T) {
 	if err := os.WriteFile(installed, []byte("@echo off"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if !hasAgentHarness("", "", "", "", "", "", missing) {
+	if !hasAgentHarness("", "", "", "", "", "", "", missing) {
 		t.Fatal("standard Cursor installation must count without PATH")
+	}
+}
+
+func TestGrokDetection(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	missing := func(string) (string, error) { return "", os.ErrNotExist }
+	fixture := filepath.Join(home, "grok.mjs")
+	if err := os.WriteFile(fixture, []byte("// fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !hasAgentHarness("", "", "", "", "", "", fixture, missing) {
+		t.Fatal("explicit Grok Build override must count")
+	}
+	installed := filepath.Join(home, ".grok", "bin", "grok.exe")
+	if err := os.MkdirAll(filepath.Dir(installed), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !hasAgentHarness("", "", "", "", "", "", "", missing) {
+		t.Fatal("standard Grok Build installation must count without PATH")
 	}
 }
 

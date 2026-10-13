@@ -46,8 +46,12 @@ test('logged-out CLI reports an actionable login failure without starting infere
   const f=fixture(t,{GAMESMITH_CURSOR_LOGGED_OUT:'1'});f.send({type:'prompt',id:'one',message:'hello'});
   const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);assert.match(result.error,/cursor-agent login/);
 });
-test('native policy is private, native settings are untouched and ACP owns model selection',{timeout:15000},async t=>{
-  const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
+test('native policy is private and the host leaves model selection to ACP defaults',{timeout:15000},async t=>{
+  const native=mkdtempSync(join(tmpdir(),'gs-cursor-native-settings-'));
+  const file=join(native,'cli-config.json');
+  const saved=JSON.stringify({selectedModel:{modelId:'non-auto-test',parameters:[{id:'reasoning',value:'high'}]}});
+  writeFileSync(file,saved);
+  const f=fixture(t,{CURSOR_CONFIG_DIR:native});f.send({type:'prompt',id:'one',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
   const policy=JSON.parse(readFileSync(join(f.directory,'native-workspace','.cursor','cli.json')));
   assert.deepEqual(policy.permissions.deny.slice(0,3),['Shell(*)','Write(**)','Read(**)']);
   assert.equal(existsSync(join(f.directory,'.cursor','cli.json')),false);
@@ -55,4 +59,13 @@ test('native policy is private, native settings are untouched and ACP owns model
   const start=requests.find(r=>r.method==='session/new');assert.equal(start.params.mcpServers[0].name,'gamesmith');
   assert.equal(start.params.cwd,join(f.directory,'native-workspace'));
   assert.equal(requests.some(r=>r.method==='session/set_model'),false);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.directory,'native-workspace','.cursor-fixture-argv.json'))),['acp']);
+  assert.equal(readFileSync(file,'utf8'),saved);
+});
+
+test('Grok ACP cannot masquerade as Cursor through an executable override',{timeout:15000},async t=>{
+  const f=fixture(t,{GAMESMITH_CURSOR_WRONG_AGENT:'1'});f.send({type:'prompt',id:'one',message:'hello'});
+  const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);assert.match(result.error,/not Cursor/);
+  const requests=readFileSync(join(f.directory,'native-workspace','.cursor-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(requests.some(r=>r.method==='authenticate' || r.method.startsWith('session/')),false);
 });

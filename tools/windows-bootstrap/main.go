@@ -64,8 +64,8 @@ func main() {
 	if _, err := exec.LookPath("git.exe"); err != nil {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
-	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), os.Getenv("GAMESMITH_CODEX_BIN"), os.Getenv("GAMESMITH_CLINE_BIN"), os.Getenv("GAMESMITH_CURSOR_BIN"), exec.LookPath) {
-		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, Cline, or Cursor to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\nCursor Agent CLI: https://cursor.com/docs/cli/installation\n\nThen restart GameSmith and choose the installed harness when creating a game.")
+	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), os.Getenv("GAMESMITH_CODEX_BIN"), os.Getenv("GAMESMITH_CLINE_BIN"), os.Getenv("GAMESMITH_CURSOR_BIN"), os.Getenv("GAMESMITH_GROK_BUILD_BIN"), exec.LookPath) {
+		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, Cline, Cursor, or Grok Build to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\nCursor Agent CLI: https://cursor.com/docs/cli/installation\nGrok Build: https://docs.x.ai/build\n\nThen restart GameSmith and choose the installed harness when creating a game.")
 	}
 
 	args := append([]string{"--main-pack", packPath}, os.Args[1:]...)
@@ -77,7 +77,7 @@ func main() {
 	}
 }
 
-func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexConfigured, clineConfigured, cursorConfigured string, lookPath func(string) (string, error)) bool {
+func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexConfigured, clineConfigured, cursorConfigured, grokConfigured string, lookPath func(string) (string, error)) bool {
 	if _, err := resolvePiExecutable(piConfigured, lookPath); err == nil {
 		return true
 	}
@@ -87,7 +87,13 @@ func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexC
 			return true
 		}
 	}
-	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}, {codexConfigured, "codex"}, {clineConfigured, "cline"}, {cursorConfigured, "cursor-agent"}} {
+	if strings.TrimSpace(grokConfigured) == "" {
+		standard := filepath.Join(os.Getenv("USERPROFILE"), ".grok", "bin", "grok.exe")
+		if info, err := os.Stat(standard); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}, {codexConfigured, "codex"}, {clineConfigured, "cline"}, {cursorConfigured, "cursor-agent"}, {grokConfigured, "grok"}} {
 		command := strings.TrimSpace(harness.configured)
 		if command == "" {
 			command = harness.fallback

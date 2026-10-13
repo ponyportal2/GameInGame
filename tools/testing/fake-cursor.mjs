@@ -1,7 +1,8 @@
 import {createInterface} from 'node:readline';
-import {readFileSync,appendFileSync} from 'node:fs';
+import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
 import {spawn} from 'node:child_process';
 if(process.argv.includes('status')){console.log(JSON.stringify({isAuthenticated:process.env.GAMESMITH_CURSOR_LOGGED_OUT!=='1'}));process.exit();}
+writeFileSync('.cursor-fixture-argv.json',JSON.stringify(process.argv.slice(2)));
 const emit=r=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...r})+'\n');
 const session='cursor-fixture-session',pending=new Map();let serial=0,active,cancelled=false,mcp;
 function clientRequest(method,params){const id='client-'+ ++serial;const promise=new Promise(resolve=>pending.set(id,resolve));emit({id,method,params});return promise;}
@@ -63,7 +64,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
   if(r.method===process.env.GAMESMITH_CURSOR_FAIL_METHOD){emit({id:r.id,error:{code:-32000,message:'Fixture readiness failure: '+r.method}});return;}
   if(r.method==='initialize'){
     if(process.env.GAMESMITH_CURSOR_EXPECT_API_KEY && process.env.CURSOR_API_KEY!==process.env.GAMESMITH_CURSOR_EXPECT_API_KEY){emit({id:r.id,error:{code:-32000,message:'Native provider key was not inherited'}});return;}
-    if(process.env.GAMESMITH_CURSOR_STUCK_START==='1')return;reply({protocolVersion:1,agentCapabilities:{loadSession:true}});return;
+    if(process.env.GAMESMITH_CURSOR_STUCK_START==='1')return;reply({protocolVersion:1,agentCapabilities:{loadSession:true},authMethods:[{id:process.env.GAMESMITH_CURSOR_WRONG_AGENT?'cached_token':'cursor_login'}],_meta:process.env.GAMESMITH_CURSOR_WRONG_AGENT?{grokShell:true}:{}});return;
   }
   if(r.method==='session/new' || r.method==='session/load'){
     if(r.method==='session/load' && r.params.sessionId!==session){emit({id:r.id,error:{code:-32000,message:'Native session not found'}});return;}

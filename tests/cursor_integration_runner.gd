@@ -4,6 +4,18 @@ var app
 var assistant_deltas := 0
 var thinking_deltas := 0
 
+func check_model(directory: String, stage: String) -> void:
+    if app.agent.last_error != "":
+        check(false, "Cannot verify Cursor ACP model after failed " + stage)
+        return
+    var actual = str(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("model", ""))
+    var expected = OS.get_environment("GAMESMITH_TEST_CURSOR_MODEL")
+    print("Cursor native model (%s): %s" % [stage, actual])
+    if expected != "":
+        check(actual == expected, "Cursor uses the expected ACP model on " + stage)
+    else:
+        check(actual != "", "Cursor reports its effective ACP model on " + stage)
+
 func _init() -> void:
     call_deferred("run")
 
@@ -32,7 +44,7 @@ func run() -> void:
         await process_frame
         quit(1)
         return
-    check(app.agent.last_error == "" and "ACCEPTANCE_CREATED" in app.agent.result_text, "live selected-model Cursor turn completes")
+    check(app.agent.last_error == "" and "ACCEPTANCE_CREATED" in app.agent.result_text, "live Cursor ACP turn completes")
     check("acceptance_marker = 37" in FileAccess.get_file_as_string(app.tools.workspace.path_join("main.gd")), "Cursor writes the requested game through workspace tools")
     check(DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(app.metadata.game_meta_dir(app.current_game).path_join("tests"))), "Cursor runs the host headless test bridge")
     check(assistant_deltas > 0, "Cursor streams assistant text")
@@ -40,8 +52,7 @@ func run() -> void:
     var session_file = directory.path_join("session.json")
     var original = JsonStore.read_dict(session_file, {}).get("session", "")
     var backend = JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid")
-    var native_settings = JsonStore.read_dict(directory.path_join("backend.json"), {})
-    check(str(native_settings.get("model", "")) != "", "Cursor inherits native model selection")
+    check_model(directory, "new session")
     check(original != "", "native Cursor thread is saved")
     await request("What value did you put in acceptance_marker in our previous turn? Answer from conversation history without files or tools. Include REUSED_37 if it was 37. Do not reload.")
     check(app.agent.last_error == "" and "REUSED_37" in app.agent.result_text, "next Cursor message reuses conversation history")
@@ -52,6 +63,7 @@ func run() -> void:
     await request("What value did you put in acceptance_marker in our previous conversation? Answer from history without files or tools. Include RESUMED_37 if it was 37. Do not reload.")
     check(app.agent.last_error == "" and "RESUMED_37" in app.agent.result_text, "reopening resumes native Cursor history")
     check(JsonStore.read_dict(session_file, {}).get("session") == original, "reopen retains the same Cursor thread")
+    check_model(directory, "reopen")
     app.agent.send_player_request("Run a fresh headless test with gamesmith__start_test_game, inspect gamesmith__read_test_log: state=running and load_result.ok=true means startup succeeded. Stop that run with gamesmith__stop_test_game, then call gamesmith__reload_game. Wait for player approval. Finish with RELOAD_ACCEPTED after reload succeeds.")
     while app.agent.busy and app.agent.pending_reload.is_empty(): await process_frame
     check(app.agent.busy and not app.agent.pending_reload.is_empty(), "live Cursor reload waits for approval")
@@ -73,6 +85,7 @@ func run() -> void:
         await request("Answer from our conversation without tools. Include AFTER_STOP_37 if acceptance_marker was 37. Do not reload.")
         check(app.agent.last_error == "" and "AFTER_STOP_37" in app.agent.result_text, "live Cursor resumes after native Stop")
         check(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid") != backend, "live Stop starts a clean backend and resumes history")
+        check_model(directory, "Stop/resume")
     print("Live thinking deltas: %d" % thinking_deltas)
     app.queue_free()
     await process_frame

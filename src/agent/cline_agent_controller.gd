@@ -67,7 +67,7 @@ func _fail(message: String) -> void:
 func start_new_session() -> Dictionary:
     if busy: return {"ok": false, "error": "Stop " + _harness_name() + " before starting a new session."}
     if not acquire_editor(): return {"ok": false, "error": last_error}
-    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join(_harness_name().to_lower()))
+    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join(_native_directory_name()))
     var session_file = directory.path_join("session.json")
     var archive = ""
     if FileAccess.file_exists(session_file):
@@ -84,7 +84,7 @@ func _start_command_runtime() -> Dictionary:
     if rpc != null:
         rpc.retire()
         rpc = null
-    var directory = metadata.game_meta_dir(game_name).path_join(_harness_name().to_lower())
+    var directory = metadata.game_meta_dir(game_name).path_join(_native_directory_name())
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
@@ -115,6 +115,9 @@ func _start_command_runtime() -> Dictionary:
 
 func compact_now() -> Dictionary:
     return {"ok": false, "error": _harness_name() + " manages its own compaction."}
+
+func _native_directory_name() -> String:
+    return _harness_name().to_lower()
 
 func _native_modules() -> Array:
     var result: Array = []

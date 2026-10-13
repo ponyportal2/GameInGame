@@ -48,7 +48,7 @@ func run() -> void:
     for key in before:
         check(after.get(key) == before[key], "command-code preserves setting " + key)
     app._show_library()
-    check(app.harness_option.item_count == 6, "new games offer Pi, Command-code, OpenCode, Codex, Cline and Cursor")
+    check(app.harness_option.item_count == 7, "new games offer Pi, Command-code, OpenCode, Codex, Cline, Cursor and Grok Build")
     if app.harness_option.item_count >= 3:
         app.name_edit.text = "OpenCode fixture"
         app.harness_option.select(2)
@@ -138,6 +138,28 @@ func run() -> void:
         check(cursor_after.auto_approve_reloads, "Cursor host reload setting remains editable")
         app.metadata.save_global_settings(cursor_before)
         app._show_library()
+    if app.harness_option.item_count >= 7:
+        app.name_edit.text = "Grok Build fixture"
+        app.harness_option.select(6)
+        app._create_game()
+        check(app.metadata.read_game(app.current_game).get("harness") == "grok-build", "Grok Build selection persists")
+        check(app.agent.get_script().resource_path.ends_with("grok_build_agent_controller.gd"), "Grok Build uses its own controller")
+        app._open_settings()
+        check(app.provider_option.disabled and not app.model_edit.editable and not app.key_edit.editable and app.reasoning_option.disabled, "Grok Build owns provider, model, credentials and reasoning")
+        check(not app.compaction_auto_spin.editable and not app.compaction_keep_spin.editable and app.compact_now_button.disabled, "Grok Build owns all compaction settings")
+        var grok_before = app.metadata.global_settings()
+        app.model_edit.text = "must not save"
+        app.compaction_auto_spin.value = 999
+        app.compaction_keep_spin.value = 999
+        app.auto_reload_check.button_pressed = true
+        app._save_settings()
+        var grok_after = app.metadata.global_settings()
+        for key in grok_before:
+            if key != "auto_approve_reloads":
+                check(grok_after.get(key) == grok_before[key], "Grok Build preserves setting " + key)
+        check(grok_after.auto_approve_reloads, "Grok Build host reload setting remains editable")
+        app.metadata.save_global_settings(grok_before)
+        app._show_library()
     app.name_edit.text = "Pi fixture"
     app.harness_option.select(0)
     app._create_game()
@@ -155,7 +177,7 @@ func run() -> void:
         file.store_string("keep")
         file.close()
         var session_markers: Array[String] = []
-        for harness in ["pi", "command-code", "opencode", "codex", "cline", "cursor"]:
+        for harness in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build"]:
             var session_dir = app.metadata.game_meta_dir(name).path_join(harness)
             DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(session_dir))
             var session_path = session_dir.path_join("switch-preservation.txt")
@@ -163,7 +185,7 @@ func run() -> void:
             session_file.store_string("preserved native session")
             session_file.close()
             session_markers.append(session_path)
-        for pair in [[1, "command-code"], [2, "opencode"], [3, "codex"], [4, "cline"], [5, "cursor"], [0, "pi"]]:
+        for pair in [[1, "command-code"], [2, "opencode"], [3, "codex"], [4, "cline"], [5, "cursor"], [6, "grok-build"], [0, "pi"]]:
             app._open_settings()
             app.game_harness_option.select(pair[0])
             app._close_settings()

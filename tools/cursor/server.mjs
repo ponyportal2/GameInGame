@@ -69,6 +69,7 @@ export class CursorServer {
     });
     try{
       const result=await this.request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'gamesmith',version:'1.0.0'}});
+      if(result._meta?.grokShell || !result.authMethods?.some(m=>m.id==='cursor_login'))throw new Error('The selected executable is not Cursor Agent CLI. Use cursor-agent or set GAMESMITH_CURSOR_BIN to Cursor; choose Grok Build separately.');
       if(!result.agentCapabilities?.loadSession)throw new Error('This Cursor CLI cannot resume ACP sessions. Update Cursor CLI.');
       await this.request('authenticate',{methodId:'cursor_login'});
     }catch(error){this.close();throw error;}
