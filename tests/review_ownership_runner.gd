@@ -15,7 +15,7 @@ func run() -> void:
     root.add_child(second)
     await process_frame
     second._open_game(name)
-    for choice in [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]:
+    for choice in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0]:
         first._open_settings()
         first.game_harness_option.select(choice)
         first._save_settings()
@@ -23,9 +23,9 @@ func run() -> void:
     first.agent.busy = true
     first.agent.cancel()
     check(not second.game_edit_guard.acquire(), "Stop does not release ownership")
-    for harness in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro"]:
+    for harness in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo"]:
         second.agent.free()
-        var script = {"pi":"pi", "command-code":"command_code", "opencode":"opencode", "codex":"codex", "cline":"cline", "cursor":"cursor", "grok-build":"grok_build", "agy":"agy", "kimi":"kimi", "kiro":"kiro"}[harness]
+        var script = {"pi":"pi", "command-code":"command_code", "opencode":"opencode", "codex":"codex", "cline":"cline", "cursor":"cursor", "grok-build":"grok_build", "agy":"agy", "kimi":"kimi", "kiro":"kiro", "kilo":"kilo"}[harness]
         second.agent = load("res://src/agent/" + script + "_agent_controller.gd").new()
         second.add_child(second.agent)
         second.agent.configure(name, second.tools)

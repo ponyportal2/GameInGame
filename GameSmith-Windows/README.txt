@@ -7,7 +7,7 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, or Kiro CLI when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, Kiro CLI, or Kilo when creating a game. Install the harness you want to use.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
   npm install -g @earendil-works/pi-coding-agent@1.0.0
@@ -123,3 +123,14 @@ Messages reuse one native conversation; reopen, rename and Stop resume its exact
 ID. Reload waits for GameSmith approval unless automatic approval is enabled.
 Start new Kiro session in Settings archives the reference without deleting history.
 Host headless tests, reload approval and automatic reload approval remain available.
+
+For Kilo games:
+  npm install -g @kilocode/cli
+Sign in and select your model/provider through Kilo, then choose Kilo in GameSmith.
+Model, reasoning, provider and compaction remain Kilo-owned. Node.js must be on
+PATH. GAMESMITH_KILO_BIN can point to a custom executable, npm shim or wrapper.
+Kilo shares the OpenCode transport but uses its own backend and per-game native
+session reference. Ordinary messages reuse the backend; reopening or switching
+back resumes native history. Rename before the first Kilo turn: native Kilo
+history is tied to the workspace path, so later renames are blocked. Reload approval can wait for the player. Stop uses
+native abort with a five-second forced fallback. Restart GameSmith after updating.

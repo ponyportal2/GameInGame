@@ -6,6 +6,7 @@ const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const OpenCodeAgentControllerScript = preload("res://src/agent/opencode_agent_controller.gd")
+const KiloAgentControllerScript = preload("res://src/agent/kilo_agent_controller.gd")
 const KiroAgentControllerScript = preload("res://src/agent/kiro_agent_controller.gd")
 const KimiAgentControllerScript = preload("res://src/agent/kimi_agent_controller.gd")
 const AgyAgentControllerScript = preload("res://src/agent/agy_agent_controller.gd")
@@ -331,6 +332,7 @@ func _attach_game_agent() -> void:
         "agy": agent = AgyAgentControllerScript.new()
         "kimi": agent = KimiAgentControllerScript.new()
         "kiro": agent = KiroAgentControllerScript.new()
+        "kilo": agent = KiloAgentControllerScript.new()
         _: agent = PiAgentControllerScript.new()
     add_child(agent)
     agent.editor_guard = game_edit_guard
@@ -742,10 +744,10 @@ func _uses_native_agent_settings() -> bool:
     return _uses_command_code() or _uses_native_compaction()
 
 func _uses_native_compaction() -> bool:
-    return current_game != "" and metadata.read_game(current_game).get("harness", "pi") in ["opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro"]
+    return current_game != "" and metadata.read_game(current_game).get("harness", "pi") in ["opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo"]
 
 func _native_harness_label() -> String:
-    return {"codex": "Codex", "cline": "Cline", "cursor": "Cursor", "grok-build": "Grok Build", "agy": "AGY", "kimi": "Kimi", "kiro": "Kiro", "opencode": "OpenCode"}.get(metadata.read_game(current_game).get("harness", "pi"), "OpenCode")
+    return {"codex": "Codex", "cline": "Cline", "cursor": "Cursor", "grok-build": "Grok Build", "agy": "AGY", "kimi": "Kimi", "kiro": "Kiro", "opencode": "OpenCode", "kilo": "Kilo"}.get(metadata.read_game(current_game).get("harness", "pi"), "OpenCode")
 
 func _close_settings() -> void:
     _cancel_new_codex_session()

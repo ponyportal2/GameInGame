@@ -56,7 +56,7 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing Kiro " + module)
             quit(1)
             return
-    for script in ["kiro_agent_controller.gd", "kimi_agent_controller.gd", "agy_agent_controller.gd", "command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd", "codex_agent_controller.gd", "cline_agent_controller.gd", "cursor_agent_controller.gd", "grok_build_agent_controller.gd"]:
+    for script in ["kilo_agent_controller.gd", "kiro_agent_controller.gd", "kimi_agent_controller.gd", "agy_agent_controller.gd", "command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd", "codex_agent_controller.gd", "cline_agent_controller.gd", "cursor_agent_controller.gd", "grok_build_agent_controller.gd"]:
         if not ResourceLoader.exists("res://src/agent/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)

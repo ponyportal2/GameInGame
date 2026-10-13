@@ -26,7 +26,7 @@ func list_games() -> Array[String]:
     return names
 
 func create_game(raw_name: String, harness: String = "pi") -> Dictionary:
-    if harness not in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro"]:
+    if harness not in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo"]:
         return {"ok": false, "error": "Unknown coding harness: " + harness}
     ensure()
     var base = PathUtils.sanitize_game_name(raw_name)
@@ -52,6 +52,8 @@ func rename_game(old_name: String, raw_new_name: String) -> Dictionary:
     var new_name = PathUtils.sanitize_game_name(raw_new_name)
     if old_name == new_name:
         return {"ok": true, "name": old_name}
+    if str(JsonStore.read_dict(metadata.game_meta_dir(old_name).path_join("kilo/session.json"), {}).get("session", "")) != "":
+        return {"ok": false, "error": "Kilo binds conversation history to the workspace path. Rename before starting a Kilo session; this game and its history have been kept at their original path."}
     if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(game_path(new_name))):
         return {"ok": false, "error": "A game with that name already exists."}
     var err = DirAccess.rename_absolute(ProjectSettings.globalize_path(game_path(old_name)), ProjectSettings.globalize_path(game_path(new_name)))
