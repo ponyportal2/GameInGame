@@ -14,7 +14,13 @@ func _service_host_bridge() -> void:
             var request = JsonStore.read_dict(path, {})
             var command = str(request.get("command", ""))
             if command == "authorize_reload":
-                DirAccess.remove_absolute(path)
+                # On Windows, another process (including antivirus/indexing) can
+                # briefly keep a just-written request open without delete sharing.
+                # Do not act until this controller has removed it from the live
+                # request namespace; otherwise the superclass can process the same
+                # request and race a second response.
+                if DirAccess.remove_absolute(path) != OK:
+                    return
                 if not busy or cancelling or not pending_reload.is_empty():
                     _write_host_response(bridge_dir, request, {"ok": false, "error": "Reload approval is unavailable."})
                     continue
@@ -25,7 +31,8 @@ func _service_host_bridge() -> void:
                     status_changed.emit("Waiting for reload approval")
                     reload_approval_changed.emit(true)
             elif command == "reload_game":
-                DirAccess.remove_absolute(path)
+                if DirAccess.remove_absolute(path) != OK:
+                    return
                 var token = str(request.get("args", {}).get("approval_token", ""))
                 var result: Dictionary = {"ok": false, "error": "Reload requires a current, single-use ACP approval."}
                 if busy and not cancelling and token != "" and token == reload_grant and reload_grant_operation == operation_id:
@@ -133,6 +140,6 @@ func _native_modules() -> Array:
 
 func _native_prompt() -> String:
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "gamesmith__read/edit/write/search/list").replace("Pi's", "Cline's").replace("Pi process", "Cline process")
-    prompt += "\nAll GameSmith tools are MCP tools named gamesmith__<command>, including gamesmith__start_test_game, gamesmith__reload_game, and gamesmith__git_commit. Use gamesmith__read with 1-based offset/limit, gamesmith__edit with path/old_text/new_text, gamesmith__write with path/content, gamesmith__search with a literal pattern, and gamesmith__list for files. Native shell, delegation and native filesystem tools are denied; use only the GameSmith tools. Model, reasoning and compaction are managed by your Cline configuration.\n"
+    prompt += "\nAll GameSmith tools are MCP tools named gamesmith__<command>, including gamesmith__start_test_game, gamesmith__reload_game, and gamesmith__git_commit. Use gamesmith__read with 1-based offset/limit, gamesmith__edit with path/old_text/new_text and gamesmith__write with path/content, gamesmith__search with a literal pattern, and gamesmith__list for files. Native shell, delegation and native filesystem tools are denied; use only the GameSmith tools. Model, reasoning and compaction are managed by your Cline configuration.\n"
     prompt += "GameSmith file paths must be relative to the game workspace (for example main.gd), never absolute paths. For a headless startup check, read_test_log reporting state=running and load_result.ok=true means startup succeeded; latest_outcome=accepted also confirms acceptance. The test keeps running until you stop it: do not wait for it to finish by itself or repeatedly poll identical logs. Once your checks pass, call stop_test_game with its run_id, then reload_game for the player.\n"
     return prompt
