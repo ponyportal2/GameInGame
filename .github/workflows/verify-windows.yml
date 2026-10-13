@@ -3,7 +3,6 @@ name: Bridge claim TDD
 on:
   push:
     branches: ['debug/bridge-claim-tdd-20261013']
-    paths: ['.github/workflows/verify-windows.yml']
   workflow_dispatch:
 
 permissions:
@@ -39,5 +38,3 @@ jobs:
           git add src/agent/pi_agent_controller.gd
           git commit -m 'fix: claim host bridge requests before processing'
           git push origin HEAD:debug/bridge-claim-tdd-20261013
-
-# temporary debug workflow; restore before PR
