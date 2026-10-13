@@ -1,0 +1,24 @@
+name: Debug Windows bridge claim
+
+on:
+  push:
+    branches: [fix/windows-bridge-claim-20261013]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: debug-bridge-claim-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bridge:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Locked bridge request regression
+        run: node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe bridge_claim_runner.gd
