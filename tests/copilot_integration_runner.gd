@@ -12,6 +12,9 @@ func check_model(directory: String, stage: String) -> void:
     var metadata = JsonStore.read_dict(directory.path_join("backend.json"), {})
     var agent_id = str(metadata.get("agent", ""))
     check(agent_id.begins_with("gamesmith-") and agent_id.length() == 46 and agent_id != previous_agent, "Copilot selects a fresh unique profile on " + stage)
+    var agents_directory = directory.path_join("native-workspace/.github/agents")
+    if previous_agent != "":
+        check(not FileAccess.file_exists(agents_directory.path_join(previous_agent + ".agent.md")), "Copilot removes the obsolete profile after successful " + stage)
     previous_agent = agent_id
     var profile = FileAccess.get_file_as_string(directory.path_join("native-workspace/.github/agents").path_join(agent_id + ".agent.md"))
     check("name: " + agent_id + "\n" in profile, "Copilot profile name matches its unique filename on " + stage)

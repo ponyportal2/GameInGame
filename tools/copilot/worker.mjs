@@ -59,6 +59,7 @@ function ready(){return initializing ||= (async()=>{
   // --agent is ignored by the tested ACP mode: explicitly select and verify.
   const selected=await server.request('session/set_config_option',{sessionId:session,configId:'agent',value:server.agentId});
   if(selected.configOptions?.find(o=>o.id==='agent')?.currentValue!==server.agentId)throw new Error('Copilot did not load the restricted GameSmith agent profile. Update Copilot CLI.');
+  server.cleanupProfiles();
   writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,agent:server.agentId,model:selected.configOptions?.find(o=>o.id==='model')?.currentValue || result.configOptions?.find(o=>o.id==='model')?.currentValue || result.models?.currentModelId}));
 })().catch(error=>{stopping=true;server.close();error.initializationFailed=true;throw error;});}
 async function prompt(request,operation){

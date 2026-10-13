@@ -25,6 +25,32 @@ test('higher-priority personal gamesmith profile cannot shadow runtime profile',
  }
  assert.match(readFileSync(shadow,'utf8'),/SHADOW_PROFILE/);
 });
+test('obsolete profiles are cleaned only after successful resume and verified selection',{timeout:15000},async t=>{
+ const old='gamesmith-12345678-1234-4234-8234-123456789abc.agent.md';
+ const preserved=['gamesmith.agent.md','personal.agent.md','gamesmith-not-a-uuid.agent.md','gamesmith-12345678-1234-4234-8234-123456789abc.agent.md.backup'];
+ for(const extra of [{},{GAMESMITH_COPILOT_FAIL_METHOD:'session/load'},{GAMESMITH_COPILOT_WRONG_MODE:'1'}]){
+  const directory=mkdtempSync(join(tmpdir(),'gs-copilot-cleanup-'));
+  const agents=join(directory,'native-workspace','.github','agents');mkdirSync(agents,{recursive:true});
+  writeFileSync(join(agents,old),'previous native profile');
+  for(const name of preserved)writeFileSync(join(agents,name),'keep '+name);
+  const folder='gamesmith-87654321-4321-4321-8321-cba987654321.agent.md';mkdirSync(join(agents,folder));
+  const f=fixture(t,{GAMESMITH_COPILOT_PREVIOUS_PROFILE:old,...extra},'copilot-fixture-session',directory);
+  f.send({type:'prompt',id:'one',message:'hello'});
+  if(Object.keys(extra).length){
+   const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);
+   assert.equal(existsSync(join(agents,old)),true);
+   assert.equal(f.records.some(r=>r.type==='delta'),false);
+  }else{
+   assert((await f.until(r=>r.type==='complete')).ok);
+   assert.equal(existsSync(join(agents,old)),false);
+   const id=JSON.parse(readFileSync(join(directory,'backend.json'))).agent;
+   assert.equal(existsSync(join(agents,id+'.agent.md')),true);
+  }
+  for(const name of preserved)assert.equal(readFileSync(join(agents,name),'utf8'),'keep '+name);
+  assert.equal(existsSync(join(agents,folder)),true);
+  assert.equal(JSON.parse(readFileSync(join(directory,'session.json'))).session,'copilot-fixture-session');
+ }
+});
 function fixture(t,extra={},saved,directory=mkdtempSync(join(tmpdir(),'gs-copilot-server-'))){
   mkdirSync(join(directory,'bridge'),{recursive:true});
   // Assemble exactly the files selected by the GDScript controller, rather than

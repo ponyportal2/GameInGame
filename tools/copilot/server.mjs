@@ -1,5 +1,5 @@
 import {spawn,spawnSync} from 'node:child_process';
-import {existsSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {existsSync,readFileSync,writeFileSync,mkdirSync,readdirSync,unlinkSync} from 'node:fs';
 import {join,resolve,dirname} from 'node:path';
 import {homedir} from 'node:os';
 import {createInterface} from 'node:readline';
@@ -55,6 +55,19 @@ export class CopilotServer {
     }catch(error){this.close();throw error;}
   }
   sessionParams(){return {cwd:this.cwd,mcpServers:[]};}
+  cleanupProfiles(){
+    // Resume may still refer to the previous agent. Call only after loading the
+    // conversation and verifying the fresh agent selection; never on close.
+    const directory=join(this.cwd,'.github','agents');
+    const generated=/^gamesmith-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.agent\.md$/;
+    try{
+      for(const entry of readdirSync(directory,{withFileTypes:true})){
+        if(!entry.isFile() || entry.name===this.agentId+'.agent.md' || !generated.test(entry.name))continue;
+        try{unlinkSync(join(directory,entry.name));}
+        catch(error){this.onStderr('Could not remove obsolete Copilot profile: '+error.message);}
+      }
+    }catch(error){this.onStderr('Could not scan obsolete Copilot profiles: '+error.message);}
+  }
   send(record){if(this.child?.stdin.writable)this.child.stdin.write(JSON.stringify({jsonrpc:'2.0',...record})+'\n');}
   request(method,params={}){
     if(this.closing || !this.child || this.child.exitCode!==null)return Promise.reject(new Error('Copilot ACP is unavailable.'));

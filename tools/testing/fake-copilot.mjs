@@ -1,5 +1,5 @@
 import {createInterface} from 'node:readline';
-import {readFileSync,appendFileSync,writeFileSync,existsSync,readdirSync} from 'node:fs';
+import {readFileSync,appendFileSync,writeFileSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 if(process.argv.includes('status')){console.log(JSON.stringify({isAuthenticated:process.env.GAMESMITH_COPILOT_LOGGED_OUT!=='1'}));process.exit();}
@@ -72,8 +72,8 @@ createInterface({input:process.stdin}).on('line',async line=>{
   }
   if(r.method==='session/new' || r.method==='session/load'){
     if(r.method==='session/load' && r.params.sessionId!==session){emit({id:r.id,error:{code:-32000,message:'Native session not found'}});return;}
-    const profile=readFileSync(join('.github/agents',readdirSync('.github/agents').find(n=>n.endsWith('.agent.md'))),'utf8');
-    const names=JSON.parse(profile.split('tools: ')[1].split('\n')[0]);
+    if(process.env.GAMESMITH_COPILOT_PREVIOUS_PROFILE && !existsSync(join('.github/agents',process.env.GAMESMITH_COPILOT_PREVIOUS_PROFILE)))throw new Error('Previous profile removed before native resume');
+    const names=process.argv.find(a=>a.startsWith('--available-tools=')).slice('--available-tools='.length).split(',').map(n=>n.slice(4));
     if(!names.includes('gamesmith-write') || names.some(n=>!n.startsWith('gamesmith-')))throw new Error('Unrestricted agent profile');
     if(!process.argv.includes('--available-tools='+names.map(n=>'mcp:'+n).join(',')) || !process.argv.includes('--allow-tool=gamesmith'))throw new Error('Missing exact startup tool filters');
     const mcpPath=process.argv.find(a=>a.startsWith('--additional-mcp-config=@')).split('=@')[1];
@@ -86,6 +86,11 @@ createInterface({input:process.stdin}).on('line',async line=>{
     const personal=join(process.env.COPILOT_HOME || '.', 'agents',id+'.agent.md');
     const path=existsSync(personal)?personal:join('.github/agents',id+'.agent.md');
     const profile=readFileSync(path,'utf8');
+    if(!profile.includes('SHADOW_PROFILE')){
+      const names=JSON.parse(profile.split('tools: ')[1].split('\n')[0]);
+      if(!process.argv.includes('--available-tools='+names.map(n=>'mcp:'+n).join(',')))throw new Error('Selected profile tools differ from startup filter');
+    }
+    if(process.env.GAMESMITH_COPILOT_PREVIOUS_PROFILE && !existsSync(join('.github/agents',process.env.GAMESMITH_COPILOT_PREVIOUS_PROFILE)))throw new Error('Previous profile removed before agent selection');
     writeFileSync('.copilot-fixture-selected.json',JSON.stringify({id,path,profile}));
     agentSelected=true;reply({configOptions:[{id:'agent',currentValue:process.env.GAMESMITH_COPILOT_WRONG_MODE?'':id},{id:'model',currentValue:profile.includes('SHADOW_PROFILE')?'shadow-model':'fixture-native-model'}]});return;
   }
