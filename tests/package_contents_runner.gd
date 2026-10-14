@@ -68,7 +68,12 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing Crush " + module)
             quit(1)
             return
-    for script in ["crush_agent_controller.gd", "copilot_agent_controller.gd", "kilo_agent_controller.gd", "kiro_agent_controller.gd", "kimi_agent_controller.gd", "agy_agent_controller.gd", "command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd", "codex_agent_controller.gd", "cline_agent_controller.gd", "cursor_agent_controller.gd", "grok_build_agent_controller.gd"]:
+    for module in ["worker.mjs", "server.mjs", "policy.mjs"]:
+        if not FileAccess.file_exists("res://tools/omp/" + module):
+            push_error("FAIL: exported GameSmith.pck is missing OMP " + module)
+            quit(1)
+            return
+    for script in ["omp_agent_controller.gd", "crush_agent_controller.gd", "copilot_agent_controller.gd", "kilo_agent_controller.gd", "kiro_agent_controller.gd", "kimi_agent_controller.gd", "agy_agent_controller.gd", "command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd", "codex_agent_controller.gd", "cline_agent_controller.gd", "cursor_agent_controller.gd", "grok_build_agent_controller.gd"]:
         if not ResourceLoader.exists("res://src/agent/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)

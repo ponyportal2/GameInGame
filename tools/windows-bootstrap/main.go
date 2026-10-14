@@ -64,8 +64,8 @@ func main() {
 	if _, err := exec.LookPath("git.exe"); err != nil {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
-	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), os.Getenv("GAMESMITH_CODEX_BIN"), os.Getenv("GAMESMITH_CLINE_BIN"), os.Getenv("GAMESMITH_CURSOR_BIN"), os.Getenv("GAMESMITH_GROK_BUILD_BIN"), os.Getenv("GAMESMITH_AGY_BIN"), os.Getenv("GAMESMITH_KIMI_BIN"), os.Getenv("GAMESMITH_KIRO_BIN"), os.Getenv("GAMESMITH_KILO_BIN"), os.Getenv("GAMESMITH_COPILOT_BIN"), os.Getenv("GAMESMITH_CRUSH_BIN"), exec.LookPath) {
-		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, experimental AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, or Crush CLI to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\nCursor Agent CLI: https://cursor.com/docs/cli/installation\nGrok Build: https://docs.x.ai/build\nAGY (experimental): https://antigravity.google/docs/cli/installation\nKimi Code: https://moonshotai.github.io/kimi-code/\nKiro CLI: https://kiro.dev/docs/cli/\nKilo CLI: npm install -g @kilocode/cli\nCopilot CLI: npm install -g @github/copilot\nCrush CLI: winget install charmbracelet.crush\n\nThen restart GameSmith and choose the installed harness when creating a game.")
+	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), os.Getenv("GAMESMITH_CODEX_BIN"), os.Getenv("GAMESMITH_CLINE_BIN"), os.Getenv("GAMESMITH_CURSOR_BIN"), os.Getenv("GAMESMITH_GROK_BUILD_BIN"), os.Getenv("GAMESMITH_AGY_BIN"), os.Getenv("GAMESMITH_KIMI_BIN"), os.Getenv("GAMESMITH_KIRO_BIN"), os.Getenv("GAMESMITH_KILO_BIN"), os.Getenv("GAMESMITH_COPILOT_BIN"), os.Getenv("GAMESMITH_CRUSH_BIN"), os.Getenv("GAMESMITH_OMP_BIN"), exec.LookPath) {
+		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, experimental AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI, or OMP to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\nCursor Agent CLI: https://cursor.com/docs/cli/installation\nGrok Build: https://docs.x.ai/build\nAGY (experimental): https://antigravity.google/docs/cli/installation\nKimi Code: https://moonshotai.github.io/kimi-code/\nKiro CLI: https://kiro.dev/docs/cli/\nKilo CLI: npm install -g @kilocode/cli\nCopilot CLI: npm install -g @github/copilot\nCrush CLI: winget install charmbracelet.crush\nOMP: https://github.com/can1357/oh-my-pi\n\nThen restart GameSmith and choose the installed harness when creating a game.")
 	}
 
 	args := append([]string{"--main-pack", packPath}, os.Args[1:]...)
@@ -77,7 +77,7 @@ func main() {
 	}
 }
 
-func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexConfigured, clineConfigured, cursorConfigured, grokConfigured, agyConfigured, kimiConfigured, kiroConfigured, kiloConfigured, copilotConfigured, crushConfigured string, lookPath func(string) (string, error)) bool {
+func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexConfigured, clineConfigured, cursorConfigured, grokConfigured, agyConfigured, kimiConfigured, kiroConfigured, kiloConfigured, copilotConfigured, crushConfigured, ompConfigured string, lookPath func(string) (string, error)) bool {
 	if _, err := resolvePiExecutable(piConfigured, lookPath); err == nil {
 		return true
 	}
@@ -112,7 +112,7 @@ func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexC
 		}
 	}
 
-	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}, {codexConfigured, "codex"}, {clineConfigured, "cline"}, {cursorConfigured, "cursor-agent"}, {grokConfigured, "grok"}, {agyConfigured, "agy"}, {kimiConfigured, "kimi"}, {kiroConfigured, "kiro-cli"}, {kiloConfigured, "kilo"}, {copilotConfigured, "copilot"}, {crushConfigured, "crush"}} {
+	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}, {codexConfigured, "codex"}, {clineConfigured, "cline"}, {cursorConfigured, "cursor-agent"}, {grokConfigured, "grok"}, {agyConfigured, "agy"}, {kimiConfigured, "kimi"}, {kiroConfigured, "kiro-cli"}, {kiloConfigured, "kilo"}, {copilotConfigured, "copilot"}, {crushConfigured, "crush"}, {ompConfigured, "omp"}} {
 		command := strings.TrimSpace(harness.configured)
 		if command == "" {
 			command = harness.fallback

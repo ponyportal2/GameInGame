@@ -48,7 +48,7 @@ func run() -> void:
     for key in before:
         check(after.get(key) == before[key], "command-code preserves setting " + key)
     app._show_library()
-    check(app.harness_option.item_count == 13, "new games offer Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, experimental AGY, Kimi Code, Kiro CLI, Kilo CLI and Copilot CLI and Crush CLI")
+    check(app.harness_option.item_count == 14, "new games offer all fourteen harnesses, including OMP")
     if app.harness_option.item_count >= 3:
         app.name_edit.text = "OpenCode fixture"
         app.harness_option.select(2)
@@ -291,6 +291,28 @@ func run() -> void:
         check(crush_after.auto_approve_reloads, "Crush host reload setting remains editable")
         app.metadata.save_global_settings(crush_before)
         app._show_library()
+    if app.harness_option.item_count >= 14:
+        app.name_edit.text = "OMP fixture"
+        app.harness_option.select(13)
+        app._create_game()
+        check(app.metadata.read_game(app.current_game).get("harness") == "omp", "OMP selection persists")
+        check(app.agent.get_script().resource_path.ends_with("omp_agent_controller.gd"), "OMP uses its own controller")
+        app._open_settings()
+        check(app.provider_option.disabled and not app.model_edit.editable and not app.key_edit.editable and app.reasoning_option.disabled, "OMP owns provider, model, credentials and reasoning")
+        check(not app.compaction_auto_spin.editable and not app.compaction_keep_spin.editable and app.compact_now_button.disabled, "OMP owns all compaction settings")
+        var omp_before = app.metadata.global_settings()
+        app.model_edit.text = "must not save"
+        app.compaction_auto_spin.value = 999
+        app.compaction_keep_spin.value = 999
+        app.auto_reload_check.button_pressed = true
+        app._save_settings()
+        var omp_after = app.metadata.global_settings()
+        for key in omp_before:
+            if key != "auto_approve_reloads":
+                check(omp_after.get(key) == omp_before[key], "OMP preserves setting " + key)
+        check(omp_after.auto_approve_reloads, "OMP host reload setting remains editable")
+        app.metadata.save_global_settings(omp_before)
+        app._show_library()
     app.name_edit.text = "Pi fixture"
     app.harness_option.select(0)
     app._create_game()
@@ -308,7 +330,7 @@ func run() -> void:
         file.store_string("keep")
         file.close()
         var session_markers: Array[String] = []
-        for harness in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush"]:
+        for harness in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]:
             var session_dir = app.metadata.game_meta_dir(name).path_join(harness)
             DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(session_dir))
             var session_path = session_dir.path_join("switch-preservation.txt")
@@ -316,7 +338,7 @@ func run() -> void:
             session_file.store_string("preserved native session")
             session_file.close()
             session_markers.append(session_path)
-        for pair in [[1, "command-code"], [2, "opencode"], [3, "codex"], [4, "cline"], [5, "cursor"], [6, "grok-build"], [7, "agy"], [8, "kimi"], [9, "kiro"], [10, "kilo"], [11, "copilot"], [12, "crush"], [0, "pi"]]:
+        for pair in [[1, "command-code"], [2, "opencode"], [3, "codex"], [4, "cline"], [5, "cursor"], [6, "grok-build"], [7, "agy"], [8, "kimi"], [9, "kiro"], [10, "kilo"], [11, "copilot"], [12, "crush"], [13, "omp"], [0, "pi"]]:
             app._open_settings()
             app.game_harness_option.select(pair[0])
             app._close_settings()

@@ -7,7 +7,19 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, Kiro CLI, Kilo, Copilot CLI, or Crush CLI when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, Kiro CLI, Kilo, Copilot CLI, Crush CLI, or OMP when creating a game. Install the harness you want to use.
+
+For OMP (Oh My Pi) games:
+
+  https://github.com/can1357/oh-my-pi
+
+Tested with OMP 18.10.3. Select your model/provider in OMP. GameSmith uses a
+persistent RPC process and explicit native history; reopen, rename and Stop
+preserve the conversation. OMP owns model, reasoning and compaction settings.
+Node.js must be on PATH. Restart GameSmith after installation. Set
+GAMESMITH_OMP_BIN for a custom executable, or PI_CODING_AGENT_DIR for a custom
+native settings directory. Settings > Start new OMP session archives its saved
+reference after confirmation, keeping game files, chat and old native history.
 
 For Crush games:
 

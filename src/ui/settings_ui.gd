@@ -112,7 +112,7 @@ static func build(app) -> void:
     var conversation = page(tabs, "Conversation")
     U.paragraph(conversation, "Summarize older conversation to make room for new work. Recent messages stay intact.")
     app.compaction_auto_spin = spin(0, 2000000, 1000)
-    field(conversation, "Automatically compact at · estimated tokens", app.compaction_auto_spin, "Pi and Command-code: checked between requests. OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI and Crush CLI handle their own compaction. Set to 0 to disable GameSmith’s trigger; the harness can still compact automatically.")
+    field(conversation, "Automatically compact at · estimated tokens", app.compaction_auto_spin, "Pi and Command-code: checked between requests. OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP handle their own compaction. Set to 0 to disable GameSmith’s trigger; the harness can still compact automatically.")
     app.compaction_keep_spin = spin(1000, 500000, 1000)
     field(conversation, "Recent tokens to keep", app.compaction_keep_spin)
     conversation.add_child(HSeparator.new())
@@ -121,7 +121,7 @@ static func build(app) -> void:
     app.compact_now_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
     var game = page(tabs, "This game")
     app.game_harness_option = OptionButton.new()
-    for pair in [["Pi", "pi"], ["Command-code", "command-code"], ["OpenCode", "opencode"], ["Codex", "codex"], ["Cline", "cline"], ["Cursor", "cursor"], ["Grok Build", "grok-build"], ["AGY (experimental)", "agy"], ["Kimi Code", "kimi"], ["Kiro CLI", "kiro"], ["Kilo CLI", "kilo"], ["Copilot CLI", "copilot"], ["Crush CLI", "crush"]]:
+    for pair in [["Pi", "pi"], ["Command-code", "command-code"], ["OpenCode", "opencode"], ["Codex", "codex"], ["Cline", "cline"], ["Cursor", "cursor"], ["Grok Build", "grok-build"], ["AGY (experimental)", "agy"], ["Kimi Code", "kimi"], ["Kiro CLI", "kiro"], ["Kilo CLI", "kilo"], ["Copilot CLI", "copilot"], ["Crush CLI", "crush"], ["OMP", "omp"]]:
         app.game_harness_option.add_item(pair[0])
         app.game_harness_option.set_item_metadata(app.game_harness_option.item_count - 1, pair[1])
     field(game, "Coding harness", app.game_harness_option, "Switch after the agent finishes or is stopped. Files and chat stay with the game. Each harness keeps its own session; switching back resumes it. Save, then reopen settings to configure the selected harness.")
@@ -184,7 +184,9 @@ static func build_new_game(app) -> void:
     app.harness_option.set_item_metadata(11, "copilot")
     app.harness_option.add_item("Crush CLI")
     app.harness_option.set_item_metadata(12, "crush")
-    field(root, "Coding harness", app.harness_option, "Command-code, OpenCode, Codex, Cline, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI and Crush CLI use their own model and provider settings. Cursor uses Auto; the model selected in its editor or interactive CLI is not inherited. OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI and Crush CLI handle their own compaction. AGY support is experimental; live model execution has not been verified.")
+    app.harness_option.add_item("OMP")
+    app.harness_option.set_item_metadata(13, "omp")
+    field(root, "Coding harness", app.harness_option, "Command-code, OpenCode, Codex, Cline, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP use their own model and provider settings. Cursor uses Auto; the model selected in its editor or interactive CLI is not inherited. OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP handle their own compaction. AGY support is experimental; live model execution has not been verified.")
     app.name_edit.text_submitted.connect(func(_text): app._create_game())
     U.space(root, true)
     var actions = U.row(root)
