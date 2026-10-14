@@ -18,8 +18,11 @@ const server=new OmpServer(config,{
   onExit:error=>{
     if(stopping)return;
     stopping=true;
-    if(active){emit(active.dispatched ? {type:'complete',ok:false,text:active.text,error:error.message,initialization_failed:true} : {type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.resolve?.({status:'aborted'});active.settle();active.finish();active=undefined;}
+    if(active){active.abort.abort();emit(active.dispatched ? {type:'complete',ok:false,text:active.text,error:error.message,initialization_failed:true} : {type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.resolve?.({status:'aborted'});active.settle();active.finish();active=undefined;}
     server.close();
+    // Retire the adapter even if no player turn was active. Otherwise the host
+    // sees a live worker and keeps sending requests to a dead native backend.
+    process.stdout.write('',()=>process.exit(1));
   },
   onEvent:r=>{
     const op=active;if(!op?.dispatched || op.cancelled)return;
@@ -42,8 +45,11 @@ async function hostCall(r,op){
   let result,isError=false;
   const call=new AbortController();
   try{
-    if(!r.id || !r.toolCallId || seenCalls.has(r.id) || seenCalls.has(r.toolCallId) || !allowed.has(r.toolName))throw new Error('Unknown, duplicate or stale OMP host tool call.');
-    seenCalls.add(r.id);seenCalls.add(r.toolCallId);op.calls.set(r.id,call);
+    if(!r.id || !r.toolCallId || op.seenCalls.has(r.id) || op.seenCalls.has(r.toolCallId) || seenCalls.has(r.id) || seenCalls.has(r.toolCallId) || !allowed.has(r.toolName))throw new Error('Unknown, duplicate or stale OMP host tool call.');
+    for(const id of [r.id,r.toolCallId]){op.seenCalls.add(id);seenCalls.add(id);}
+    // Retain every ID for this turn, plus a bounded recent cross-turn window.
+    while(seenCalls.size>4096)seenCalls.delete(seenCalls.values().next().value);
+    op.calls.set(r.id,call);
     const abort=()=>call.abort();op.abort.signal.addEventListener('abort',abort,{once:true});
     try{
       emit({type:'tool',name:r.toolName});
@@ -67,7 +73,9 @@ async function prompt(request,op){
     const admitted=await server.request('prompt',{message:'Player request:\n'+request.message});
     emit({type:'response',id:request.id,success:true});
     const result=admitted.agentInvoked===false ? {status:'completed'} : await completion;
-    if(result.sessionSettled===false)await op.settled;
+    // The snapshot in prompt_result can already be true, but OMP still emits
+    // its unkeyed settlement frame later. Consume it before admitting a turn.
+    if(admitted.agentInvoked!==false)await op.settled;
     if(op.cancelled || active!==op)return;
     const state=await server.request('get_state');
     server.state=state;
@@ -94,6 +102,6 @@ createInterface({input:process.stdin}).on('line',line=>{
   let r;try{r=JSON.parse(line);}catch{return;}
   if(r.type==='cancel'){if(!cancelling)void cancel(r);else emit({type:'response',id:r.id,success:false,error:'Already stopping OMP.'});return;}
   if(r.type!=='prompt' || active || stopping || cancelling){emit({type:'response',id:r.id,success:false,error:'OMP is busy or unavailable.'});return;}
-  const op={request:r,text:'',finals:new Map(),abort:new AbortController(),calls:new Map()};op.done=new Promise(resolve=>op.finish=resolve);op.settled=new Promise(resolve=>op.settle=resolve);active=op;void prompt(r,op);
+  const op={request:r,text:'',finals:new Map(),abort:new AbortController(),calls:new Map(),seenCalls:new Set()};op.done=new Promise(resolve=>op.finish=resolve);op.settled=new Promise(resolve=>op.settle=resolve);active=op;void prompt(r,op);
 });
 process.stdin.on('end',()=>{stopping=true;active?.abort.abort();server.close();process.exit();});

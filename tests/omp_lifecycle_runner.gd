@@ -47,6 +47,15 @@ func run() -> void:
     await idle()
     check(app.agent.last_error == "", "OMP denies native shell and workspace escapes")
     check(JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid") == backend.get("pid"), "OMP ordinary turns reuse the backend")
+    OS.kill(int(backend.get("pid")))
+    var death_deadline = Time.get_ticks_msec() + 3000
+    while app.agent.rpc != null and app.agent.rpc.running and Time.get_ticks_msec() < death_deadline:
+        await process_frame
+    check(app.agent.rpc == null or not app.agent.rpc.running, "idle OMP backend death retires its worker")
+    app.agent.send_player_request("follow up")
+    await idle()
+    check(app.agent.last_error == "" and JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid") != backend.get("pid") and JsonStore.read_dict(session_file, {}).get("session") == session, "next message after idle OMP death starts a fresh backend and resumes history")
+    backend = JsonStore.read_dict(directory.path_join("backend.json"), {})
     app.agent.send_player_request("reload")
     await reload_pending()
     app.agent.cancel()

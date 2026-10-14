@@ -57,6 +57,50 @@ test('prompt yield waits for native session settlement before handing control ba
   const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,true);assert.equal(result.text,'Fixture complete settled');
 });
 
+test('back-to-back turns consume even a late settled=true frame before starting the next turn',{timeout:15000},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'one',message:'late-settlement'});
+  await f.until(r=>r.type==='complete');
+  const before=f.records.length;
+  f.send({type:'prompt',id:'two',message:'delayed-settlement'});
+  const second=await f.until(r=>f.records.indexOf(r)>=before && r.type==='complete');
+  assert.equal(second.text,'Fixture complete settled');
+  const trace=f.trace(),first=trace.find(r=>r.type==='prompt' && r.message.endsWith('late-settlement'));
+  const settlement=trace.findIndex(r=>r.type==='fixture_settled' && r.promptId===first.id);
+  const next=trace.findIndex(r=>r.type==='prompt' && r.message.endsWith('delayed-settlement'));
+  assert(settlement>=0 && settlement<next,'first settlement must precede the next native prompt');
+});
+
+test('idle native backend death terminates the worker and preserves the resumable session',{timeout:15000},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});
+  assert((await f.until(r=>r.type==='complete')).ok);
+  const saved=JSON.parse(readFileSync(join(f.directory,'session.json'))).session;
+  const backend=JSON.parse(readFileSync(join(f.directory,'backend.json')));
+  const closed=new Promise(resolve=>f.child.once('close',resolve));
+  killProcessTree(backend.pid);
+  let timer;
+  try { await Promise.race([closed,new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error('Idle worker survived native backend death')),1500))]); }
+  finally { clearTimeout(timer); }
+  assert.notEqual(f.child.exitCode,0);
+  const resumed=fixture(t,{},saved,f.directory);resumed.send({type:'prompt',id:'two',message:'hello'});
+  assert((await resumed.until(r=>r.type==='complete')).ok);
+  assert.equal(JSON.parse(readFileSync(join(f.directory,'session.json'))).session,saved);
+  assert.notEqual(JSON.parse(readFileSync(join(f.directory,'backend.json'))).pid,backend.pid);
+});
+
+test('local-only prompt admission does not wait for an agent settlement frame',{timeout:15000},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'one',message:'local-only'});
+  const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,true);assert.equal(result.text,'');
+});
+
+test('bounded recent IDs preserve active-turn and recent cross-turn replay denial',{timeout:30000},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'one',message:'replay-window'});
+  assert.equal((await f.until(r=>r.type==='complete',25000)).text,'Active replay denied after recent cache eviction');
+  const before=f.records.length;
+  f.send({type:'prompt',id:'two',message:'recent-replay'});
+  assert.equal((await f.until(r=>f.records.indexOf(r)>=before && r.type==='complete')).text,'Recent cross-turn replay denied');
+  assert.equal(f.trace().filter(r=>r.type==='host_tool_result' && r.isError).length,2);
+});
+
 test('fresh readiness nonce is required before player inference',{timeout:15000},async t=>{
   const f=fixture(t,{GAMESMITH_OMP_BAD_POLICY:'1'});f.send({type:'prompt',id:'one',message:'hello'});
   const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);assert.equal(result.initialization_failed,true);assert.match(result.error,/readiness/);
