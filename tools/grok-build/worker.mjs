@@ -3,7 +3,7 @@ import {dirname,join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {GrokBuildServer} from './server.mjs';
 import {permissionResult,normalizeUpdate,PermissionCalls} from './protocol.mjs';
-import {authorizeReload} from './approval.mjs';
+import {authorizeReload,authorizeBlender} from './approval.mjs';
 const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const emit=r=>process.stdout.write(JSON.stringify(r)+'\n');
 let session=config.session || '',sessionSaved=!!session,active,initializing,cancelling=false,stopping=false;
@@ -27,6 +27,13 @@ const server=new GrokBuildServer(config,{
       let permitted=!!name;
       if(name==='gamesmith__reload_game'){
         try{await authorizeReload(config,operation.abort.signal);}catch{permitted=false;}
+      }
+      if(name==='gamesmith__blender'){
+        const args=structuredClone(operation.calls.calls.get(p.toolCall.toolCallId)?.input?.tool_input);
+        if(!args || typeof args!=='object')permitted=false;
+        else if(args.action==='start' && args.script){
+          try{await authorizeBlender(config,args,operation.abort.signal);}catch{permitted=false;}
+        }
       }
       return permissionResult(p,permitted && active===operation && !operation?.cancelled);
     }

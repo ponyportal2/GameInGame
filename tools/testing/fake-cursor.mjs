@@ -14,7 +14,11 @@ async function tool(name,args={}) {
   update({sessionUpdate:'tool_call_update',toolCallId:toolCall.toolCallId,status:'in_progress'});
   const permission=await clientRequest('session/request_permission',{sessionId:session,toolCall,options:[{optionId:'yes',kind:'allow_once'},{optionId:'no',kind:'reject_once'}]});
   if(permission.outcome.optionId!=='yes')throw new Error('Permission was denied');
-  const result=await mcp.request('tools/call',{name,arguments:args});
+  let deadline;
+  const result=await Promise.race([
+    mcp.request('tools/call',{name,arguments:args}),
+    new Promise((_,reject)=>{if(name==='blender')deadline=setTimeout(()=>reject(new Error('Finite MCP execution deadline expired')),5000);})
+  ]).finally(()=>clearTimeout(deadline));
   update({sessionUpdate:'tool_call_update',toolCallId:toolCall.toolCallId,status:result.isError?'failed':'completed'});
   if(result.isError)throw new Error(result.content[0].text);
   const data=JSON.parse(result.content[0].text);if(data.ok===false)throw new Error(data.error);return data;
@@ -33,6 +37,7 @@ async function run(r){
     update({sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Fixture reasoning'}});
     if(message==='wait' || message==='stuck-stop')return;
     if(message==='provider-error')throw new Error('Fixture provider error');
+    if(message==='blender-approval')await tool('blender',{action:'start',script:'build.py'});
     if(message==='policy'){
       const denied=await clientRequest('session/request_permission',{sessionId:session,toolCall:{title:'execute_command: echo bad'},options:[{optionId:'yes',kind:'allow_once'},{optionId:'no',kind:'reject_once'}]});
       if(denied.outcome.optionId!=='no')throw new Error('Native shell was allowed');

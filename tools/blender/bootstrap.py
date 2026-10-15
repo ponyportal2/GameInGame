@@ -2,7 +2,7 @@
 import json
 import os
 from pathlib import Path
-import runpy
+import hashlib
 import sys
 import bpy
 
@@ -14,7 +14,10 @@ if config.get('script'):
     # Hide private CLI arguments from the player's reusable asset script.
     sys.argv = [config['script']]
     sys.path.insert(0, config['workspace'])
-    runpy.run_path(config['script'], run_name='__main__')
+    source = Path(config['script']).read_bytes()
+    if hashlib.sha256(source).hexdigest() != config.get('script_sha256'):
+        raise RuntimeError('Approved Python snapshot changed; request fresh player approval.')
+    exec(compile(source, config['script'], 'exec'), {'__name__': '__main__', '__file__': config['script']})
 
 scene = bpy.context.scene
 if config.get('render'):

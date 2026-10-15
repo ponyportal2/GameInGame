@@ -92,6 +92,10 @@ var execution_status_labels: Array[Label] = []
 var running_source_status := "Running workspace"
 var reload_notice: Label
 var approve_reload_button: Button
+var blender_dialog: Control
+var blender_review_label: Label
+var blender_review_source: TextEdit
+var blender_approval_id := ""
 var game_override_provider: OptionButton
 var game_override_model: LineEdit
 var gameplay_mouse_mode := Input.MOUSE_MODE_VISIBLE
@@ -247,6 +251,39 @@ func _build_dialogs() -> void:
     _build_new_game_overlay()
     SettingsUIScript.build_management(self)
     _build_settings_overlay()
+    _build_blender_approval()
+
+func _build_blender_approval() -> void:
+    blender_dialog = SettingsUIScript.overlay(self, "BlenderApprovalOverlay")
+    var box = WorkspaceUIScript.column(WorkspaceUIScript.margin(SettingsUIScript.panel(blender_dialog, 760, 580), 22, 20), 12)
+    WorkspaceUIScript.label(box, "Run Blender Python script?", 24)
+    WorkspaceUIScript.paragraph(box, "This script can run commands, access your files and network, and execute with your user permissions. Only run code you trust. Imports and other files it reads are not frozen by this approval.")
+    blender_review_label = WorkspaceUIScript.paragraph(box, "")
+    blender_review_source = TextEdit.new()
+    blender_review_source.editable = false
+    blender_review_source.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    box.add_child(blender_review_source)
+    var actions = WorkspaceUIScript.row(box)
+    WorkspaceUIScript.space(actions)
+    WorkspaceUIScript.button(actions, "Cancel", func(): _decide_blender(false), "QuietButton")
+    WorkspaceUIScript.button(actions, "Run script", func(): _decide_blender(true), "PrimaryButton")
+
+func _blender_approval_changed(review: Dictionary) -> void:
+    blender_approval_id = str(review.get("run_id", ""))
+    blender_dialog.visible = not review.is_empty()
+    if review.is_empty(): return
+    blender_review_label.text = "%s\nSHA-256: %s" % [str(review.script), str(review.sha256)]
+    blender_review_source.text = str(review.source)
+    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    blender_review_source.grab_focus()
+
+func _decide_blender(allow: bool) -> void:
+    var id = blender_approval_id
+    if id == "" or tools == null or not is_instance_valid(tools.blender_supervisor): return
+    if allow:
+        tools.blender_supervisor.approve(id)
+    else:
+        tools.blender({"action": "stop", "run_id": id})
 
 func _build_new_game_overlay() -> void:
     SettingsUIScript.build_new_game(self)
@@ -263,6 +300,7 @@ func _refresh_library() -> void:
     WorkspaceUIScript.refresh_library(self)
 
 func _show_library() -> void:
+    _blender_approval_changed({})
     _reload_approval_changed(false)
     current_game = ""
     generated_input_states.clear()
@@ -314,6 +352,7 @@ func _open_game(name: String) -> void:
     runner.load_succeeded.connect(_on_load_success)
     runner.load_failed.connect(func(msg): AppLoggerScript.game_event(name, "game.load_failed", str(msg), "ERROR"); _handle_load_failure(str(msg)))
     tools = GameToolsScript.new(store.game_path(name), runner)
+    tools.blender_approval_changed.connect(_blender_approval_changed)
     _attach_game_agent()
     _load_transcript()
     _set_chat_visible(true)

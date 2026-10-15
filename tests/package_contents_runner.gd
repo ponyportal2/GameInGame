@@ -6,7 +6,7 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
-    for module in ["jobs.mjs", "bootstrap.py", "guide.md"]:
+    for module in ["jobs.mjs", "ownership.mjs", "bootstrap.py", "guide.md"]:
         if not FileAccess.file_exists("res://tools/blender/" + module):
             push_error("FAIL: exported GameSmith.pck is missing Blender " + module)
             quit(1)

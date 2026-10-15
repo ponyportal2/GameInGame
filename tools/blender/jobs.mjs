@@ -4,6 +4,34 @@ import {join,dirname,delimiter,resolve} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {workspacePath} from './workspace-paths.mjs';
 import {killProcessTree} from './process-tree.mjs';
+import {createHash} from 'node:crypto';
+import {processIdentity,cleanupJob} from './ownership.mjs';
+
+const sha256=data=>createHash('sha256').update(data).digest('hex');
+export function blenderEnvironment(env,privateHome,workspace) {
+  const allowed=new Set(['systemroot','windir','temp','tmp','tmpdir','home','userprofile','appdata','localappdata','lang','lc_all','display','wayland_display','xdg_runtime_dir']);
+  return {...Object.fromEntries(Object.entries(env).filter(([key])=>allowed.has(key.toLowerCase()))),BLENDER_USER_CONFIG:privateHome,BLENDER_USER_SCRIPTS:join(privateHome,'scripts'),GAMESMITH_WORKSPACE:workspace};
+}
+export async function reviewScript(config) {
+  const prepared=await prepareJob(config);
+  if(!prepared.script)throw new Error('No Python script to review.');
+  if((await stat(prepared.script)).size>256*1024)throw new Error('Script exceeds the 256 KiB review limit. Split the asset workflow into smaller scripts.');
+  const bytes=await readFile(prepared.script);
+  if(bytes.length>256*1024)throw new Error('Script exceeds the 256 KiB review limit.');
+  const source=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+  if(source.includes('\0'))throw new Error('Script contains non-displayable NUL bytes.');
+  await writeFile(join(config.directory,'approved.py'),bytes);
+  return {ok:true,script:config.script,source,sha256:sha256(bytes)};
+}
+export async function approvedJob(config) {
+  const prepared=await prepareJob(config);
+  if(!prepared.script)return prepared;
+  if(!/^[a-f0-9]{64}$/.test(config.script_sha256 || ''))throw new Error('Player approval is required before running Blender Python.');
+  if(sha256(await readFile(prepared.script))!==config.script_sha256)throw new Error('Script changed after review. Request fresh player approval.');
+  const snapshot=join(config.directory,'approved.py');
+  if(sha256(await readFile(snapshot))!==config.script_sha256)throw new Error('Approved script snapshot changed. Request fresh player approval.');
+  return {...prepared,script:snapshot};
+}
 
 export async function resolveBlender(env=process.env) {
   if(env.GAMESMITH_BLENDER_BIN) {
@@ -53,21 +81,26 @@ export async function runJob(config) {
   try {
     await save();
     const executable=await resolveBlender();
-    const prepared=await prepareJob(config);
+    const prepared=await approvedJob(config);
     // Do not allow inherited startup files/preferences/add-ons to alter this job.
     const privateHome=join(config.directory,'blender-config');await mkdir(privateHome,{recursive:true});
     const args=['--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',join(dirname(fileURLToPath(import.meta.url)),'bootstrap.py'),'--',join(config.directory,'prepared.json')];
     await writeFile(join(config.directory,'prepared.json'),JSON.stringify(prepared));
     if(stopped)throw new Error('Blender job cancelled before launch.');
-    child=spawn(executable,args,{cwd:prepared.workspace,windowsHide:true,env:{...process.env,BLENDER_USER_CONFIG:privateHome,BLENDER_USER_SCRIPTS:join(privateHome,'scripts'),GAMESMITH_WORKSPACE:prepared.workspace},stdio:['ignore','pipe','pipe']});
+    child=spawn(executable,args,{cwd:prepared.workspace,windowsHide:true,env:blenderEnvironment(process.env,privateHome,prepared.workspace),stdio:['ignore','pipe','pipe']});
+    // Attach error/close handlers before querying ownership (the child may exit).
+    const completion=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(code,signal)=>resolve({code,signal}));});
+    completion.catch(()=>{});
     child.stdout.on('data',capture);child.stderr.on('data',capture);
     status={...status,state:'running',pid:child.pid,executable};await save();
+    const identity=await processIdentity(child.pid);
+    status={...status,state:'running',pid:child.pid,executable,identity};await save();
     timer=setInterval(()=>{
       try {process.kill(config.parent_pid,0);}catch{stop();}
       if(!stopped)void access(join(config.directory,'stop')).then(stop,()=>{});
       void save();
     },300);
-    const exit=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(code,signal)=>resolve({code,signal}));});
+    const exit=await completion;
     closed=true;
     const report=await readFile(join(config.directory,'report.json'),'utf8').then(JSON.parse,()=>undefined);
     status={...status,state:stopped?'cancelled':exit.code===0?'completed':'failed',ok:!stopped && exit.code===0,exit_code:exit.code,signal:exit.signal,report};
@@ -77,7 +110,12 @@ export async function runJob(config) {
   return status;
 }
 if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
-  if(process.argv[2]==='--inspect') {
+  if(['--review','--cleanup'].includes(process.argv[2])) {
+    try {
+      const config=JSON.parse(await readFile(process.argv[3],'utf8'));
+      console.log(JSON.stringify(await (process.argv[2]==='--review'?reviewScript(config):cleanupJob(config))));
+    }catch(error){console.log(JSON.stringify({ok:false,error:error.message}));process.exitCode=1;}
+  } else if(process.argv[2]==='--inspect') {
     try {console.log(JSON.stringify(await inspectImage(process.argv[3],process.argv[4])));}
     catch(error){console.log(JSON.stringify({ok:false,error:error.message}));process.exitCode=1;}
   } else {

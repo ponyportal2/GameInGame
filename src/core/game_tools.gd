@@ -1,6 +1,8 @@
 class_name GameTools
 extends RefCounted
 
+signal blender_approval_changed(review: Dictionary)
+
 const DEFAULT_READ_LINES = 300
 const MAX_READ_LINES = 1000
 
@@ -13,6 +15,7 @@ var blender_supervisor: Node
 func blender(args: Dictionary) -> Dictionary:
     if not is_instance_valid(blender_supervisor):
         blender_supervisor = preload("res://src/core/blender_supervisor.gd").new()
+        blender_supervisor.approval_changed.connect(func(review): blender_approval_changed.emit(review))
         runner.add_child(blender_supervisor)
     return blender_supervisor.execute(workspace, args)
 

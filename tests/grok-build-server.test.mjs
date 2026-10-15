@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync,renameSync,rmSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {killProcessTree} from '../tools/agent/process-tree.mjs';
@@ -53,4 +53,32 @@ test('Grok policy removes native tools and leaves native model settings alone',{
 test('Cursor ACP cannot masquerade as Grok Build',{timeout:15000},async t=>{
  const f=fixture(t,{GAMESMITH_GROK_BUILD_WRONG_AGENT:'1'});f.send({type:'prompt',id:'one',message:'hello'});
  const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);assert.match(result.error,/not Grok Build/);
+});
+
+test('Blender waits before MCP execution and passes its single-use approval',{timeout:15000+Number(process.env.GAMESMITH_TEST_BLENDER_WAIT_MS || 0)},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'blender',message:'blender-approval'});
+  const bridge=join(f.directory,'bridge');
+  const request=async()=>{
+    for(let i=0;i<800;i++){
+      const file=readdirSync(bridge).find(n=>/^request-.*\.json$/.test(n));
+      if(file){
+        const path=join(bridge,file),claimed=path+'.claimed';
+        try{renameSync(path,claimed);}catch(error){if(['EPERM','EACCES','ENOENT'].includes(error.code)){await new Promise(r=>setTimeout(r,10));continue;}throw error;}
+        const data=JSON.parse(readFileSync(claimed,'utf8'));rmSync(claimed);return data;
+      }
+      await new Promise(r=>setTimeout(r,10));
+    }
+    throw new Error('No Blender approval request');
+  };
+  const auth=await request();assert.equal(auth.command,'authorize_blender');
+  assert.deepEqual(auth.args.blender_args,{action:'start',script:'build.py'});
+  // Only ACP permission is pending. No MCP host call can race the player.
+  await new Promise(r=>setTimeout(r,Number(process.env.GAMESMITH_TEST_BLENDER_WAIT_MS || 100)));
+  assert.equal(readdirSync(bridge).filter(n=>n.startsWith('request-')).length,0);
+  writeFileSync(join(bridge,'response-'+auth.id+'.json'),JSON.stringify({ok:true,run_id:'approved',state:'running'}));
+  const call=await request();assert.equal(call.command,'blender');
+  assert.deepEqual(call.args,{action:'start',script:'build.py',approval_token:auth.args.token});
+  writeFileSync(join(bridge,'response-'+call.id+'.json'),JSON.stringify({ok:true,run_id:'approved',state:'running'}));
+  assert((await f.until(r=>r.type==='complete')).ok);
+  assert.equal(existsSync(join(bridge,'blender-grant.json')),false);
 });

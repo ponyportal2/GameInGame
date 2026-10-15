@@ -18,6 +18,10 @@ func cancel() -> void:
         _write_host_response(pending_reload.bridge_dir, pending_reload.request, cancelled_result)
     for pending in pending_test_commands:
         _write_host_response(pending.bridge_dir, pending.request, cancelled_result)
+    for pending in pending_blender_commands:
+        _write_host_response(pending.bridge_dir, pending.request, cancelled_result)
+    pending_blender_commands.clear()
+    blender_grants.clear()
     _clear_pending_reload()
     pending_test_commands.clear()
     if tools != null and is_instance_valid(tools.test_supervisor):

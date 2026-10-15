@@ -44,6 +44,8 @@ var restart_after_finish := false
 var operation_id := 0
 var pending_reload: Dictionary = {}
 var pending_test_commands: Array[Dictionary] = []
+var pending_blender_commands: Array[Dictionary] = []
+var blender_grants: Dictionary = {}
 var auto_compaction_failed_operation := -1
 
 func configure(p_game_name: String, p_tools) -> void:
@@ -202,6 +204,8 @@ func cancel() -> void:
 func restart_runtime() -> void:
     if tools != null and is_instance_valid(tools.blender_supervisor):
         tools.blender_supervisor.stop_all()
+    pending_blender_commands.clear()
+    blender_grants.clear()
     _clear_pending_reload()
     pending_test_commands.clear()
     if tools != null and is_instance_valid(tools.test_supervisor):
@@ -453,6 +457,7 @@ func _service_host_bridge() -> void:
     if bridge_dir == "":
         return
     _service_pending_test_commands()
+    _service_pending_blender_commands()
     var dir = DirAccess.open(bridge_dir)
     if dir == null:
         return
@@ -500,7 +505,32 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
             reload_approval_changed.emit(true)
             return
         result = {"ok": false, "error": "Another reload is already waiting for player approval."}
-    elif command in ["read_runtime_log", "blender"]:
+    elif command in ["blender", "authorize_blender"]:
+        var args: Dictionary = request.get("args", {}).duplicate(true)
+        if command == "authorize_blender":
+            if not busy or str(args.get("token", "")) == "" or typeof(args.get("blender_args")) != TYPE_DICTIONARY:
+                _write_host_response(directory, request, {"ok": false, "error": "No active Blender authorization operation."})
+                return
+            args = args.blender_args.duplicate(true)
+            if args.get("action") != "start" or str(args.get("script", "")) == "":
+                _write_host_response(directory, request, {"ok": false, "error": "Only Python starts need authorization."})
+                return
+        elif args.has("approval_token"):
+            var token = str(args.approval_token)
+            args.erase("approval_token")
+            var grant: Dictionary = blender_grants.get(token, {})
+            blender_grants.erase(token)
+            if not busy or grant.get("operation_id", -1) != operation_id or grant.get("bridge_dir") != directory or grant.get("args") != args:
+                _write_host_response(directory, request, {"ok": false, "error": "Blender approval is missing, stale, or does not match the script request."})
+                return
+            _write_host_response(directory, request, tools.execute("blender", {"action": "status", "run_id": grant.run_id}))
+            return
+        result = tools.execute("blender", args)
+        if result.get("state") == "awaiting_approval":
+            pending_blender_commands.append({"request": request, "run_id": result.run_id, "bridge_dir": directory, "operation_id": operation_id})
+            status_changed.emit("Waiting for Blender Python approval")
+            return
+    elif command == "read_runtime_log":
         result = tools.execute(command, request.get("args", {}))
     elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
         result = tools.execute(command, request.get("args", {}))
@@ -524,6 +554,25 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
     else:
         result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
     _write_host_response(directory, request, result)
+
+func _service_pending_blender_commands() -> void:
+    for pending in pending_blender_commands.duplicate():
+        if pending.operation_id != operation_id or pending.bridge_dir != bridge_dir:
+            if tools != null and is_instance_valid(tools.blender_supervisor):
+                tools.blender_supervisor.stop_all()
+            pending_blender_commands.erase(pending)
+            continue
+        var result: Dictionary = tools.execute("blender", {"action": "status", "run_id": pending.run_id})
+        if result.get("state") != "awaiting_approval":
+            pending_blender_commands.erase(pending)
+            if pending.request.get("command") == "authorize_blender" and result.get("state") != "cancelled":
+                var auth: Dictionary = pending.request.args
+                blender_grants[str(auth.token)] = {"operation_id": operation_id, "bridge_dir": pending.bridge_dir, "run_id": pending.run_id, "args": auth.blender_args.duplicate(true)}
+                # Authorization succeeded even if the approved job already failed.
+                # The actual MCP call must receive its execution diagnostics.
+                result = {"ok": true}
+            _write_host_response(pending.bridge_dir, pending.request, result)
+            status_changed.emit("Agent is working...")
 
 func _service_pending_test_commands() -> void:
     for pending in pending_test_commands.duplicate():
@@ -565,6 +614,10 @@ func _write_host_response(directory: String, request: Dictionary, result: Dictio
         DirAccess.rename_absolute(tmp, response_path)
 
 func _fail(message: String) -> void:
+    blender_grants.clear()
+    if not pending_blender_commands.is_empty():
+        if tools != null and is_instance_valid(tools.blender_supervisor): tools.blender_supervisor.stop_all()
+        pending_blender_commands.clear()
     _clear_pending_reload()
     AppLoggerScript.game_event(game_name, "pi.failed", message, "ERROR")
     transcript.append(game_name, "assistant", "Error: " + message)

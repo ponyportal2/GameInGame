@@ -2,7 +2,7 @@ import {createInterface} from 'node:readline';
 import {readFileSync} from 'node:fs';
 import {toolSpecs,executeTool} from './workspace-tools.mjs';
 import {toolContent} from './host-tools.mjs';
-import {consumeReloadGrant} from './approval.mjs';
+import {consumeReloadGrant,consumeBlenderGrant} from './approval.mjs';
 const config=JSON.parse(readFileSync(process.argv[2],'utf8')),abort=new AbortController();
 const emit=r=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...r})+'\n');
 createInterface({input:process.stdin}).on('line',async line=>{
@@ -19,6 +19,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
         try {
           const args={...r.params.arguments};
           if(r.params.name==='reload_game')args.approval_token=await consumeReloadGrant(config);
+          if(r.params.name==='blender' && args.action==='start' && args.script)args.approval_token=await consumeBlenderGrant(config,args);
           const data=await executeTool(config,'gamesmith_'+r.params.name,args,abort.signal);result={content:toolContent(data),isError:data.ok===false};
         }
         finally{clearInterval(heartbeat);}break;
