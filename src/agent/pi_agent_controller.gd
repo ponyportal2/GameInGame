@@ -530,6 +530,9 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
             pending_blender_commands.append({"request": request, "run_id": result.run_id, "bridge_dir": directory, "operation_id": operation_id})
             status_changed.emit("Waiting for Blender Python approval")
             return
+        if command == "authorize_blender" and result.has("run_id") and result.get("state") != "cancelled":
+            _grant_blender(request, directory, str(result.run_id))
+            result = {"ok": true}
     elif command == "read_runtime_log":
         result = tools.execute(command, request.get("args", {}))
     elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
@@ -555,6 +558,10 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
         result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
     _write_host_response(directory, request, result)
 
+func _grant_blender(request: Dictionary, directory: String, run_id: String) -> void:
+    var auth: Dictionary = request.args
+    blender_grants[str(auth.token)] = {"operation_id": operation_id, "bridge_dir": directory, "run_id": run_id, "args": auth.blender_args.duplicate(true)}
+
 func _service_pending_blender_commands() -> void:
     for pending in pending_blender_commands.duplicate():
         if pending.operation_id != operation_id or pending.bridge_dir != bridge_dir:
@@ -566,8 +573,7 @@ func _service_pending_blender_commands() -> void:
         if result.get("state") != "awaiting_approval":
             pending_blender_commands.erase(pending)
             if pending.request.get("command") == "authorize_blender" and result.get("state") != "cancelled":
-                var auth: Dictionary = pending.request.args
-                blender_grants[str(auth.token)] = {"operation_id": operation_id, "bridge_dir": pending.bridge_dir, "run_id": pending.run_id, "args": auth.blender_args.duplicate(true)}
+                _grant_blender(pending.request, pending.bridge_dir, str(pending.run_id))
                 # Authorization succeeded even if the approved job already failed.
                 # The actual MCP call must receive its execution diagnostics.
                 result = {"ok": true}

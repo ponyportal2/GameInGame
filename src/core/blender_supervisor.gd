@@ -63,6 +63,8 @@ func execute(workspace: String, args: Dictionary) -> Dictionary:
                 runs.erase(id)
                 return {"ok": false, "error": "Could not save reviewed Blender script."}
             runs[id].pending = {"ok": true, "run_id": id, "state": "awaiting_approval"}
+            if bool(MetadataStore.new().global_settings().get("auto_approve_blender_scripts", false)):
+                return _launch(id)
             review.run_id = id
             approval_changed.emit(review)
             return _status(id)
@@ -95,7 +97,7 @@ func _launch(id: String) -> Dictionary:
         result = {"ok": true, "run_id": id, "state": "starting"}
     return result
 
-# Called by the player UI only; no agent tool action accepts approval.
+# Called by the player UI; automatic approval is host-owned above.
 func approve(id: String) -> Dictionary:
     if not runs.has(id) or runs[id].get("pending", {}).get("state") != "awaiting_approval":
         return {"ok": false, "error": "This Blender approval is no longer pending."}

@@ -104,6 +104,10 @@ static func build(app) -> void:
     app.auto_reload_check.text = "Automatically approve agent reload requests"
     agent_page.add_child(app.auto_reload_check)
     U.paragraph(agent_page, "Start or reload the live game without waiting for Shift+F5 or Allow Reload. Applies to all harnesses. Off by default.")
+    app.auto_blender_check = CheckBox.new()
+    app.auto_blender_check.text = "Automatically approve Blender scripts"
+    agent_page.add_child(app.auto_blender_check)
+    U.paragraph(agent_page, "Run agent-authored Blender Python without asking. Scripts run with your user permissions, including file, process and network access. Applies to all harnesses; independent of reload approval. Off by default.")
     U.label(agent_page, "Separate game tests", 18)
     app.rendered_tests_check = CheckBox.new()
     app.rendered_tests_check.text = "Allow rendered agent tests (minimized window)"

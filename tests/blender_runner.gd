@@ -89,6 +89,35 @@ func run() -> void:
             var reply = JsonStore.read_dict(response)
             check(not reply.get("ok", true) and reply.get("state") == "cancelled", harness + " delivers player rejection to native tool")
         controller.free()
+    defaults.auto_approve_reloads = false
+    defaults.auto_approve_blender_scripts = true
+    settings.save_global_settings(defaults)
+    OS.set_environment("GAMESMITH_BLENDER_BIN", "C:/missing-gamesmith-blender.exe")
+    for harness in ["pi", "command_code", "opencode", "codex", "cline", "cursor", "grok_build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]:
+        var automatic = load("res://src/agent/" + harness + "_agent_controller.gd").new()
+        automatic.tools = tools
+        automatic.busy = true
+        automatic.bridge_dir = ProjectSettings.globalize_path("user://blender-auto-bridge/" + harness)
+        DirAccess.make_dir_recursive_absolute(automatic.bridge_dir)
+        var automatic_args = {"action": "start", "script": "build.py"}
+        var preauthorize = harness in ["cline", "cursor", "grok_build"]
+        automatic._dispatch_host_request({"id": "automatic", "command": "authorize_blender" if preauthorize else "blender", "args": {"token": "auto-token", "blender_args": automatic_args} if preauthorize else automatic_args}, automatic.bridge_dir)
+        var automatic_reply = JsonStore.read_dict(automatic.bridge_dir.path_join("response-automatic.json"))
+        check(automatic_reply.get("ok", false) and automatic.pending_blender_commands.is_empty(), harness + " auto-approves Python independently of reload approval")
+        var automatic_id = str(automatic.blender_grants.get("auto-token", {}).get("run_id", "")) if preauthorize else str(automatic_reply.get("run_id", ""))
+        check(automatic_id != "" and tools.blender_supervisor.runs[automatic_id].pid > 1, harness + " automatically starts the reviewed snapshot")
+        if preauthorize:
+            var receipt_args = automatic_args.duplicate(true)
+            receipt_args.approval_token = "auto-token"
+            automatic._dispatch_host_request({"id": "receipt", "command": "blender", "args": receipt_args}, automatic.bridge_dir)
+            check(automatic.blender_grants.is_empty() and JsonStore.read_dict(automatic.bridge_dir.path_join("response-receipt.json")).get("run_id") == automatic_id, harness + " consumes automatic grant without launching twice")
+        var automatic_result = await wait_job(automatic_id)
+        check(automatic_result.get("state") == "failed", harness + " automatic execution still returns native failures")
+        automatic.busy = false
+        automatic.free()
+    OS.unset_environment("GAMESMITH_BLENDER_BIN")
+    defaults.auto_approve_blender_scripts = false
+    settings.save_global_settings(defaults)
     # Pre-MCP permission authorization returns only after player approval. Its
     # private receipt is bound to this operation and exact request arguments.
     var controller = load("res://src/agent/cline_agent_controller.gd").new()
