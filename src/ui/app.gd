@@ -573,6 +573,10 @@ func _open_rename(name: String = "") -> void:
     rename_edit.select_all()
 
 func _rename_game() -> void:
+    if tools != null and is_instance_valid(tools.blender_supervisor) and tools.blender_supervisor.has_running():
+        tools.blender_supervisor.stop_all()
+        _toast("Stopping Blender. Rename again after it exits.")
+        return
     if is_instance_valid(agent) and agent.busy:
         _toast("Stop the agent or wait for it to finish before renaming.")
         return

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
-import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { CodexServer, resolveExecutable } from '../tools/codex/server.mjs';
@@ -20,6 +20,22 @@ async function fixtureWorker({session,env={}}={}) {
     async until(predicate){while(!predicate(records))await new Promise(r=>setTimeout(r,10));},
     async close(){if(child.exitCode===null)child.stdin.end();await closed;}};
 }
+
+test('Blender preview reaches Codex as inputImage rather than base64 text',{timeout:10000},async()=>{
+  const worker=await fixtureWorker();
+  try {
+    worker.send('blender-image');
+    let request;
+    while(!request){request=(await readdir(worker.workspace)).find(n=>/^request-.*\.json$/.test(n));if(!request)await new Promise(r=>setTimeout(r,10));}
+    const data=JSON.parse(await readFile(join(worker.workspace,request),'utf8'));assert.equal(data.command,'blender');
+    await rm(join(worker.workspace,request));
+    await writeFile(join(worker.workspace,request.replace('request-','response-')),JSON.stringify({ok:true,image_base64:'aW1hZ2U=',mime_type:'image/png'}));
+    await worker.until(r=>r.some(x=>x.type==='complete'));
+    const records=(await readFile(join(worker.workspace,'.codex-fixture-results.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(records[0].result.contentItems[1],{type:'inputImage',imageUrl:'data:image/png;base64,aW1hZ2U='});
+    assert(!records[0].result.contentItems[0].text.includes('aW1hZ2U='));
+  }finally {await worker.close();}
+});
 
 test('failed native initialize closes its spawned backend', {timeout:5000},async()=>{
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-codex-init-'));

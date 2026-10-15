@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { CodexServer } from './server.mjs';
 import { threadParams, createEventNormalizer } from './protocol.mjs';
 import { executeTool } from './tools.mjs';
+import {toolContent} from './host-tools.mjs';
 
 const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const emit=record=>process.stdout.write(JSON.stringify(record)+'\n');
@@ -40,7 +41,7 @@ const server=new CodexServer({workspace:config.workspace,onEvent:events,onStderr
       }
       if(!operation || active!==operation || operation.cancelled || !operation.turn || p.threadId!==session || p.turnId!==operation.turn) throw new Error('GameSmith tool cancelled or does not belong to the active turn.');
       const result=await executeTool(config,p.tool,p.arguments,operation.abort.signal);
-      return {success:result.ok!==false,contentItems:[{type:'inputText',text:JSON.stringify(result)}]};
+      return {success:result.ok!==false,contentItems:toolContent(result).map(p=>p.type==='image' ? {type:'inputImage',imageUrl:'data:'+p.mimeType+';base64,'+p.data} : {type:'inputText',text:p.text})};
     } catch(error) {return {success:false,contentItems:[{type:'inputText',text:error.message}]};}
   }});
 function ready() {

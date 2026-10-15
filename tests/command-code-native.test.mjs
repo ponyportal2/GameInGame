@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,copyFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,copyFileSync,readdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -27,6 +27,7 @@ test('native ACP provider boundary, persistent history, compaction and guard fai
  writeFileSync(join(home,'.commandcode','settings.json'),JSON.stringify({model:'fixture/policy',disableScratchpad:true,compactMode:'fast'}));
  writeFileSync(join(home,'.commandcode','auth.json'),JSON.stringify({apiKey:'fixture-only'}));
  writeFileSync(join(home,'.commandcode','providers.json'),JSON.stringify({provider:{fixture:{api:'openai-completions',baseURL:'http://127.0.0.1:'+http.address().port+'/v1',apiKey:false,models:{policy:{contextWindow:100000,maxOutput:4096}}}}}));
+ copyFileSync('tools/opencode/host-tools.mjs',join(root,'host-tools.mjs'));
  const mod=join(root,'gamesmith.ts');copyFileSync('tools/command-code/gamesmith.ts',mod);copyFileSync('tools/pi/workspace-paths.mjs',join(root,'workspace-paths.mjs'));copyFileSync('tools/command-code/policy.mjs',join(root,'policy.mjs'));
  writeFileSync(join(root,'prompt.md'),'GAMESMITH_NATIVE_POLICY_MARKER');
  let child,records=[],pending=new Map(),serial=0,errors='';
@@ -45,6 +46,15 @@ test('native ACP provider boundary, persistent history, compaction and guard fai
  start();assert.equal((await prompt('first ordinary turn')).ok,true);assert.ok(requests.length>0);assertBoundary();
  const id=JSON.parse(readFileSync(join(root,'session.json'))).session;
  assert.equal((await prompt('second ordinary turn')).ok,true);assertBoundary();
+ // Verify the real ModApi preserves image blocks through the provider boundary.
+ nextTool={name:'blender',input:{action:'inspect',path:'preview.png'}};
+ const previewTurn=prompt('inspect Blender preview');
+ let previewRequest;
+ while(!previewRequest){previewRequest=readdirSync(join(root,'bridge')).find(n=>/^request-.*\.json$/.test(n));if(!previewRequest)await new Promise(r=>setTimeout(r,10));}
+ const preview='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+ writeFileSync(join(root,'bridge',previewRequest.replace('request-','response-')),JSON.stringify({ok:true,mime_type:'image/png',image_base64:preview}));
+ const previewResult=await previewTurn;assert.equal(previewResult.ok,true,JSON.stringify(previewResult)+' '+errors);assertBoundary();
+ assert.ok(JSON.stringify(requests.at(-1).messages).includes('data:image/png;base64,'+preview),'actual provider receives the rendered preview as an image');
  // A model can hallucinate a catalog-only tool. It must still be denied.
  nextTool={name:'shell_command',input:{command:'echo forbidden > "'+join(workspace,'forbidden.txt')+'"'}};
  await prompt('attempt disabled catalog tool');

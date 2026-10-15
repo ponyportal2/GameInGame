@@ -8,6 +8,13 @@ var workspace = ""
 var git = GitService.new()
 var runner: GameRunner
 var test_supervisor: Node
+var blender_supervisor: Node
+
+func blender(args: Dictionary) -> Dictionary:
+    if not is_instance_valid(blender_supervisor):
+        blender_supervisor = preload("res://src/core/blender_supervisor.gd").new()
+        runner.add_child(blender_supervisor)
+    return blender_supervisor.execute(workspace, args)
 
 func tests() -> Node:
     if not is_instance_valid(test_supervisor):
@@ -151,6 +158,7 @@ func read_runtime_log(args: Dictionary = {}) -> Dictionary:
 
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
+        "blender": return blender(args)
         "list_files": return list_files(str(args.get("path", "")))
         "read_file": return read_file(str(args.get("path", "")), int(args.get("offset", 1)), int(args.get("limit", DEFAULT_READ_LINES)))
         "search_text": return search_text(str(args.get("query", "")))

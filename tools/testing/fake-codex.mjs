@@ -21,6 +21,7 @@ async function run(message) {
   try {
     notify('item/reasoning/summaryTextDelta',{itemId:'reasoning',delta:'Fixture thinking'});
     if (message==='wait' || message==='stuck-stop') return;
+    if(message==='blender-image') await tool('blender',{action:'inspect',path:'preview.png'});
     if(message==='policy') {
       for(const method of ['item/fileChange/requestApproval','item/commandExecution/requestApproval']) {
         const response=await nativeRequest(method,{threadId:session,turnId:turn,itemId:'native'});

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,copyFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,copyFileSync,readdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {killProcessTree} from '../tools/agent/process-tree.mjs';
@@ -32,12 +32,24 @@ test('assembled runtime reconciles partial streaming, uses native context and re
   const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,true);assert.equal(result.text,'Fixture complete');
   assert.equal(f.records.filter(r=>r.type==='delta' && r.kind==='assistant').map(r=>r.text).join(''),result.text);
   assert.equal((await f.until(r=>r.type==='context')).tokens,4321);
-  const backend=JSON.parse(readFileSync(join(f.directory,'backend.json')));assert.equal(backend.tools.length,17);assert.equal(backend.model,'fixture-free');
+  const backend=JSON.parse(readFileSync(join(f.directory,'backend.json')));assert.equal(backend.tools.length,18);assert.equal(backend.model,'fixture-free');
   f.send({type:'prompt',id:'two',message:'/compact'});assert.equal((await f.until(r=>r.id==='two')).success,true);
   while(f.records.filter(r=>r.type==='complete').length<2)await new Promise(r=>setTimeout(r,10));
   assert.equal(JSON.parse(readFileSync(join(f.directory,'backend.json'))).pid,backend.pid);
   assert.deepEqual(f.trace().filter(r=>r.type==='prompt').map(r=>r.message),['/gamesmith-ready','Player request:\nhello','Player request:\n/compact']);
   const overlay=JSON.parse(readFileSync(join(f.directory,'native','config.yml')));assert.equal('model' in overlay,false);assert.equal('compaction' in overlay,false);
+});
+
+test('OMP host results carry Blender previews as native image blocks',{timeout:15000},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'image',message:'blender-image'});
+  const bridge=join(f.directory,'bridge');let file;
+  while(!file){file=readdirSync(bridge).find(n=>/^request-.*\.json$/.test(n));if(!file)await new Promise(r=>setTimeout(r,10));}
+  const request=JSON.parse(readFileSync(join(bridge,file),'utf8'));assert.equal(request.command,'blender');
+  writeFileSync(join(bridge,file.replace('request-','response-')),JSON.stringify({ok:true,image_base64:'aW1hZ2U=',mime_type:'image/png'}));
+  assert.equal((await f.until(r=>r.type==='complete')).ok,true);
+  const content=f.trace().find(r=>r.type==='host_tool_result').result.content;
+  assert.deepEqual(content[1],{type:'image',mimeType:'image/png',data:'aW1hZ2U='});
+  assert(!content[0].text.includes('aW1hZ2U='));
 });
 
 test('unknown tools and workspace escapes fail before side effects',{timeout:15000},async t=>{

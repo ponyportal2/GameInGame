@@ -2,6 +2,7 @@ import {createInterface} from 'node:readline';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {toolSpecs,executeTool} from './workspace-tools.mjs';
+import {toolContent} from './host-tools.mjs';
 const config=JSON.parse(readFileSync(process.argv[2],'utf8')),abort=new AbortController();
 const emit=r=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...r})+'\n');
 createInterface({input:process.stdin}).on('line',async line=>{
@@ -19,7 +20,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
           const state=JSON.parse(readFileSync(join(config.bridge_dir,'operation.json'),'utf8'));
           if(state.active!==true || !state.session)throw new Error('No active GameSmith request.');
           const args={...r.params.arguments};
-          const data=await executeTool(config,'gamesmith_'+r.params.name,args,abort.signal);result={content:[{type:'text',text:JSON.stringify(data)}],isError:data.ok===false};
+          const data=await executeTool(config,'gamesmith_'+r.params.name,args,abort.signal);result={content:toolContent(data),isError:data.ok===false};
         }
         finally{clearInterval(heartbeat);}break;
       }

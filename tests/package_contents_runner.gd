@@ -6,12 +6,21 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
+    for module in ["jobs.mjs", "bootstrap.py", "guide.md"]:
+        if not FileAccess.file_exists("res://tools/blender/" + module):
+            push_error("FAIL: exported GameSmith.pck is missing Blender " + module)
+            quit(1)
+            return
+    if not ResourceLoader.exists("res://src/core/blender_supervisor.gd"):
+        push_error("FAIL: exported GameSmith.pck is missing Blender supervisor")
+        quit(1)
+        return
     for module in ["ownership.mjs", "process-tree.mjs"]:
         if not FileAccess.file_exists("res://tools/agent/" + module):
             push_error("FAIL: exported GameSmith.pck is missing " + module)
             quit(1)
             return
-    for module in ["worker.mjs", "server.mjs", "policy.mjs", "gamesmith.ts", "process-tree.mjs"]:
+    for module in ["worker.mjs", "server.mjs", "policy.mjs", "gamesmith.ts", "host-tools.mjs", "process-tree.mjs"]:
         if not FileAccess.file_exists("res://tools/command-code/" + module):
             push_error("FAIL: exported GameSmith.pck is missing Command-code " + module)
             quit(1)

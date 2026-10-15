@@ -8,7 +8,7 @@ func check_model(directory: String, stage: String) -> void:
     var model = str(data.get("model", ""))
     print("OMP native model (%s): %s" % [stage, model])
     check(model == OS.get_environment("GAMESMITH_TEST_OMP_MODEL"), "OMP inherits the selected native model on " + stage)
-    check(data.get("tools", []).size() == 17, "OMP verifies the exact GameSmith host tool surface on " + stage)
+    check(data.get("tools", []).size() == 18, "OMP verifies the exact GameSmith host tool surface on " + stage)
 
 func _init() -> void:
     call_deferred("run")

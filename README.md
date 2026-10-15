@@ -119,6 +119,18 @@ Only exact `mcp_gamesmith_<tool>` tools are enabled. The private highest-priorit
 
 Run `node --test tests/crush*.test.mjs` for protocol and assembled-runtime regressions. `crush_lifecycle_runner.gd` is in the normal host suite. Real acceptance: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe crush_integration_runner.gd`; optionally set `GAMESMITH_TEST_CRUSH_MODEL` to the expected native model. Crush 0.96.1 passed 24/24 real checks from source and the rebuilt Windows PCK with native `dots-studio/dots-3-note-preview:free` and high reasoning, including editing, headless testing, rename/history, 65-second reload approval and Stop/resume. Results and limitations are recorded in `TODO-crush.md`.
 
+## Blender assets (all harnesses)
+
+The shared `blender` tool runs background Blender with `bpy`, renders previews and reports scene contents. Tested with **Blender 5.2.2 LTS**. Install Blender on PATH, use its standard Windows installation, or set `GAMESMITH_BLENDER_BIN` to the executable. Node.js is required. GameSmith does not change harness model/provider settings.
+
+Ask the agent to create or modify a Blender asset. Its standing instructions tell it to fetch `blender(action="guide")`, write a reusable workspace `.py` script, then `start` it with an optional `.blend` input and PNG render path. `start` returns immediately; `status` supplies bounded logs, exit status and a scene report. `stop`, the agent's Stop button, and closing the game terminate running jobs. The guide covers saving editable `.blend` sources and exporting GLB/PNG assets that Godot can load at runtime without editor imports.
+
+`inspect` returns a PNG as native image tool content, plus dimensions. Actual visual inspection requires image support in the selected harness/model; otherwise the agent must report that limitation and use scene diagnostics rather than claim to have seen the render. Previews are limited to 8 MiB, 4096 pixels per side and four megapixels. Use small CPU renders first, test the resulting game headlessly and reload it before handing it back.
+
+Blender starts with factory preferences and embedded auto-run scripts disabled. Input/output arguments and preview reads are checked against the game workspace, including links and protected `.git` paths. **Explicitly supplied Python scripts run with your user permissions; this is not a Python sandbox.** Existing Codex conversations retain their original dynamic-tool registry: use **Start new Codex session** in Settings to expose Blender in a conversation created before this update. Other running backends should be restarted to load the updated integration.
+
+Deterministic tests: `node --test tests/blender.test.mjs` and `blender_runner.gd` in the host suite. Installed-Blender acceptance: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe blender_integration_runner.gd`.
+
 ## GitHub Copilot CLI
 
 Choose **Copilot CLI** when creating a game or under **Settings > This game > Coding harness**. Install with `npm install -g @github/copilot`, then sign in through Copilot. Tested with **Copilot CLI 1.0.96** using its preview [ACP stdio server](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server). Discovery uses `copilot` on PATH; Windows npm shims are resolved through Node without invoking PowerShell. `GAMESMITH_COPILOT_BIN` selects another executable or JavaScript entry point. Node.js is required.

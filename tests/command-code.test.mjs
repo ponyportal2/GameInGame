@@ -9,6 +9,7 @@ test('mod exposes host tools and guards native absolute paths without taking ove
   const dir = await mkdtemp(join(tmpdir(),'gamesmith-mod-test-'));
   await copyFile(new URL('../tools/command-code/gamesmith.ts',import.meta.url),join(dir,'gamesmith.ts'));
   await copyFile(new URL('../tools/command-code/policy.mjs',import.meta.url),join(dir,'policy.mjs'));
+  await copyFile(new URL('../tools/opencode/host-tools.mjs',import.meta.url),join(dir,'host-tools.mjs'));
   await copyFile(new URL('../tools/pi/workspace-paths.mjs',import.meta.url),join(dir,'workspace-paths.mjs'));
   const workspace = join(dir,'workspace');
   await mkdir(workspace);
@@ -49,6 +50,17 @@ test('mod exposes host tools and guards native absolute paths without taking ove
     const failed = await resultPending;
     assert.equal(failed.ok,false,'host failure remains a failed native tool result');
     assert.equal(JSON.parse(failed.error).diagnostics.errors[0],'bad property');
+    const imagePending = tools.find(tool => tool.schema.name === 'blender').run({input:{action:'inspect',path:'preview.png'}});
+    let imageRequest;
+    while (!imageRequest) {
+      imageRequest = (await readdir(dir)).find(name => /^request-.*\.json$/.test(name) && name !== request);
+      if (!imageRequest) await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    await writeFile(join(dir,imageRequest.replace('request-','response-')),JSON.stringify({ok:true,mime_type:'image/png',image_base64:'aW1hZ2U='}));
+    const image = await imagePending;
+    assert.equal(image.ok,true);
+    assert.deepEqual(image.content[1],{type:'image',source:{type:'base64',media_type:'image/png',data:'aW1hZ2U='}});
+    assert(!image.content[0].text.includes('aW1hZ2U='));
   } finally {
     if (oldPrompt === undefined) delete process.env.GAMESMITH_PROMPT_PATH;
     else process.env.GAMESMITH_PROMPT_PATH = oldPrompt;

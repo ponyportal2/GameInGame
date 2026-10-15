@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline';
 import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { hostTools } from './host-tools.mjs';
+import { hostTools, toolContent } from './host-tools.mjs';
 
 const abort = new AbortController();
 async function callHost(command,args) {
@@ -42,7 +42,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
         let response;
         try { response=await callHost(name,request.params.arguments || {}); }
         finally { clearInterval(heartbeat); }
-        result={content:[{type:'text',text:JSON.stringify(response)}],isError:response.ok === false};
+        result={content:toolContent(response),isError:response.ok === false};
         break;
       }
       default: emit({id:request.id,error:{code:-32601,message:'Method not found'}}); return;

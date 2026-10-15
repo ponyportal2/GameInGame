@@ -55,6 +55,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
       emit({type:'message_end',messageId:'first-'+r.id,message:{role:'assistant',content:[{type:'text',text:'Working. '}]}});
     }
     if(r.message.includes('wait') || process.env.GAMESMITH_OMP_STUCK_TURN)return;
+    if(r.message.includes('blender-image'))await call('gamesmith_blender',{action:'inspect',path:'preview.png'});
     if(r.message.includes('reload')){
       await call('gamesmith_write',{path:'main.gd',content:'extends Node\nvar acceptance_marker = 37\n'});
       await call('gamesmith_reload_game');

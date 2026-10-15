@@ -284,6 +284,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   for (const tool of [
+    { name: "blender", description: "Blender CLI/bpy workflow. Read action=guide first. Start script/blend with optional PNG render, poll status for logs and scene report, stop, or inspect a PNG image.", parameters: Type.Object({ action: Type.Union([Type.Literal("guide"), Type.Literal("start"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("inspect")]), script: Type.Optional(Type.String()), blend: Type.Optional(Type.String()), render: Type.Optional(Type.String()), run_id: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }) },
     { name: "start_test_game", description: "Start a separate Godot test process for the current workspace. Headless is always available; rendered requires user Settings permission. Returns immediately with run_id; read_test_log reports startup progress. Does not interrupt the player or promote the working snapshot. One test at a time.", parameters: Type.Object({ mode: Type.Optional(Type.Union([Type.Literal("headless"), Type.Literal("rendered")])) }) },
     { name: "read_test_log", description: "Read separate test-process status, shared runtime diagnostics and raw engine/stdout/stderr tails. Includes mode, exit code, graceful/forced stop and reason. Use cursor/raw/severity for diagnostics pagination. Omit run_id to list recent runs and current rendered permission. Completed-run logs survive reopening.", parameters: Type.Object({ run_id: Type.Optional(Type.String()), cursor: Type.Optional(Type.Integer({ minimum: 0 })), raw: Type.Optional(Type.Boolean()), severity: Type.Optional(Type.Union([Type.Literal("error"), Type.Literal("warning"), Type.Literal("info")])), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }) },
     { name: "stop_test_game", description: "Stop a separate test process. Requests graceful Godot shutdown, then forcibly terminates it after a short shutdown grace period if needed. Waits for the process exit and reports how it stopped; forced termination does not prove a hang.", parameters: Type.Object({ run_id: Type.String() }) },
@@ -295,7 +296,8 @@ export default async function (pi: ExtensionAPI) {
         const result = await callHost(id, tool.name, params, signal);
         if (!result?.ok) throw new Error(JSON.stringify(result));
         if (result.image_base64) {
-          return { content: [{ type: "image" as const, data: result.image_base64, mimeType: result.mime_type }], details: { ok: true } };
+          const { image_base64, mime_type, ...metadata } = result;
+          return { content: [{ type: "text" as const, text: JSON.stringify(metadata) }, { type: "image" as const, data: image_base64, mimeType: mime_type }], details: metadata };
         }
         return textResult(JSON.stringify(result), result);
       },

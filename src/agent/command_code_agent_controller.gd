@@ -80,6 +80,8 @@ func _start_command_runtime() -> Dictionary:
     for file in ["worker.mjs", "server.mjs", "policy.mjs", "gamesmith.ts"]:
         if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/command-code/" + file)):
             return {"ok": false, "error": "Could not prepare Command-code integration: " + file}
+    if not JsonStore.write_bytes_atomic(directory.path_join("host-tools.mjs"), FileAccess.get_file_as_bytes("res://tools/opencode/host-tools.mjs")):
+        return {"ok": false, "error": "Could not prepare shared GameSmith tools."}
     if not JsonStore.write_bytes_atomic(directory.path_join("workspace-paths.mjs"), FileAccess.get_file_as_bytes("res://tools/pi/workspace-paths.mjs")):
         return {"ok": false, "error": "Could not prepare Command-code workspace policy."}
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")

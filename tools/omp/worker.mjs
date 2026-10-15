@@ -2,6 +2,7 @@ import {readFileSync,writeFileSync,renameSync,existsSync} from 'node:fs';
 import {basename,dirname,join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {OmpServer} from './server.mjs';
+const {toolContent}=await import(existsSync(new URL('./host-tools.mjs',import.meta.url)) ? './host-tools.mjs' : '../opencode/host-tools.mjs');
 const {toolSpecs,executeTool}=await import(existsSync(new URL('./workspace-tools.mjs',import.meta.url)) ? './workspace-tools.mjs' : '../codex/tools.mjs');
 const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const specs=toolSpecs(),allowed=new Set(specs.map(t=>t.name));
@@ -56,7 +57,7 @@ async function hostCall(r,op){
       result=await executeTool(config,r.toolName,r.arguments,call.signal);isError=result?.ok===false;
     }finally{op.abort.signal.removeEventListener('abort',abort);op.calls.delete(r.id);}
   }catch(error){result={ok:false,error:error.message};isError=true;}
-  if(active===op && !op.cancelled)server.send({type:'host_tool_result',id:r.id,isError,result:{content:[{type:'text',text:JSON.stringify(result)}]}});
+  if(active===op && !op.cancelled)server.send({type:'host_tool_result',id:r.id,isError,result:{content:toolContent(result)}});
 }
 function ready(){return initializing ||= server.start(specs.map(t=>({name:t.name,label:t.name,description:t.description,parameters:t.inputSchema,loadMode:'essential'}))).then(()=>{
   const s=server.state;

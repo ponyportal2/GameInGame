@@ -5,6 +5,8 @@ var cancel_deadline := 0
 var cancelling = false
 
 func cancel() -> void:
+    if tools != null and is_instance_valid(tools.blender_supervisor):
+        tools.blender_supervisor.stop_all()
     if not busy or cancelling:
         return
     cancelling = true

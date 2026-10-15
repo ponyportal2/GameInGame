@@ -200,6 +200,8 @@ func cancel() -> void:
     finished.emit(false)
 
 func restart_runtime() -> void:
+    if tools != null and is_instance_valid(tools.blender_supervisor):
+        tools.blender_supervisor.stop_all()
     _clear_pending_reload()
     pending_test_commands.clear()
     if tools != null and is_instance_valid(tools.test_supervisor):
@@ -498,7 +500,7 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
             reload_approval_changed.emit(true)
             return
         result = {"ok": false, "error": "Another reload is already waiting for player approval."}
-    elif command == "read_runtime_log":
+    elif command in ["read_runtime_log", "blender"]:
         result = tools.execute(command, request.get("args", {}))
     elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
         result = tools.execute(command, request.get("args", {}))

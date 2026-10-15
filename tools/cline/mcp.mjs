@@ -1,6 +1,7 @@
 import {createInterface} from 'node:readline';
 import {readFileSync} from 'node:fs';
 import {toolSpecs,executeTool} from './workspace-tools.mjs';
+import {toolContent} from './host-tools.mjs';
 import {consumeReloadGrant} from './approval.mjs';
 const config=JSON.parse(readFileSync(process.argv[2],'utf8')),abort=new AbortController();
 const emit=r=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...r})+'\n');
@@ -18,7 +19,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
         try {
           const args={...r.params.arguments};
           if(r.params.name==='reload_game')args.approval_token=await consumeReloadGrant(config);
-          const data=await executeTool(config,'gamesmith_'+r.params.name,args,abort.signal);result={content:[{type:'text',text:JSON.stringify(data)}],isError:data.ok===false};
+          const data=await executeTool(config,'gamesmith_'+r.params.name,args,abort.signal);result={content:toolContent(data),isError:data.ok===false};
         }
         finally{clearInterval(heartbeat);}break;
       }
