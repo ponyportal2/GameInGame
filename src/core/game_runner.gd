@@ -65,6 +65,7 @@ func load_game(workspace: String) -> Dictionary:
 
     # _enter_tree/_ready run synchronously. Keep the active game until startup
     # completes, and reject candidates that logged script/runtime errors.
+    candidate.set_meta("gamesmith_assets", preload("res://src/core/game_assets.gd").new(workspace))
     add_child(candidate)
     if runtime_log.startup_message() != "" or not is_instance_valid(candidate) or candidate.is_queued_for_deletion():
         if is_instance_valid(candidate):

@@ -5,6 +5,7 @@ from pathlib import Path
 import hashlib
 import sys
 import bpy
+from mathutils import Vector
 
 config = json.loads(Path(sys.argv[sys.argv.index('--') + 1]).read_text(encoding='utf-8'))
 os.chdir(config['workspace'])
@@ -28,12 +29,33 @@ if config.get('render'):
     bpy.ops.render.render(write_still=True)
 
 objects = list(scene.objects)
+mesh_objects = [o for o in objects if o.type == 'MESH']
+corners = [o.matrix_world @ Vector(c) for o in mesh_objects for c in o.bound_box]
+# Discover ordinary output artifacts without traversing the entire game/history.
+artifacts = []
+directories = {Path(config['workspace']) / 'art'}
+if config.get('render'):
+    directories.add(Path(config['render']).parent)
+for directory in sorted(directories):
+    if directory.is_dir() and not directory.is_symlink():
+        for path in sorted(directory.iterdir()):
+            if len(artifacts) >= 64:
+                break
+            if path.suffix.lower() in {'.glb', '.blend', '.png'} and path.is_file() and not path.is_symlink():
+                artifacts.append({'path': str(path.relative_to(config['workspace'])), 'bytes': path.stat().st_size})
 report = {
     'blender_version': bpy.app.version_string,
     'object_count': len(objects),
+    'mesh_count': len(mesh_objects),
+    'vertices': sum(len(o.data.vertices) for o in mesh_objects),
+    'polygons': sum(len(o.data.polygons) for o in mesh_objects),
+    'world_bounds': {'min': [min(c[i] for c in corners) for i in range(3)], 'max': [max(c[i] for c in corners) for i in range(3)]} if corners else None,
+    'artifacts': artifacts,
     'objects_truncated': len(objects) > 256,
     'objects': [{
         'name': o.name, 'type': o.type,
+        'parent': o.parent.name if o.parent else None,
+        'world_location': list(o.matrix_world.translation),
         'location': list(o.location), 'dimensions': list(o.dimensions),
         'vertices': len(o.data.vertices) if o.type == 'MESH' else None,
         'polygons': len(o.data.polygons) if o.type == 'MESH' else None,

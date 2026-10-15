@@ -27,7 +27,7 @@ func _prepare() -> bool:
 func execute(workspace: String, args: Dictionary) -> Dictionary:
     var action = str(args.get("action", "guide"))
     if action == "guide":
-        return {"ok": true, "instructions": FileAccess.get_file_as_string("res://tools/blender/guide.md")}
+        return {"ok": true, "instructions": FileAccess.get_file_as_string("res://tools/blender/guide.md"), "example_script": FileAccess.get_file_as_string("res://tools/blender/example.py")}
     if not _prepare(): return {"ok": false, "error": "Could not prepare the Blender runtime."}
     if action == "inspect":
         var output: Array = []
@@ -75,7 +75,26 @@ func execute(workspace: String, args: Dictionary) -> Dictionary:
         _stop(runs[id])
     elif action != "status":
         return {"ok": false, "error": "Unknown Blender action. Use guide, start, status, stop or inspect."}
-    return _status(id)
+    return _public_status(id, args)
+
+func _public_status(id: String, args: Dictionary) -> Dictionary:
+    var result: Dictionary = _status(id).duplicate(true)
+    var report: Dictionary = result.get("report", {})
+    var objects: Array = report.get("objects", [])
+    report.erase("objects")
+    if bool(args.get("details", false)):
+        var offset = clampi(int(args.get("offset", 0)), 0, objects.size())
+        var limit = clampi(int(args.get("limit", 32)), 1, 64)
+        report.objects = objects.slice(offset, offset + limit)
+        report.offset = offset
+        report.next_offset = offset + report.objects.size() if offset + report.objects.size() < objects.size() else -1
+    if not report.is_empty(): result.report = report
+    var log = str(result.get("log_tail", ""))
+    var log_limit = 32768 if bool(args.get("details", false)) else (8000 if result.get("state") == "failed" else 1500)
+    result.log_tail = log.right(log_limit)
+    result.log_truncated = log.length() > log_limit or int(result.get("log_dropped_bytes", 0)) > 0
+    result.details_hint = "Use status with details=true for full retained logs and paginated objects (offset, limit; maximum 64)."
+    return result
 
 func _command(action: String, config: String) -> Dictionary:
     var output: Array = []

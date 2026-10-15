@@ -31,6 +31,22 @@ func run() -> void:
     tools = GameTools.new(workspace, runner)
     var guide: Dictionary = tools.execute("blender", {"action": "guide"})
     check(guide.ok and "GLTFDocument" in guide.instructions, "shared Blender guide explains runtime assets")
+    # A large scene/log stays small by default; details can be paged without
+    # mutating the stored report. Terminal status remains repeatable.
+    var entries: Array = []
+    for i in range(124): entries.append({"name": "Object%d" % i, "parent": "AssetRoot"})
+    tools.blender_supervisor.runs["summary-fixture"] = {"terminal": {"ok": true, "state": "completed", "run_id": "summary-fixture", "log_tail": "x".repeat(32000), "report": {"object_count": 124, "objects": entries}}}
+    var summary = tools.blender({"action": "status", "run_id": "summary-fixture"})
+    check(not summary.report.has("objects") and JSON.stringify(summary).length() < 2500, "Large Blender scene status is compact by default")
+    var first_page = tools.blender({"action": "status", "run_id": "summary-fixture", "details": true, "limit": 1000})
+    check(first_page.report.objects.size() == 64 and first_page.report.next_offset == 64, "Detailed pages cap at 64 objects and expose the next offset")
+    var details = tools.blender({"action": "status", "run_id": "summary-fixture", "details": true, "offset": 64, "limit": 1000})
+    check(details.report.objects.size() == 60 and details.report.objects[0].name == "Object64" and details.report.next_offset == -1, "Detailed scene inspection uses bounded pagination")
+    check(details.log_tail.length() == 32000 and tools.blender_supervisor.runs["summary-fixture"].terminal.report.objects.size() == 124, "Detailed logs and cached reports remain intact")
+    tools.blender_supervisor.runs["summary-fixture"].terminal.state = "failed"
+    var failed_summary = tools.blender({"action": "status", "run_id": "summary-fixture"})
+    check(failed_summary.log_tail.length() == 8000, "Failed Blender runs retain a larger diagnostic tail")
+    tools.blender_supervisor.runs.erase("summary-fixture")
     var previous = OS.get_environment("GAMESMITH_BLENDER_BIN")
     OS.set_environment("GAMESMITH_BLENDER_BIN", "C:/missing-gamesmith-blender.exe")
     tools.write_file("build.py", "import bpy\n")
@@ -64,8 +80,14 @@ func run() -> void:
     check(not result.ok and "changed" in result.get("error", ""), "changed script fails before Blender executes")
     # Every controller inherits the same thin Blender instructions.
     for harness in ["pi", "command_code", "opencode", "codex", "cline", "cursor", "grok_build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]:
-        var source = FileAccess.get_file_as_string("res://src/agent/" + harness + "_agent_controller.gd")
-        check("_game_prompt()" in source or harness in ["pi", "kilo"], harness + " uses the common Blender instructions")
+        var controller_path = "res://src/agent/" + harness + "_agent_controller.gd"
+        if FileAccess.file_exists(controller_path):
+            var source = FileAccess.get_file_as_string(controller_path)
+            check("_game_prompt()" in source or harness in ["pi", "kilo"], harness + " uses the common Blender instructions")
+        else:
+            # Exported scripts are compiled resources, not source text. The
+            # behavioral bridge/approval checks below still run for all harnesses.
+            check(ResourceLoader.exists(controller_path), harness + " compiled controller is packaged")
     # All native harnesses use the same host wait; reload auto-approval cannot
     # authorize Python. No actual native harness/provider is needed for this.
     var settings = preload("res://src/core/metadata_store.gd").new()

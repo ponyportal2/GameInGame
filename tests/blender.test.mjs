@@ -67,6 +67,11 @@ test('orphan recovery verifies process birth and private job marker before termi
 });
 test('Blender is a shared host capability and image bytes become native image content',()=>{
   assert(hostTools.blender.properties.action.enum.includes('start'));
+  assert.equal(hostTools.blender.properties.details.type,'boolean');
+  assert.equal(hostTools.blender.properties.offset.type,'integer');
+  assert.equal(hostTools.test_game_action.properties.depth.maximum,4);
+  const pi = readFileSync(new URL('../tools/pi/gamesmith-extension.ts',import.meta.url),'utf8');
+  assert.match(pi.split('name: "blender"')[1].split('name:')[0],/details: Type.Optional/);
   const content=toolContent({ok:true,image_base64:'aGVsbG8=',mime_type:'image/png',width:64});
   assert.equal(content[1].type,'image');assert.equal(content[1].mimeType,'image/png');
   assert.equal(content[0].text.includes('aGVsbG8='),false);

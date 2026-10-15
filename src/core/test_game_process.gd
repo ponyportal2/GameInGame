@@ -83,13 +83,12 @@ func perform_action(args: Dictionary) -> void:
     match str(args.get("action", "")):
         "inspect":
             if node != null:
-                var children: Array = []
-                for child in node.get_children().slice(0, 100):
-                    children.append({"name": child.name, "class": child.get_class()})
+                var description = _describe_node(node, game, clampi(int(args.get("depth", 1)), 0, 4), [100])
                 var properties: Dictionary = {}
                 for property in args.get("properties", []).slice(0, 32):
                     properties[str(property)] = str(node.get(str(property))).left(1000)
-                result = {"ok": true, "class": node.get_class(), "children": children, "properties": properties}
+                result = description
+                result.merge({"ok": true, "properties": properties})
             else:
                 result = {"ok": false, "error": "Game node not found."}
         "call":
@@ -118,6 +117,19 @@ func perform_action(args: Dictionary) -> void:
                 # Keep the test minimized after explicit capture as well.
                 DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
                 result = {"ok": true, "image_base64": Marshalls.raw_to_base64(bytes), "mime_type": "image/png"}
+    if node == null and str(args.get("action", "")) in ["inspect", "call"]:
+        result.path_hint = "Use paths returned by inspect, relative to the game root. Empty path or '.' selects the game root; preserve '@' in generated names."
+        result.requested_path = str(args.get("path", ""))
+        result.available_children = _describe_node(game, game, 1, [10]).get("children", []) if game != null else []
     result.action_id = args.get("action_id", "")
     result.pending = false
     JsonStore.write_dict(config.control_dir.path_join("action-result.json"), result)
+
+func _describe_node(node: Node, game: Node, depth: int, budget: Array) -> Dictionary:
+    budget[0] -= 1
+    var children: Array = []
+    if depth > 0:
+        for child in node.get_children():
+            if budget[0] <= 0: break
+            children.append(_describe_node(child, game, depth - 1, budget))
+    return {"name": str(node.name), "path": str(game.get_path_to(node)), "class": node.get_class(), "children": children, "child_count": node.get_child_count(), "children_truncated": children.size() < node.get_child_count()}

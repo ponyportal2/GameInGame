@@ -6,12 +6,12 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
-    for module in ["jobs.mjs", "ownership.mjs", "bootstrap.py", "guide.md"]:
+    for module in ["jobs.mjs", "ownership.mjs", "bootstrap.py", "guide.md", "example.py"]:
         if not FileAccess.file_exists("res://tools/blender/" + module):
             push_error("FAIL: exported GameSmith.pck is missing Blender " + module)
             quit(1)
             return
-    if not ResourceLoader.exists("res://src/core/blender_supervisor.gd"):
+    if not ResourceLoader.exists("res://src/core/blender_supervisor.gd") or not ResourceLoader.exists("res://src/core/game_assets.gd"):
         push_error("FAIL: exported GameSmith.pck is missing Blender supervisor")
         quit(1)
         return

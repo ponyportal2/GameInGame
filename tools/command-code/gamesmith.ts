@@ -32,7 +32,7 @@ export default async function (cmd) {
     start_test_game: {description:'Start a separate Godot game test.',properties:{mode:{type:'string',enum:['headless','rendered']}}},
     read_test_log: {description:'Read separate game test status and logs.',properties:{run_id:{type:'string'},limit:{type:'integer'},since_sequence:{type:'integer'}}},
     stop_test_game: {description:'Stop a separate test gracefully.',properties:{run_id:{type:'string'}}},
-    test_game_action: {description:'Inspect or interact with a test game; poll action IDs for results.',properties:{run_id:{type:'string'},action:{type:'string',enum:['inspect','call','input','screenshot','poll']},action_id:{type:'string'},path:{type:'string'},properties:{type:'array',items:{type:'string'}},method:{type:'string'},arguments:{type:'array',items:{}},pressed:{type:'boolean'},input_action:{type:'string'}}},
+    test_game_action: hostTools.test_game_action,
     git_status: {description:'Show workspace Git status.',properties:{}},
     git_diff: {description:'Show workspace changes.',properties:{path:{type:'string'}}},
     git_log: {description:'Show workspace Git milestones.',properties:{limit:{type:'integer'}}},

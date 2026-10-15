@@ -1,5 +1,5 @@
 // Run host tests with isolated application data on Windows or Linux.
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,11 +29,16 @@ const bootstrap = spawnSync(resolve(godot), ["--headless", "--path", root,
 { env, windowsHide: true, stdio: "inherit" });
 if (bootstrap.error) throw bootstrap.error;
 if (bootstrap.status !== 0) process.exit(bootstrap.status ?? 1);
-const scripts = requestedScripts.length ? requestedScripts : ["blender_runner.gd", "test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd", "test_process_runner.gd", "chat_test_process_runner.gd", "bridge_claim_runner.gd", "maintenance_runner.gd", "ui_layout_runner.gd", "library_actions_runner.gd", "reload_settings_runner.gd", "harness_runner.gd", "review_ownership_runner.gd", "review_stop_runner.gd", "command_code_lifecycle_runner.gd", "command_code_compaction_runner.gd", "opencode_lifecycle_runner.gd", "codex_lifecycle_runner.gd", "cline_lifecycle_runner.gd", "cursor_lifecycle_runner.gd", "grok_build_lifecycle_runner.gd", "agy_lifecycle_runner.gd", "kimi_lifecycle_runner.gd", "kiro_lifecycle_runner.gd", "kilo_lifecycle_runner.gd", "copilot_lifecycle_runner.gd", "crush_lifecycle_runner.gd", "omp_lifecycle_runner.gd", "kilo_stop_runner.gd", "agent_shutdown_runner.gd"];
+const scripts = requestedScripts.length ? requestedScripts : ["game_assets_runner.gd", "blender_runner.gd", "test_runner.gd", "reliability_runner.gd", "diagnostics_runner.gd", "cache_regression_runner.gd", "cache_edge_regression_runner.gd", "script_load_policy_runner.gd", "test_process_runner.gd", "chat_test_process_runner.gd", "bridge_claim_runner.gd", "maintenance_runner.gd", "ui_layout_runner.gd", "library_actions_runner.gd", "reload_settings_runner.gd", "harness_runner.gd", "review_ownership_runner.gd", "review_stop_runner.gd", "command_code_lifecycle_runner.gd", "command_code_compaction_runner.gd", "opencode_lifecycle_runner.gd", "codex_lifecycle_runner.gd", "cline_lifecycle_runner.gd", "cursor_lifecycle_runner.gd", "grok_build_lifecycle_runner.gd", "agy_lifecycle_runner.gd", "kimi_lifecycle_runner.gd", "kiro_lifecycle_runner.gd", "kilo_lifecycle_runner.gd", "copilot_lifecycle_runner.gd", "crush_lifecycle_runner.gd", "omp_lifecycle_runner.gd", "kilo_stop_runner.gd", "agent_shutdown_runner.gd"];
 for (const [index, script] of scripts.entries()) {
+  // Runners deliberately change settings and native session references. Keep
+  // those fixtures private so later runners can test genuine fresh defaults.
+  const runnerData = join(data, `runner-${index}`);
+  mkdirSync(runnerData);
+  const runnerEnv = { ...env, APPDATA: runnerData, HOME: runnerData, XDG_DATA_HOME: join(runnerData, "data") };
   const result = spawnSync(resolve(godot), ["--headless", "--path", root,
     "--log-file", join(data, `engine-${index}.log`), "--script", `res://tests/${script}`],
-  { env, windowsHide: true, stdio: "inherit" });
+  { env: runnerEnv, windowsHide: true, stdio: "inherit" });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
