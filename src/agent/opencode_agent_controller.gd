@@ -9,6 +9,8 @@ func cancel() -> void:
         tools.blender_supervisor.stop_all()
     if not busy or cancelling:
         return
+    recovery_generation += 1
+    recovery_active = false
     cancelling = true
     cancel_deadline = Time.get_ticks_msec() + STOP_GRACE_MS
     operation_id += 1

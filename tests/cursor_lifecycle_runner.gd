@@ -6,6 +6,8 @@ func check(value: bool, message: String) -> void:
     print("PASS: " + message if value else "FAIL: " + message)
     if not value: failures += 1
 func idle() -> void:
+    # Isolate native lifecycle failures; shared recovery has its own matrix.
+    app.agent.recovery_delays = []
     while app.agent.busy: await process_frame
 func reload_pending() -> void:
     while app.agent.busy and app.agent.pending_reload.is_empty(): await process_frame

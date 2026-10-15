@@ -11,6 +11,8 @@ func check(value: bool, message: String) -> void:
         failures += 1
 
 func wait_idle() -> void:
+    # Isolate native lifecycle failures; shared recovery has its own matrix.
+    app.agent.recovery_delays = []
     while app.agent.busy:
         await process_frame
 

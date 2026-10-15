@@ -24,6 +24,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
  }
  if(r.method!=='session/prompt'){reply({});return;}
  const prompt=r.params.prompt[0].text;
+ if(prompt==='provider-error'){emit({id:r.id,error:{code:-32000,message:'Fixture provider error'}});return;}
  if(prompt.startsWith('/gamesmith-ready-')){await ready('session');reply({stopReason:'end_turn'});return;}
  if(prompt==='/compact'){
    await appendFile('.compaction-fixture.jsonl',JSON.stringify({session:r.params.sessionId,pid:process.pid})+'\n');

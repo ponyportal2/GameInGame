@@ -125,6 +125,8 @@ func _new_game(prefix: String) -> Dictionary:
 
 func _controller(game_name: String, path: String, runner: Node, auto_approve_reload: bool = true) -> Node:
     var agent = PiAgentControllerScript.new()
+    # This runner isolates native Pi retries; host recovery is tested separately.
+    agent.recovery_delays = []
     root.add_child(agent)
     agent.configure(game_name, GameToolsScript.new(path, runner))
     if auto_approve_reload:

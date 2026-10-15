@@ -6,6 +6,8 @@ func check(value: bool, message: String) -> void:
     print("PASS: " + message if value else "FAIL: " + message)
     if not value: failures += 1
 func idle() -> void:
+    # Isolate native lifecycle failures; shared recovery has its own matrix.
+    app.agent.recovery_delays = []
     while app.agent.busy: await process_frame
 func run() -> void:
     OS.set_environment("GAMESMITH_AGY_BIN", ProjectSettings.globalize_path("res://tools/testing/fake-agy.mjs"))

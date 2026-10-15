@@ -9,7 +9,7 @@ var result_text := ""
 var compaction_attempted_operation := -1
 var backend_pid := -1
 
-func send_player_request(text: String) -> void:
+func _send_player_attempt(text: String) -> void:
     if busy:
         return
     if not acquire_editor():
@@ -26,7 +26,7 @@ func send_player_request(text: String) -> void:
     streamed_text = false
     status_changed.emit("Starting " + _harness_name() + "…")
     var ready = _start_command_runtime()
-    transcript.append(game_name, "user", text)
+    _record_player_request(text)
     if not ready.get("ok", false):
         _fail(str(ready.get("error", _harness_name() + " is unavailable.")))
         return
@@ -34,6 +34,7 @@ func send_player_request(text: String) -> void:
     if operation != operation_id:
         return
     if auto_compaction_failed_operation == operation:
+        recovery_active = false
         _fail("Could not compact the conversation before this request. History and edits were kept. Retry Compact now before continuing.")
         return
     status_changed.emit(_harness_name() + " is working…")
@@ -44,6 +45,7 @@ func send_player_request(text: String) -> void:
         restart_after_finish = bool(accepted.get("initialization_failed", false))
         _fail(str(accepted.get("error", _harness_name() + " rejected the request.")))
         return
+    request_admitted = true
     while operation == operation_id and not result_received and rpc != null and rpc.running:
         await get_tree().process_frame
     if operation != operation_id:
@@ -135,6 +137,7 @@ func _on_command_record(record: Dictionary) -> void:
             result_text = str(record.get("text", ""))
             if not record.get("ok", false):
                 last_error = str(record.get("error", _harness_name() + " request failed."))
+                if last_error == "": last_error = _harness_name() + " request failed."
 
 func compact_now() -> Dictionary:
     if not acquire_editor(): return {"ok": false, "error": last_error}

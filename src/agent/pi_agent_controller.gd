@@ -48,6 +48,16 @@ var pending_blender_commands: Array[Dictionary] = []
 var blender_grants: Dictionary = {}
 var auto_compaction_failed_operation := -1
 
+# One recovery budget per player request, after the harness's own retries settle.
+const RECOVERY_DELAYS = [8.0, 16.0, 32.0, 64.0]
+var recovery_delays: Array = RECOVERY_DELAYS.duplicate()
+const RECOVERY_MESSAGE = "Continue the unfinished player request from the current conversation. The previous turn ended unsuccessfully. Preserve completed tool results and file edits; inspect the current state before repeating any action."
+var recovery_generation := 0
+var recovery_active := false
+var recovery_error := ""
+var recovery_attempt := 0
+var request_admitted := false
+
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
     if editor_guard == null:
@@ -66,6 +76,56 @@ func acquire_editor() -> bool:
     return false
 
 func send_player_request(text: String) -> void:
+    if busy:
+        return
+    if not acquire_editor():
+        assistant_message.emit(last_error)
+        finished.emit(false)
+        return
+    recovery_generation += 1
+    var generation = recovery_generation
+    recovery_active = true
+    recovery_attempt = 0
+    var admitted = false
+    while generation == recovery_generation:
+        recovery_error = ""
+        request_admitted = false
+        await _send_player_attempt(RECOVERY_MESSAGE if admitted else text)
+        if generation != recovery_generation:
+            return
+        admitted = admitted or request_admitted
+        if recovery_error == "":
+            recovery_active = false
+            return
+        # A dead adapter can leave a native backend alive. Retire the tree before
+        # waiting/reopening the exact saved session, never replace its history.
+        restart_runtime()
+        llm_stream_end.emit("assistant")
+        llm_stream_end.emit("thinking")
+        if recovery_attempt >= recovery_delays.size():
+            recovery_active = false
+            _fail(recovery_error)
+            return
+        var delay: float = recovery_delays[recovery_attempt]
+        recovery_attempt += 1
+        AppLoggerScript.game_event(game_name, "agent.recovery", "attempt=%d delay=%s error=%s" % [recovery_attempt, delay, recovery_error], "WARN")
+        status_changed.emit("Turn failed. Retrying in %d seconds (%d/%d)..." % [delay, recovery_attempt, recovery_delays.size()])
+        await _wait_recovery(delay, generation)
+        if generation != recovery_generation:
+            return
+        # No await between releasing busy and entering the next attempt.
+        busy = false
+
+func _wait_recovery(seconds: float, generation: int) -> void:
+    var deadline = Time.get_ticks_msec() + int(seconds * 1000)
+    while generation == recovery_generation and Time.get_ticks_msec() < deadline:
+        await get_tree().process_frame
+
+func _record_player_request(text: String) -> void:
+    if not recovery_active or recovery_attempt == 0:
+        transcript.append(game_name, "user", text)
+
+func _send_player_attempt(text: String) -> void:
     if busy:
         return
     if not acquire_editor():
@@ -91,7 +151,7 @@ func send_player_request(text: String) -> void:
     var ready = await _ensure_runtime()
     if operation != operation_id:
         return
-    transcript.append(game_name, "user", text)
+    _record_player_request(text)
     if not bool(ready.get("ok", false)):
         _fail(str(ready.get("error", "Pi is unavailable.")))
         return
@@ -100,6 +160,7 @@ func send_player_request(text: String) -> void:
     if operation != operation_id:
         return
     if auto_compaction_failed_operation == operation:
+        recovery_active = false
         _fail("Could not compact the conversation before this request. History and edits were kept. Retry Compact now before continuing.")
         return
     status_changed.emit("Pi is working…")
@@ -109,6 +170,7 @@ func send_player_request(text: String) -> void:
     if not bool(accepted.get("success", false)):
         _fail("Pi rejected the prompt: " + str(accepted.get("error", "unknown error")))
         return
+    request_admitted = true
 
     while operation == operation_id and busy and rpc != null and rpc.running:
         if bool(get_meta("_pi_settled", false)):
@@ -188,6 +250,8 @@ func compact_now() -> Dictionary:
 func cancel() -> void:
     if not busy:
         return
+    recovery_generation += 1
+    recovery_active = false
     operation_id += 1
     restart_after_finish = false
     AppLoggerScript.game_event(game_name, "pi.cancel", "Cancelled by the player; existing file edits are kept.")
@@ -418,8 +482,10 @@ func _on_pi_record(record: Dictionary) -> void:
                                 if thinking != "":
                                     llm_stream_delta.emit("thinking", thinking)
                                     llm_stream_end.emit("thinking")
-                if str(message.get("stopReason", "")) == "error":
-                    pending_provider_error = str(message.get("errorMessage", "Pi provider request failed."))
+                var reason = str(message.get("stopReason", ""))
+                if reason in ["error", "length", "aborted"]:
+                    pending_provider_error = str(message.get("errorMessage", ""))
+                    if pending_provider_error == "": pending_provider_error = "Pi stopped: " + reason
                 else:
                     pending_provider_error = ""
         "auto_retry_start":
@@ -620,6 +686,11 @@ func _write_host_response(directory: String, request: Dictionary, result: Dictio
         DirAccess.rename_absolute(tmp, response_path)
 
 func _fail(message: String) -> void:
+    if recovery_active and not limit_abort_sent:
+        recovery_error = message
+        last_error = message
+        busy = true
+        return
     blender_grants.clear()
     if not pending_blender_commands.is_empty():
         if tools != null and is_instance_valid(tools.blender_supervisor): tools.blender_supervisor.stop_all()
