@@ -76,6 +76,10 @@ func run() -> void:
     check(Policy.first_violation(multiline).get("line") == 5, "reports call line after multiline strings")
     var prompt = Config._game_prompt()
     check("Use preload() for helper scripts" in prompt and "Script inheritance" in prompt and "literal PNG/JPG/JPEG/WAV/OGG" in prompt and "outside the static check" in prompt, "model instructions describe precise loading policy and enforcement limits")
+    for blender_enabled in [false, true]:
+        var asset_prompt = Config._game_prompt(blender_enabled)
+        check("res:// refers to the GameSmith host project" in asset_prompt and "Image.load_from_file(assets.path(" in asset_prompt and "ImageTexture.create_from_image(image)" in asset_prompt, "workspace PNG loading guidance survives Blender availability %s" % blender_enabled)
+        check("Only one image job can run at a time" in asset_prompt, "image concurrency instructions survive Blender availability %s" % blender_enabled)
     await test_reload_gate()
     print("SCRIPT LOAD POLICY TESTS: %d passed, %d failed" % [passed, failed])
     quit(0 if failed == 0 else 1)

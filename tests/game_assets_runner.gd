@@ -17,6 +17,9 @@ func _init() -> void:
 func run() -> void:
     var workspace = "user://games/Portable assets"
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(workspace.path_join("nested")))
+    var png = Image.create(3, 2, false, Image.FORMAT_RGBA8)
+    png.fill(Color.CORNFLOWER_BLUE)
+    png.save_png(workspace.path_join("player.png"))
     JsonStore.write_bytes_atomic(workspace.path_join("asset.txt"), "portable".to_utf8_buffer())
     JsonStore.write_bytes_atomic(workspace.path_join("nested/helper.gd"), """extends Node
 var contents = ""
@@ -31,7 +34,14 @@ func _ready():
     contents = FileAccess.get_file_as_string(assets.path("asset.txt"))
 """.to_utf8_buffer())
     JsonStore.write_bytes_atomic(workspace.path_join("main.gd"), """extends Node
+var texture: ImageTexture
 func _ready():
+    var assets = get_meta("gamesmith_assets")
+    var image = Image.load_from_file(assets.path("player.png"))
+    if image == null:
+        push_error("Missing workspace PNG")
+        return
+    texture = ImageTexture.create_from_image(image)
     var child = preload("nested/helper.gd").new()
     child.name = "Helper"
     add_child(child)
@@ -43,6 +53,7 @@ func _ready():
         check(loaded.ok, "Asset helper exists before nested _ready on load %d" % attempt)
         if loaded.ok:
             check(runner.active_game.get_node("Helper").contents == "portable", "Nested script reads portable workspace asset")
+            check(runner.active_game.texture != null and runner.active_game.texture.get_size() == Vector2(3, 2), "Documented PNG loading creates a texture without editor imports")
             var assets = runner.active_game.get_meta("gamesmith_assets")
             check(assets.path("../outside") == "" and assets.path("res://asset.txt") == "", "Asset helper rejects non-relative paths")
     runner.unload_game()
