@@ -40,15 +40,33 @@ func read_all(game: String) -> Array[Dictionary]:
     var file = FileAccess.open(path(game), FileAccess.READ)
     if file == null: return events
     while not file.eof_reached():
-        var value = JSON.parse_string(file.get_line())
+        var line = file.get_line()
+        if line.strip_edges() == "": continue
+        var value = JSON.parse_string(line)
         if not value is Dictionary: continue
         if value.get("type") == "reconcile":
-            _reconcile(events, str(value.get("content", "")))
+            _reconcile(events, str(value.get("content", "")), str(value.get("mode", "latest_stream")))
         elif value.get("type") in ["message", "delta", "end"]:
             events.append(value)
     return events
 
-func _reconcile(events: Array[Dictionary], replacement: String) -> void:
+func _reconcile(events: Array[Dictionary], replacement: String, mode: String = "latest_stream") -> void:
+    if mode == "whole_turn":
+        var start = 0
+        for i in range(events.size() - 1, -1, -1):
+            if events[i].get("type") == "message" and events[i].get("role") == "user":
+                start = i + 1
+                break
+        var insertion = start
+        var found = false
+        for i in range(events.size() - 1, start - 1, -1):
+            if events[i].get("role") == "assistant" and events[i].get("type") in ["message", "delta", "end"]:
+                insertion = i
+                found = true
+                events.remove_at(i)
+        if replacement != "":
+            events.insert(insertion if found else start, {"type": "message", "role": "assistant", "content": replacement})
+        return
     # Replace only the latest assistant stream in this request. Earlier thinking,
     # tools and commentary remain visible when a native result is corrected.
     for i in range(events.size() - 1, -1, -1):

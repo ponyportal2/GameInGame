@@ -25,6 +25,11 @@ var metadata = MetadataStoreScript.new()
 var transcript = TranscriptStoreScript.new()
 var chat_history = preload("res://src/core/chat_history.gd").new()
 var replaying_chat := false
+const CHAT_DELTA_FLUSH_MS = 500
+const CHAT_DELTA_LIMIT = 16384 # Characters; one pending fragment, not a queue.
+var pending_chat_delta: Dictionary = {}
+var pending_chat_game := ""
+var pending_chat_since := 0
 var runner
 var agent
 var tools
@@ -122,11 +127,16 @@ func _ready() -> void:
     _maybe_capture()
 
 func _process(_delta: float) -> void:
+    if not pending_chat_delta.is_empty() and Time.get_ticks_msec() - pending_chat_since >= CHAT_DELTA_FLUSH_MS:
+        _flush_chat_delta()
     # Poll global action state because generated games may consume _input() before the host.
     if current_game != "" and not _host_modal_open() and Input.is_action_just_pressed("toggle_chat"):
         _set_chat_visible(not chat_overlay.visible)
     if current_game != "" and Input.is_action_just_pressed("approve_game_reload"):
         _approve_agent_reload()
+
+func _exit_tree() -> void:
+    _flush_chat_delta()
 
 func _input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
@@ -308,6 +318,7 @@ func _refresh_library() -> void:
     WorkspaceUIScript.refresh_library(self)
 
 func _show_library() -> void:
+    _flush_chat_delta()
     _blender_approval_changed({})
     _reload_approval_changed(false)
     current_game = ""
@@ -337,6 +348,7 @@ func _create_game() -> void:
         _toast(str(result.error))
 
 func _open_game(name: String) -> void:
+    _flush_chat_delta()
     current_game = name
     AppLoggerScript.global_event("game.open", "name=%s" % name)
     AppLoggerScript.game_event(name, "game.open", "workspace=%s" % ProjectSettings.globalize_path(store.game_path(name)))
@@ -541,18 +553,41 @@ func _escape_bbcode(text: String) -> String:
     # brackets is enough to prevent user/model/tool text from becoming tags.
     return text.replace("[", "[lb]")
 
-func _ensure_chat_history() -> bool:
-    if current_game == "": return false
-    if chat_history.exists(current_game): return true
+func _ensure_chat_history(game: String = "") -> bool:
+    if game == "": game = current_game
+    if game == "": return false
+    if chat_history.exists(game): return true
     # Old versions saved only final dialogue. Seed it once; native transcripts
     # cannot reconstruct tool/thinking messages that the host never retained.
-    return chat_history.seed(current_game, transcript.read_all(current_game, 0))
+    return chat_history.seed(game, transcript.read_all(game, 0))
 
 func _record_chat_event(event: Dictionary) -> void:
-    if replaying_chat or not _ensure_chat_history(): return
+    if replaying_chat or current_game == "": return
+    if event.get("type") == "delta":
+        if not pending_chat_delta.is_empty() and (pending_chat_game != current_game or pending_chat_delta.role != event.role):
+            _flush_chat_delta()
+        if pending_chat_delta.is_empty():
+            pending_chat_delta = {"type": "delta", "role": event.role, "content": ""}
+            pending_chat_game = current_game
+            pending_chat_since = Time.get_ticks_msec()
+        pending_chat_delta.content += str(event.get("content", ""))
+        if pending_chat_delta.content.length() >= CHAT_DELTA_LIMIT:
+            _flush_chat_delta()
+        return
+    # Persist buffered prose before any boundary so replay matches the live order.
+    _flush_chat_delta()
+    if not _ensure_chat_history(): return
     chat_history.append(current_game, event)
 
+func _flush_chat_delta() -> void:
+    if pending_chat_delta.is_empty(): return
+    if _ensure_chat_history(pending_chat_game):
+        chat_history.append(pending_chat_game, pending_chat_delta)
+    pending_chat_delta = {}
+    pending_chat_game = ""
+
 func _load_transcript() -> void:
+    _flush_chat_delta()
     _ensure_chat_history()
     transcript_view.clear()
     stream_open_kind = ""
@@ -567,9 +602,11 @@ func _load_transcript() -> void:
 
 func _reconcile_chat_history() -> void:
     var replacement = ""
+    var mode = "latest_stream"
     if is_instance_valid(agent) and "result_corrected" in agent and agent.result_corrected and agent.recovery_error == "":
         replacement = agent.result_text
-    _record_chat_event({"type": "reconcile", "content": replacement})
+        mode = "whole_turn"
+    _record_chat_event({"type": "reconcile", "mode": mode, "content": replacement})
     _load_transcript()
 
 func _set_chat_visible(visible: bool) -> void:
