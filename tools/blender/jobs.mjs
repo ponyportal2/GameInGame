@@ -9,12 +9,13 @@ import {StringDecoder} from 'node:string_decoder';
 import {processIdentity,cleanupJob} from './ownership.mjs';
 
 const sha256=data=>createHash('sha256').update(data).digest('hex');
-// Warnings are retained independently of render progress and the rolling tail.
+// Selected diagnostic-looking lines, not a complete or authoritative warning list.
+// Retain these independently of render progress and the rolling tail.
 export function warningCapture() {
   const warnings=[],seen=new Set(),streams=new Map();let dropped=0;
   const line=text=>{
     text=text.replace(/\x1b\[[0-9;]*m/g,'').trim();
-    if(!/\b(?:warn(?:ing)?|(?:Bytes|Deprecation|Encoding|Future|Import|PendingDeprecation|Resource|Runtime|Syntax|Unicode|User)Warning)\s*:|\b(?:error|unsupported|fallback)\b|\b(?:not\s+supported|falling\s+back)\b/i.test(text))return;
+    if(!/^(?:warn(?:ing)?|error|(?:Bytes|Deprecation|Encoding|Future|Import|PendingDeprecation|Resource|Runtime|Syntax|Unicode|User)Warning)\s*:/i.test(text))return;
     text=text.slice(0,384);
     if(seen.has(text))return;
     if(warnings.length===16){dropped++;return;}
