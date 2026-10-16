@@ -38,6 +38,11 @@ func run() -> void:
     tools.blender_supervisor.runs["summary-fixture"] = {"terminal": {"ok": true, "state": "completed", "run_id": "summary-fixture", "log_tail": "x".repeat(32000), "report": {"object_count": 124, "objects": entries}}}
     var summary = tools.blender({"action": "status", "run_id": "summary-fixture"})
     check(not summary.report.has("objects") and JSON.stringify(summary).length() < 2500, "Large Blender scene status is compact by default")
+    tools.blender_supervisor.runs["summary-fixture"].terminal.warnings = ["WARNING: early export diagnostic"]
+    tools.blender_supervisor.runs["summary-fixture"].terminal.warnings_dropped = 0
+    tools.blender_supervisor.runs["summary-fixture"].terminal.report.material_advisories = [{"material": "Procedural", "nodes": ["ShaderNodeTexNoise"]}]
+    summary = tools.blender({"action": "status", "run_id": "summary-fixture"})
+    check(summary.warnings == ["WARNING: early export diagnostic"] and summary.report.material_advisories.size() == 1 and summary.log_tail.length() == 1500, "Compact status preserves warnings and material advisories independently of log truncation")
     var first_page = tools.blender({"action": "status", "run_id": "summary-fixture", "details": true, "limit": 1000})
     check(first_page.report.objects.size() == 64 and first_page.report.next_offset == 64, "Detailed pages cap at 64 objects and expose the next offset")
     var details = tools.blender({"action": "status", "run_id": "summary-fixture", "details": true, "offset": 64, "limit": 1000})

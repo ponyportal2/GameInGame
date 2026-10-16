@@ -5,11 +5,32 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {prepareJob,inspectImage,resolveBlender,reviewScript,approvedJob,blenderEnvironment} from '../tools/blender/jobs.mjs';
+import {prepareJob,inspectImage,resolveBlender,reviewScript,approvedJob,blenderEnvironment,warningCapture} from '../tools/blender/jobs.mjs';
 import {hostTools,toolContent} from '../tools/opencode/host-tools.mjs';
 import {processIdentity,cleanupJob} from '../tools/blender/ownership.mjs';
 
 const workspace=()=>mkdtempSync(join(tmpdir(),'gs-blender-'));
+test('warning summaries survive progress, chunk boundaries and separate output streams',()=>{
+  const capture=warningCapture(),warning=Buffer.from('WARNING: matériau unsupported\n');
+  const split=warning.indexOf(Buffer.from('é'))+1;
+  capture.push(warning.subarray(0,split));
+  capture.push(Buffer.from('render progress\n'),'stderr');
+  capture.push(warning.subarray(split));
+  capture.push(warning);
+  capture.push(Buffer.from('DeprecationWarning: Material.use_nodes\n'),'stderr');
+  capture.push(Buffer.from('render progress\n'.repeat(10000)));
+  capture.push(Buffer.from('ERROR: final line without newline'),'stderr');
+  capture.finish();
+  assert.deepEqual(capture.snapshot(),{warnings:['WARNING: matériau unsupported','DeprecationWarning: Material.use_nodes','ERROR: final line without newline'],warnings_dropped:0});
+});
+test('warning summaries bound noisy output and disclose omissions',()=>{
+  const capture=warningCapture();
+  for(let n=0;n<20;n++)capture.push(Buffer.from('WARNING '+n+': '+'x'.repeat(500)+'\n'));
+  capture.finish();
+  assert.equal(capture.snapshot().warnings.length,16);
+  assert.equal(capture.snapshot().warnings_dropped,4);
+  assert(capture.snapshot().warnings.every(line=>line.length<=384));
+});
 test('script approval is bound to reviewed bytes and a private snapshot',async()=>{
   const root=workspace(),directory=workspace();
   const config={workspace:root,directory,script:'build.py'};

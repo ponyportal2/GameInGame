@@ -13,7 +13,26 @@ func run() -> void:
     root.add_child(runner)
     tools = GameTools.new(workspace, runner)
     var guide = tools.blender({"action": "guide"})
-    tools.write_file("build.py", str(guide.example_script) + "\nimport os\nassert 'GAMESMITH_TEST_SECRET' not in os.environ\nassert 'PYTHONPATH' not in os.environ\nassert Path(__file__).name == 'approved.py'\nscene.render.resolution_x = 96\nscene.render.resolution_y = 96\n")
+    tools.write_file("build.py", str(guide.example_script) + """
+import os
+assert 'GAMESMITH_TEST_SECRET' not in os.environ
+assert 'PYTHONPATH' not in os.environ
+assert Path(__file__).name == 'approved.py'
+scene.render.resolution_x = 96
+scene.render.resolution_y = 96
+bpy.ops.wm.save_as_mainfile(filepath=str(out / 'source.blend'))
+old_location = scene.camera.location.copy()
+old_rotation = scene.camera.rotation_euler.copy()
+scene.camera.location = (-5, 6, 4)
+scene.camera.rotation_euler = (Vector((0, 0, 1)) - scene.camera.location).to_track_quat('-Z', 'Y').to_euler()
+scene.render.filepath = str(out / 'alternate.png')
+bpy.ops.render.render(write_still=True)
+scene.camera.location = old_location
+scene.camera.rotation_euler = old_rotation
+print('WARNING: early export diagnostic', flush=True)
+for i in range(1000):
+    print('progress %d: continuing asset verification ................................' % i, flush=True)
+""")
     var previous_secret = OS.get_environment("GAMESMITH_TEST_SECRET")
     OS.set_environment("GAMESMITH_TEST_SECRET", "must not reach Blender")
     var metadata = MetadataStore.new()
@@ -32,8 +51,13 @@ func run() -> void:
     if previous_secret == "": OS.unset_environment("GAMESMITH_TEST_SECRET")
     else: OS.set_environment("GAMESMITH_TEST_SECRET", previous_secret)
     check(result.get("report", {}).get("object_count") == 9, "automatic scene report inspects actual Blender scene")
+    check(result.get("report", {}).get("material_advisories", ["missing"]).is_empty(), "baked material and disconnected procedural nodes do not trigger export advice")
+    check("WARNING: early export diagnostic" in result.get("warnings", []) and "early export diagnostic" not in result.get("log_tail", "") and result.get("log_dropped_bytes", 0) > 0, "early warning survives both supervisor and compact log truncation")
     check(FileAccess.file_exists(workspace.path_join("art/model.glb")), "GLB asset exists")
     check(FileAccess.file_exists(workspace.path_join("art/source.blend")), "editable blend source exists")
+    check(not FileAccess.file_exists(workspace.path_join("art/source.blend1")), "repeated saves do not create Blender backup files")
+    result = tools.blender({"action": "inspect", "path": "art/alternate.png"})
+    check(result.get("ok", false) and result.get("width") == 96, "second preview from one script is independently inspectable")
     result = tools.execute("blender", {"action": "inspect", "path": "art/preview.png"})
     check(result.get("ok", false) and result.get("width") == 96 and result.has("image_base64"), "real rendered PNG is available for visual review")
     print("BLENDER PREVIEW: ", ProjectSettings.globalize_path(workspace.path_join("art/preview.png")))
@@ -47,6 +71,8 @@ func run() -> void:
 var asset_ok := false
 var axes_ok := false
 var hierarchy_ok := false
+var texture_ok := false
+var texture_color_ok := false
 func _ready():
     var model = get_meta("gamesmith_assets").load_glb("art/model.glb")
     if model == null: return
@@ -56,6 +82,27 @@ func _ready():
     var front = model.find_child("FrontMarker", true, false)
     var head = model.find_child("Head", true, false)
     asset_ok = model.find_child("Body", true, false) != null
+    var body = model.find_child("Body", true, false)
+    if body is MeshInstance3D:
+        var material = body.mesh.surface_get_material(0)
+        if material is StandardMaterial3D and material.albedo_texture != null:
+            var image = material.albedo_texture.get_image()
+            texture_ok = image != null and image.get_width() == 64 and image.get_height() == 64
+            if texture_ok:
+                var lowest = 1.0
+                var highest = 0.0
+                var sensible = true
+                # Sample covered UV triangles, not unused black atlas space.
+                var arrays = body.mesh.surface_get_arrays(0)
+                var uvs = arrays[Mesh.ARRAY_TEX_UV]
+                var indices = arrays[Mesh.ARRAY_INDEX]
+                for i in range(0, indices.size(), 3):
+                    var uv = (uvs[indices[i]] + uvs[indices[i + 1]] + uvs[indices[i + 2]]) / 3.0
+                    var pixel = image.get_pixel(clampi(int(uv.x * 64), 0, 63), clampi(int(uv.y * 64), 0, 63))
+                    lowest = min(lowest, pixel.r)
+                    highest = max(highest, pixel.r)
+                    sensible = sensible and pixel.r > 0.15 and pixel.r < 0.5 and pixel.g > pixel.r and pixel.b > pixel.g and pixel.b < 0.9
+                texture_color_ok = sensible and highest - lowest > 0.02
     axes_ok = right != null and front != null and right.global_position.distance_to(Vector3(2, 1, 0)) < 0.01 and front.global_position.distance_to(Vector3(0, 1, 1)) < 0.01
     hierarchy_ok = head != null and head.get_parent().name == "HeadPivot" and model.find_child("PreviewCamera", true, false) == null and model.find_child("PreviewLight", true, false) == null
     var camera = Camera3D.new()
@@ -70,6 +117,8 @@ func _ready():
     check(result.ok and runner.active_game.asset_ok, "Host helper consumes Blender GLB without editor imports")
     check(result.ok and runner.active_game.axes_ok, "Asymmetric exported markers prove Blender-to-Godot axes")
     check(result.ok and runner.active_game.hierarchy_ok, "Export preserves animation pivots and excludes preview camera/lights")
+    check(result.ok and runner.active_game.texture_ok, "Godot imports the embedded baked base-color texture at its actual dimensions")
+    check(result.ok and runner.active_game.texture_color_ok, "Imported baked texture preserves varying color without manual gamma conversion")
     result = runner.load_game(workspace)
     check(result.ok and runner.active_game.axes_ok, "GLB helper survives a second reload")
     var test: Dictionary = tools.execute("start_test_game", {"mode": "headless"})
@@ -111,6 +160,25 @@ func _ready():
     job = tools.execute("blender", {"action": "start", "blend": "art/source.blend"})
     result = await wait_job(job.run_id, 30.0)
     check(result.get("ok", false) and result.get("report", {}).get("object_count") == 9, "saved blend can be reopened and inspected")
+    tools.write_file("materials.py", """import bpy
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+for index, name in enumerate(['Procedural', 'White', 'UnusedNoise']):
+    bpy.ops.mesh.primitive_cube_add(location=(index * 3, 0, 0))
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    bpy.context.object.data.materials.append(material)
+    shader = material.node_tree.nodes.get('Principled BSDF')
+    shader.inputs['Base Color'].default_value = (1, 1, 1, 1)
+    if name != 'White':
+        noise = material.node_tree.nodes.new('ShaderNodeTexNoise')
+        if name == 'Procedural':
+            material.node_tree.links.new(noise.outputs['Color'], shader.inputs['Base Color'])
+""")
+    job = approved_start({"action": "start", "script": "materials.py"})
+    result = await wait_job(job.run_id, 30.0)
+    var advisories: Array = result.get("report", {}).get("material_advisories", [])
+    check(result.get("ok", false) and advisories.size() == 1 and advisories[0].get("material") == "Procedural", "material advice flags connected procedural shading while allowing white and unused nodes")
     tools.write_file("bad.py", "raise RuntimeError('deliberate bpy failure')\n")
     job = approved_start({"action": "start", "script": "bad.py"})
     result = await wait_job(job.run_id, 30.0)

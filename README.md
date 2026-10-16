@@ -127,9 +127,11 @@ Ask the agent to create or modify a Blender asset. Its standing instructions tel
 
 `inspect` returns a PNG as native image tool content, plus dimensions. Actual visual inspection requires image support in the selected harness/model; otherwise the agent must report that limitation and use scene diagnostics rather than claim to have seen the render. Previews are limited to 8 MiB, 4096 pixels per side and four megapixels. Use small CPU renders first, test the resulting game headlessly and reload it before handing it back.
 
+Successful status also preserves bounded warning summaries separately from the rolling log. Scene reports give advisory hints for connected procedural/custom shaders that may lose appearance in glTF; they do not certify export fidelity. The guide includes a UV base-color baking example and multiple preview views from one script. Private jobs disable `.blend1` backups without changing the player's preferences. Render quality and artistic choices remain script-owned.
+
 Blender starts with factory preferences and embedded auto-run scripts disabled. Its environment includes only required OS/display/home variables and private Blender paths; unrelated credentials, `PYTHONPATH`, `NODE_OPTIONS`, and inherited `PATH` are omitted. Input/output arguments and preview reads are checked against the game workspace, including links and protected `.git` paths. **Approved Python scripts still run with your user permissions, including filesystem, process and network access; approval and environment reduction are not a sandbox.** If the supervisor crashes, GameSmith attempts child cleanup using process birth identity and the private job path, never just an old PID. A failed ownership check blocks new jobs rather than killing an unrelated process; `stop` retries cleanup. Existing Codex conversations retain their original dynamic-tool registry: use **Start new Codex session** in Settings to expose Blender in a conversation created before this update. Other running backends should be restarted to load the updated integration.
 
-Deterministic tests: `node --test tests/blender.test.mjs` and `blender_runner.gd` in the host suite. Installed-Blender acceptance: `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe blender_integration_runner.gd`.
+Deterministic tests: `node --test tests/blender.test.mjs` and `blender_runner.gd` in the host suite. Installed-Blender acceptance: `node tools/testing/verify.mjs --live blender --output errors`.
 
 ## GitHub Copilot CLI
 

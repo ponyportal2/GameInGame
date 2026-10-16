@@ -45,3 +45,35 @@ Use meters and explicit names. Export `export_yup=True`: Blender coordinates `(x
 Put animated parts under stable named pivot empties, with all moving accessories parented to the same pivot. The example's `Head` is a child of `HeadPivot`, which is under `AssetRoot`. Preserve imported rest transforms when animating. Frame the camera around the subject or a named focus object; whole-scene bounds can be dominated by distant mountains/background geometry. The status report's object world locations and parent names help diagnose hierarchy and placement.
 
 Background scripts should use data APIs and operators that do not need a UI area. A small CPU preview is portable: `scene.render.engine='CYCLES'`, `scene.cycles.device='CPU'`, `scene.cycles.samples=8`, set resolution and `resolution_percentage=100`, configure a camera pointing at the asset and lights. Do not require GPU availability. Blender API names vary by installed version; the report/log identifies the actual version. `--factory-startup`, private user config and disabled automatic scripts avoid depending on the player's open Blender scene/preferences. Deliberately executed bpy scripts can still run arbitrary Python: keep all operations scoped to this game.
+
+## Materials and export feedback
+
+Blender's rendered shader graph is not the glTF material format. Use a Principled BSDF with constant values or recognized image-texture connections. Procedural Noise/ColorRamp and custom shader groups are not automatically preserved as rendered appearance. The [Blender glTF manual](https://docs.blender.org/manual/en/5.2/addons/scene_gltf2.html) describes recognized material connections.
+
+The example's `bake_base_color` helper demonstrates the full route: UV-mapped cube, procedural Noise/ColorRamp color, CPU Cycles diffuse **COLOR-only** bake to an sRGB image, Image Texture directly connected to Principled Base Color, then packed texture exported in GLB. Node color values in this recipe are scene-linear; Blender performs the image encoding. Do not add manual gamma conversion or bake direct/indirect illumination into a relightable base-color texture. Other meshes need UVs, and multi-material meshes need a bake target in each relevant material. This is a base-color recipe, not a universal normal/metallic/roughness baker; those maps need their own channels and color-space settings.
+
+Status includes `warnings` separately from `log_tail`, including on successful runs. Up to 16 distinct warning/error/unsupported/fallback lines are retained (384 characters each); `warnings_dropped` reports omitted occurrences after the limit. Summaries preserve early lines even after render progress pushes them out of the log tail. They are diagnostic hints, not authoritative success/failure classification, and not every exporter silently dropping a feature produces a warning.
+
+`report.material_advisories` independently checks materials used by scene meshes for connected procedural/custom shader nodes. Disconnected experiment nodes and intentionally white materials are not flagged. Inspection is bounded (`material_inspection_limited`), advisory, and neither exhaustive nor proof of which materials were exported: preview-only objects are still in the Blender scene. Follow findings by checking the GLB in Godot. A clean report does not guarantee matching appearance. Lighting, exposure, color management and emission can differ; compare actual images rather than applying a fixed emission-strength cutoff.
+
+Private jobs disable `.blend1` backup creation; they do not delete pre-existing backups or change the player's Blender preferences. Your script still owns render engine, resolution, samples and artistic settings.
+
+## Multiple preview views
+
+One job may write additional workspace PNGs itself. For example, after configuring the example's camera/lights, before saving the blend:
+
+```python
+(Path.cwd() / 'art').mkdir(exist_ok=True)
+original_location = camera.location.copy()
+original_rotation = camera.rotation_euler.copy()
+for name, position in [('front', (6, -8, 5)), ('back', (-6, 8, 5))]:
+    camera.location = position
+    camera.rotation_euler = (Vector((0.5, 0, 1.2)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
+    scene.render.filepath = str(Path.cwd() / 'art' / (name + '.png'))
+    scene.render.image_settings.file_format = 'PNG'
+    bpy.ops.render.render(write_still=True)
+camera.location = original_location
+camera.rotation_euler = original_rotation
+```
+
+Inspect each with `blender(action="inspect", path="art/front.png")` and `art/back.png`. An optional tool-level `render` still produces the main preview after the script returns. Keep all PNGs within inspection limits; multiple views do not replace the imported Godot screenshot.

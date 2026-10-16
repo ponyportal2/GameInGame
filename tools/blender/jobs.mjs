@@ -5,9 +5,32 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 import {workspacePath} from './workspace-paths.mjs';
 import {killProcessTree} from './process-tree.mjs';
 import {createHash} from 'node:crypto';
+import {StringDecoder} from 'node:string_decoder';
 import {processIdentity,cleanupJob} from './ownership.mjs';
 
 const sha256=data=>createHash('sha256').update(data).digest('hex');
+// Warnings are retained independently of render progress and the rolling tail.
+export function warningCapture() {
+  const warnings=[],seen=new Set(),streams=new Map();let dropped=0;
+  const line=text=>{
+    text=text.replace(/\x1b\[[0-9;]*m/g,'').trim();
+    if(!/\b(?:\w*warning|warn|error|unsupported)\b|not supported|fallback/i.test(text))return;
+    text=text.slice(0,384);
+    if(seen.has(text))return;
+    if(warnings.length===16){dropped++;return;}
+    seen.add(text);warnings.push(text);
+  };
+  return {
+    push(data,stream='stdout') {
+      if(!streams.has(stream))streams.set(stream,{decoder:new StringDecoder('utf8'),pending:''});
+      const state=streams.get(stream),parts=(state.pending+state.decoder.write(data)).split(/\r\n|[\r\n]/);
+      state.pending=parts.pop().slice(0,4096);
+      for(const part of parts)line(part);
+    },
+    finish(){for(const state of streams.values()){line(state.pending+state.decoder.end());state.pending='';}},
+    snapshot:()=>({warnings:[...warnings],warnings_dropped:dropped})
+  };
+}
 export function blenderEnvironment(env,privateHome,workspace) {
   const allowed=new Set(['systemroot','windir','temp','tmp','tmpdir','home','userprofile','appdata','localappdata','lang','lc_all','display','wayland_display','xdg_runtime_dir']);
   return {...Object.fromEntries(Object.entries(env).filter(([key])=>allowed.has(key.toLowerCase()))),BLENDER_USER_CONFIG:privateHome,BLENDER_USER_SCRIPTS:join(privateHome,'scripts'),GAMESMITH_WORKSPACE:workspace};
@@ -69,12 +92,13 @@ export async function inspectImage(workspace,path) {
 }
 export async function runJob(config) {
   let child,closed=false,stopped=false,tail='',dropped=0,timer;
+  const diagnostic=warningCapture();
   const statusFile=join(config.directory,'status.json');
   let status={ok:true,run_id:config.run_id,state:'starting'};
   // Serialize status writes: no overlapping .tmp writers, including final exit.
   let writes=Promise.resolve();
-  const save=()=>{const payload=JSON.stringify({...status,log_tail:tail,log_dropped_bytes:dropped});writes=writes.then(async()=>{await writeFile(statusFile+'.tmp',payload);await rename(statusFile+'.tmp',statusFile);});return writes;};
-  const capture=data=>{tail+=data.toString();if(tail.length>32768){dropped+=tail.length-32768;tail=tail.slice(-32768);}};
+  const save=()=>{const payload=JSON.stringify({...status,...diagnostic.snapshot(),log_tail:tail,log_dropped_bytes:dropped});writes=writes.then(async()=>{await writeFile(statusFile+'.tmp',payload);await rename(statusFile+'.tmp',statusFile);});return writes;};
+  const capture=(data,stream)=>{diagnostic.push(data,stream);tail+=data.toString();if(tail.length>32768){dropped+=tail.length-32768;tail=tail.slice(-32768);}};
   const stop=()=>{if(closed || stopped)return;stopped=true;if(child?.pid)killProcessTree(child.pid);};
   process.stdin.resume();process.stdin.on('end',stop);
   const onSignal=()=>stop();process.on('SIGTERM',onSignal);process.on('SIGINT',onSignal);
@@ -91,7 +115,7 @@ export async function runJob(config) {
     // Attach error/close handlers before querying ownership (the child may exit).
     const completion=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(code,signal)=>resolve({code,signal}));});
     completion.catch(()=>{});
-    child.stdout.on('data',capture);child.stderr.on('data',capture);
+    child.stdout.on('data',data=>capture(data,'stdout'));child.stderr.on('data',data=>capture(data,'stderr'));
     status={...status,state:'running',pid:child.pid,executable};await save();
     const identity=await processIdentity(child.pid);
     status={...status,state:'running',pid:child.pid,executable,identity};await save();
@@ -106,7 +130,7 @@ export async function runJob(config) {
     status={...status,state:stopped?'cancelled':exit.code===0?'completed':'failed',ok:!stopped && exit.code===0,exit_code:exit.code,signal:exit.signal,report};
     if(!status.ok)status.error=stopped?'Blender job cancelled.':'Blender failed. Read log_tail, fix the bpy script and run again.';
   }catch(error){if(child?.pid && !closed)stop();status={...status,ok:false,state:stopped?'cancelled':'failed',error:error.message};}
-  finally {clearInterval(timer);closed=true;process.stdin.removeListener('end',stop);process.stdin.pause();process.removeListener('SIGTERM',onSignal);process.removeListener('SIGINT',onSignal);await save();}
+  finally {clearInterval(timer);closed=true;process.stdin.removeListener('end',stop);process.stdin.pause();process.removeListener('SIGTERM',onSignal);process.removeListener('SIGINT',onSignal);diagnostic.finish();await save();}
   return status;
 }
 if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
