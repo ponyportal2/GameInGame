@@ -82,7 +82,7 @@ const server=http.createServer(async(req,res)=>{
     if(pathname.endsWith('/agent/update'))return reply();
     if(pathname.endsWith('/agent') && req.method==='GET')return reply({is_ready:true,model_cfg:{model:'fixture-native-model',provider:'fixture',reasoning_effort:'high'}});
     if(pathname.endsWith('/agent') && req.method==='POST'){
-      if(process.env.GAMESMITH_CRUSH_FAIL_METHOD==='agent/prompt')return reply({message:'Fixture prompt failure'},500);
+      if(process.env.GAMESMITH_CRUSH_FAIL_METHOD==='agent/prompt' || params.prompt==='reject-before-admission')return reply({message:'Fixture prompt failure'},500);
       if(!sessions.has(params.session_id))return reply({message:'Native session not found'},404);
       operation=params;reply(undefined,202);setImmediate(()=>void run(params));return;
     }

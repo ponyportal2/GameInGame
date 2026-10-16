@@ -25,7 +25,7 @@ async function tool(name,arguments_={}){
 createInterface({input:process.stdin}).on('line',async line=>{
   const r=JSON.parse(line);appendFileSync('.agy-fixture-requests.jsonl',JSON.stringify(r)+'\n');
   if(process.env.GAMESMITH_AGY_STUCK_START==='1')return;
-  if(process.env.GAMESMITH_AGY_EXIT_BEFORE_INIT==='1')process.exit(3);
+  if(process.env.GAMESMITH_AGY_EXIT_BEFORE_INIT==='1' || r.message.content.split('Player request:\n').at(-1)==='exit-before-init')process.exit(3);
   if(resumed && resumed!==session){process.stderr.write('Native conversation not found\n');process.exit(3);}
   if(!init){init=true;emit({event:'init',conversation_id:process.env.GAMESMITH_AGY_WRONG_SESSION ? 'wrong-session' : session,init:{agent:'gamesmith'}});await connect();}
   const message=r.message.content.split('Player request:\n').at(-1);

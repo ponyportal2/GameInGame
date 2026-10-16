@@ -9,7 +9,7 @@ const policy=JSON.parse(process.env.GAMESMITH_OMP_POLICY);
 let tools=[],turn,serial=0,replayIdentity;
 const calls=new Map();
 const response=(r,data={})=>emit({type:'response',id:r.id,success:true,data});
-function trace(r){if(process.env.GAMESMITH_OMP_TRACE)appendFileSync(process.env.GAMESMITH_OMP_TRACE,JSON.stringify(r)+'\n');}
+function trace(r){appendFileSync(process.env.GAMESMITH_OMP_TRACE || '.omp-fixture-requests.jsonl',JSON.stringify(r)+'\n');}
 function settled(r){trace({type:'fixture_settled',promptId:r.id});emit({type:'session_settled'});}
 function complete(r,text='Fixture complete',status='completed'){
   emit({type:'message_update',assistantMessageEvent:{type:'text_delta',delta:text.slice(0,5)}});
@@ -42,6 +42,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
     if(turn)complete(turn,'','aborted');response(r);return;
   }
   if(r.type==='prompt'){
+    if(r.message==='Player request:\nreject-before-admission'){emit({type:'response',id:r.id,command:'prompt',success:false,error:'Fixture prompt rejected before admission'});return;}
     const localOnly=r.message==='Player request:\nlocal-only';
     response(r,{agentInvoked:r.message!=='/gamesmith-ready' && !localOnly});
     if(r.message==='/gamesmith-ready'){
@@ -79,7 +80,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
       const replay=await call('gamesmith_list',{path:'.'},replayIdentity);
       complete(r,replay.ok===false ? 'Recent cross-turn replay denied' : 'Replay allowed','completed');return;
     }
-    if(r.message.includes('provider-error')){emit({type:'prompt_result',id:r.id,status:'error',error:{message:'Fixture provider error'}});turn=undefined;setTimeout(()=>settled(r),0);return;}
+    if(r.message==='Player request:\nprovider-error'){emit({type:'prompt_result',id:r.id,status:'error',error:{message:'Fixture provider error'}});turn=undefined;setTimeout(()=>settled(r),0);return;}
     if(turn===r)complete(r);return;
   }
   emit({type:'response',id:r.id,success:false,error:'Unsupported fixture command'});

@@ -42,7 +42,7 @@ const server=new GrokBuildServer(config,{
   },
   onExit:error=>{
     if(stopping)return;stopping=true;
-    if(active)emit(failureRecord(active,Object.assign(error,{initializationFailed:!active.accepted,runtimeFailed:true}),{requestPreserved:sessionSaved}));
+    if(active)emit(failureRecord(active,Object.assign(error,{initializationFailed:!active.accepted,runtimeFailed:true}),{requestPreserved:active.requestPreserved}));
     active?.finish();active=undefined;server.close();process.stdout.write('',()=>process.exit(1));
   }
 });
@@ -61,13 +61,15 @@ async function prompt(request,operation){
     operation.accepted=true;emit({type:'response',id:request.id,success:true});
     operation.prompt=server.request('session/prompt',{sessionId:session,prompt:[{type:'text',text:readFileSync(config.prompt_path,'utf8')+'\n\nPlayer request:\n'+request.message}]});
     const result=await operation.prompt;
+    // A matching prompt response confirms this request, unlike unkeyed updates.
+    operation.requestPreserved=true;
     saveSession();
-    if(!operation.cancelled)emit({type:'complete',ok:result.stopReason==='end_turn',text:operation.text,error:result.stopReason==='end_turn' ? '' : 'Grok Build stopped: '+result.stopReason});
+    if(!operation.cancelled)emit({type:'complete',request_preserved:operation.requestPreserved,ok:result.stopReason==='end_turn',text:operation.text,error:result.stopReason==='end_turn' ? '' : 'Grok Build stopped: '+result.stopReason});
   }catch(error){
     // session/new allocates an ID before a native conversation exists. Do not
     // persist an unresumable reference if runtime setup fails before any event.
     if(!sessionSaved){stopping=true;server.close();error.runtimeFailed=true;}
-    if(active===operation && !operation.cancelled)emit(failureRecord(operation,error,{requestPreserved:sessionSaved}));
+    if(active===operation && !operation.cancelled)emit(failureRecord(operation,error,{requestPreserved:operation.requestPreserved}));
   }
   finally{if(active===operation)active=undefined;operation.finish();}
 }
@@ -84,6 +86,6 @@ createInterface({input:process.stdin}).on('line',line=>{
   let r;try{r=JSON.parse(line);}catch{return;}
   if(r.type==='cancel'){void cancel(r);return;}
   if(r.type!=='prompt' || active || cancelling || stopping){emit({type:'response',id:r.id,success:false,error:'Grok Build is busy or command is unsupported.'});return;}
-  const operation={request:r,text:'',abort:new AbortController(),calls:new PermissionCalls(seenCalls)};operation.done=new Promise(resolve=>operation.finish=resolve);active=operation;void prompt(r,operation);
+  const operation={request:r,text:'',requestPreserved:false,abort:new AbortController(),calls:new PermissionCalls(seenCalls)};operation.done=new Promise(resolve=>operation.finish=resolve);active=operation;void prompt(r,operation);
 });
 process.stdin.on('end',()=>{stopping=true;server.close();process.exit();});

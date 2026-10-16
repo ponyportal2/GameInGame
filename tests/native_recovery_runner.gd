@@ -66,6 +66,32 @@ func run() -> void:
         check(app.agent.rpc != null and app.agent.rpc.pid != old_pid and not OS.is_process_running(old_pid), harness + " retires old adapter before resuming")
         var rows = app.transcript.read_all(app.current_game)
         check(rows.size() == prior_rows + 4 and rows[prior_rows + 2].content == "provider-error" and not rows[prior_rows + 3].content.begins_with("Error:"), harness + " transcript omits recovery prompts and intermediate errors")
+        if harness in ["agy", "crush", "cline", "omp"]:
+            var objective = "exit-before-init" if harness == "agy" else "reject-before-admission"
+            var uncertain: Array = []
+            var observe_retry = func(text):
+                if text.begins_with("Turn failed."):
+                    uncertain.append(not app.agent.request_preserved)
+            app.agent.status_changed.connect(observe_retry)
+            app.agent.send_player_request(objective)
+            await idle(app.agent)
+            app.agent.status_changed.disconnect(observe_retry)
+            check(uncertain == [true] and app.agent.last_error == "", harness + " later request recovers despite uncertain native admission")
+            check(JsonStore.read_dict(session_file, {}).get("session") == saved, harness + " later recovery resumes exact existing history")
+            var directory = ProjectSettings.globalize_path(app.metadata.game_meta_dir(app.current_game).path_join(harness + "/native-workspace"))
+            if harness == "cline": directory = ProjectSettings.globalize_path(app.agent.tools.workspace)
+            if harness == "omp": directory = ProjectSettings.globalize_path(app.metadata.game_meta_dir(app.current_game).path_join("omp/native"))
+            var log_text = FileAccess.get_file_as_string(directory.path_join("." + harness + "-fixture-requests.jsonl"))
+            var latest_prompt = ""
+            for line in log_text.split("\n", false):
+                var record = JSON.parse_string(line)
+                if harness == "agy" and record.get("event") == "user": latest_prompt = record.message.content
+                if harness == "crush" and record.get("method") == "POST" and record.path.ends_with("/agent"): latest_prompt = record.params.prompt
+                if harness == "cline" and record.get("method") == "session/prompt": latest_prompt = record.params.prompt[-1].text
+                if harness == "omp" and record.get("type") == "prompt": latest_prompt = record.message
+            check(latest_prompt.ends_with("Original player request:\n" + objective) and "preservation of this request is unconfirmed" in latest_prompt, harness + " real IPC retry carries exact objective and uncertain-work warning")
+            var final_rows = app.transcript.read_all(app.current_game)
+            check(final_rows.size() == rows.size() + 2 and final_rows[-2].content == objective, harness + " later recovery records objective once without internal prompts")
         app.queue_free()
         await process_frame
         OS.unset_environment(env_name)

@@ -15,7 +15,7 @@ function finish(ok,error='',final,initializationFailed=false) {
   const result=reconcileText(operation.text,final);
   if(result.suffix)emit({type:'delta',kind:'assistant',text:result.suffix});
   if(!ok){stopping=true;server.close();}
-  emit(operation.accepted ? {type:'complete',ok,text:result.text,corrected:result.corrected,error,runtime_failed:!ok,initialization_failed:initializationFailed,request_preserved:!!session}
+  emit(operation.accepted ? {type:'complete',ok,text:result.text,corrected:result.corrected,error,runtime_failed:!ok,initialization_failed:initializationFailed,request_preserved:operation.requestPreserved}
     : {type:'response',id:operation.request.id,success:false,error,initialization_failed:true});
 }
 const server=new AgyServer(config,{
@@ -28,7 +28,7 @@ const server=new AgyServer(config,{
       if(typeof id!=='string' || !id || (session && id!==session)){
         finish(false,'AGY session could not be resumed. Start a new AGY session in Settings. The previous reference and chat are kept.',undefined,true);return;
       }
-      session=id;state(true);
+      session=id;active.requestPreserved=true;state(true);
       writeFileSync(config.session_file+'.tmp',JSON.stringify({session}));renameSync(config.session_file+'.tmp',config.session_file);
       writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,session}));
       emit({type:'session',session});return;
@@ -54,7 +54,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
     stopping=true;active=undefined;state(false);server.close();emit({type:'response',id:request.id,success:true});return;
   }
   if(request.type!=='prompt' || active || stopping){emit({type:'response',id:request.id,success:false,error:'AGY is busy or must be restarted.'});return;}
-  const operation={text:'',request,toolSteps:new Set()};active=operation;
+  const operation={text:'',request,requestPreserved:false,toolSteps:new Set()};active=operation;
   try {
     if(!started){await server.start();started=true;}
     if(active!==operation || stopping)return;

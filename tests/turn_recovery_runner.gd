@@ -121,7 +121,7 @@ func run() -> void:
     a.failures_before_success = 2
     a.send_player_request("build a tower-defense game")
     await idle(a)
-    check(a.prompts == ["build a tower-defense game", "build a tower-defense game", a.RECOVERY_MESSAGE], "lost first conversation retries original objective, then durable admission uses continuation")
+    check(a.prompts == ["build a tower-defense game", a._recovery_prompt("build a tower-defense game", false), a._recovery_prompt("build a tower-defense game")], "every retry includes original objective and preservation-specific recovery instructions")
     check(a.transcript.rows.size() == 2 and a.transcript.rows[0].content == "build a tower-defense game", "first-turn recovery records original objective exactly once")
     a.queue_free()
     await process_frame
@@ -130,7 +130,7 @@ func run() -> void:
     a.send_player_request("build once")
     await idle(a)
     check(a.prompts.size() == 3 and a.waits == [8.0, 16.0], "failed turns back off then succeed")
-    check(a.prompts.size() == 3 and a.prompts[1] != "build once" and "continu" in a.prompts[1].to_lower(), "accepted task continues rather than replaying original request")
+    check(a.prompts.size() == 3 and a.prompts[1] != "build once" and "continu" in a.prompts[1].to_lower(), "accepted task gets recovery instructions rather than a bare replay")
     check(a.transcript.rows.size() == 2 and a.transcript.rows[0].content == "build once" and a.transcript.rows[1].content == "done", "transcript contains one player request and final answer")
     check(a.completions == [true] and a.notices == ["done"], "intermediate failures do not finish or show raw error messages")
     check(a.restarts == 2, "failed backend is retired before each recovery")
@@ -155,7 +155,7 @@ func run() -> void:
     a.reject = true
     a.send_player_request("not admitted")
     await idle(a)
-    check(a.prompts.size() == 5 and a.prompts.all(func(p): return p == "not admitted"), "unaccepted requests retain original objective")
+    check(a.prompts.size() == 5 and a.prompts.all(func(p): return p.ends_with("not admitted")), "unaccepted requests retain original objective")
     a.queue_free()
     await process_frame
     a = agent()
@@ -234,7 +234,7 @@ func run() -> void:
     root.add_child(pi_agent)
     pi_agent.send_player_request("Pi task")
     await idle(pi_agent)
-    check(pi_agent.last_error == "" and pi_agent.prompts.size() == 2 and pi_agent.prompts[1] == pi_agent.RECOVERY_MESSAGE, "Pi generation limit uses shared continuation recovery")
+    check(pi_agent.last_error == "" and pi_agent.prompts.size() == 2 and pi_agent.prompts[1] == pi_agent._recovery_prompt("Pi task"), "Pi generation limit uses shared continuation recovery")
     check(pi_agent.transcript.rows.size() == 2, "Pi recovery records only player request and final answer")
     pi_agent.queue_free()
     await process_frame

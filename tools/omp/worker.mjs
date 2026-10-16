@@ -19,7 +19,7 @@ const server=new OmpServer(config,{
   onExit:error=>{
     if(stopping)return;
     stopping=true;
-    if(active){active.abort.abort();emit(active.dispatched ? {type:'complete',ok:false,text:active.text,error:error.message,runtime_failed:true,request_preserved:!!session} : {type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.resolve?.({status:'aborted'});active.settle();active.finish();active=undefined;}
+    if(active){active.abort.abort();emit(active.accepted ? {type:'complete',ok:false,text:active.text,error:error.message,runtime_failed:true,request_preserved:active.requestPreserved} : {type:'response',id:active.request.id,success:false,error:error.message,request_preserved:false,initialization_failed:!active.dispatched});active.resolve?.({status:'aborted'});active.settle();active.finish();active=undefined;}
     server.close();
     // Retire the adapter even if no player turn was active. Otherwise the host
     // sees a live worker and keeps sending requests to a dead native backend.
@@ -72,6 +72,9 @@ async function prompt(request,op){
     op.nativeId='gs-'+(server.serial+1);
     const completion=new Promise(resolve=>op.resolve=resolve);
     const admitted=await server.request('prompt',{message:'Player request:\n'+request.message});
+    // Native admission plus a resumable reference concerns this prompt.
+    op.requestPreserved=!!session;
+    op.accepted=true;
     emit({type:'response',id:request.id,success:true});
     const result=admitted.agentInvoked===false ? {status:'completed'} : await completion;
     // The snapshot in prompt_result can already be true, but OMP still emits
@@ -87,7 +90,7 @@ async function prompt(request,op){
     if(text.startsWith(op.text) && text.length>op.text.length)emit({type:'delta',kind:'assistant',text:text.slice(op.text.length)});
     emit({type:'complete',ok:result.status==='completed',text,corrected:!text.startsWith(op.text),error:result.status==='completed' ? '' : result.error?.message || 'OMP stopped: '+result.status});
   }catch(error){
-    if(active===op && !op.cancelled)emit(op.dispatched ? {type:'complete',ok:false,text:op.text,error:error.message,initialization_failed:!!error.initializationFailed,request_preserved:!!session} : {type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed});
+    if(active===op && !op.cancelled)emit(op.accepted ? {type:'complete',ok:false,text:op.text,error:error.message,initialization_failed:!!error.initializationFailed,request_preserved:op.requestPreserved} : {type:'response',id:request.id,success:false,error:error.message,request_preserved:false,initialization_failed:!!error.initializationFailed});
   }finally{if(active===op)active=undefined;op.finish();}
 }
 async function cancel(request){
@@ -103,6 +106,6 @@ createInterface({input:process.stdin}).on('line',line=>{
   let r;try{r=JSON.parse(line);}catch{return;}
   if(r.type==='cancel'){if(!cancelling)void cancel(r);else emit({type:'response',id:r.id,success:false,error:'Already stopping OMP.'});return;}
   if(r.type!=='prompt' || active || stopping || cancelling){emit({type:'response',id:r.id,success:false,error:'OMP is busy or unavailable.'});return;}
-  const op={request:r,text:'',finals:new Map(),abort:new AbortController(),calls:new Map(),seenCalls:new Set()};op.done=new Promise(resolve=>op.finish=resolve);op.settled=new Promise(resolve=>op.settle=resolve);active=op;void prompt(r,op);
+  const op={request:r,text:'',requestPreserved:false,finals:new Map(),abort:new AbortController(),calls:new Map(),seenCalls:new Set()};op.done=new Promise(resolve=>op.finish=resolve);op.settled=new Promise(resolve=>op.settle=resolve);active=op;void prompt(r,op);
 });
 process.stdin.on('end',()=>{stopping=true;active?.abort.abort();server.close();process.exit();});

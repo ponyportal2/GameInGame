@@ -52,7 +52,7 @@ var auto_compaction_failed_operation := -1
 # One recovery budget per player request, after the harness's own retries settle.
 const RECOVERY_DELAYS = [8.0, 16.0, 32.0, 64.0]
 var recovery_delays: Array = RECOVERY_DELAYS.duplicate()
-const RECOVERY_MESSAGE = "Continue the unfinished player request from the current conversation. The previous turn ended unsuccessfully. Preserve completed tool results and file edits; inspect the current state before repeating any action."
+const RECOVERY_MESSAGE = "Continue work on the original player request below. The previous attempt ended unsuccessfully. Some actions may already have completed, even if the request is absent from native history. Inspect the current state and preserve completed tool results and file edits before repeating any action."
 var recovery_generation := 0
 var recovery_active := false
 var recovery_error := ""
@@ -95,7 +95,7 @@ func send_player_request(text: String) -> void:
         request_admitted = false
         request_preserved = true
         initialization_failed = false
-        await _send_player_attempt(RECOVERY_MESSAGE if admitted else text)
+        await _send_player_attempt(_recovery_prompt(text, admitted) if recovery_attempt > 0 else text)
         if generation != recovery_generation:
             return
         admitted = (admitted or request_admitted) if request_preserved else false
@@ -121,6 +121,10 @@ func send_player_request(text: String) -> void:
             return
         # No await between releasing busy and entering the next attempt.
         busy = false
+
+func _recovery_prompt(objective: String, preserved: bool = true) -> String:
+    var context = "" if preserved else "\nNative preservation of this request is unconfirmed."
+    return RECOVERY_MESSAGE + context + "\n\nOriginal player request:\n" + objective
 
 func _wait_recovery(seconds: float, generation: int) -> void:
     var deadline = Time.get_ticks_msec() + int(seconds * 1000)

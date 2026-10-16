@@ -37,6 +37,17 @@ test('assembled runtime reconciles partial streaming, uses native context and re
   const overlay=JSON.parse(readFileSync(join(f.directory,'native','config.yml')));assert.equal('model' in overlay,false);assert.equal('compaction' in overlay,false);
 });
 
+test('existing history does not prove the next OMP request was admitted',{timeout:15000},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});
+  assert((await f.until(r=>r.type==='complete')).ok);
+  const saved=readFileSync(join(f.directory,'session.json'),'utf8');
+  f.send({type:'prompt',id:'two',message:'reject-before-admission'});
+  const result=await f.until(r=>r.id==='two');
+  assert.equal(result.success,false);
+  assert.equal(result.request_preserved,false);
+  assert.equal(readFileSync(join(f.directory,'session.json'),'utf8'),saved);
+});
+
 test('OMP host results carry Blender previews as native image blocks',{timeout:15000},async t=>{
   const f=fixture(t);f.send({type:'prompt',id:'image',message:'blender-image'});
   const bridge=join(f.directory,'bridge');let file;

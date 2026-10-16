@@ -13,7 +13,7 @@ state(false);
 function saveSession(){if(saved)return;writeFileSync(config.session_file+'.tmp',JSON.stringify({session}));renameSync(config.session_file+'.tmp',config.session_file);saved=true;emit({type:'session',session});}
 function fail(error){
   if(stopping)return;stopping=true;state(false);
-  if(active){emit(active.accepted?{type:'complete',ok:false,text:active.stream?[...active.stream.texts.values()].join(''):'',error:error.message,request_preserved:saved,runtime_failed:true}:{type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.finish();active=undefined;}
+  if(active){emit(active.accepted?{type:'complete',ok:false,text:active.stream?[...active.stream.texts.values()].join(''):'',error:error.message,request_preserved:active.requestPreserved,runtime_failed:true}:{type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.finish();active=undefined;}
   server.close();
 }
 const server=new CrushServer(config,{
@@ -32,7 +32,8 @@ const server=new CrushServer(config,{
     }
     if(event.type==='run_complete'){
       const result=operation.stream.complete(p);if(!result)return;
-      if(!operation.cancelled){saveSession();for(const record of result.records)emit(record);emit({type:'complete',ok:result.ok,text:result.text,error:result.error});}
+      operation.requestPreserved=true;
+      if(!operation.cancelled){saveSession();for(const record of result.records)emit(record);emit({type:'complete',ok:result.ok,text:result.text,error:result.error,request_preserved:true});}
       if(active===operation){active=undefined;state(false);}operation.finish();
     }
   }
@@ -66,9 +67,9 @@ async function prompt(request,operation){
     operation.accepted=true;state(true);emit({type:'response',id:request.id,success:true});
     await server.request(server.path('/agent'),'POST',{session_id:session,run_id:operation.run,prompt:request.message});
     // Accepted native turns are durable even if Stop occurs before first text.
-    if(active===operation)saveSession();
+    if(active===operation){operation.requestPreserved=true;saveSession();}
   }catch(error){
-    if(active===operation){state(false);if(!operation.cancelled)emit(operation.accepted?{type:'complete',ok:false,text:'',request_preserved:saved,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:true}:{type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:true});active=undefined;operation.finish();}
+    if(active===operation){state(false);if(!operation.cancelled)emit(operation.accepted?{type:'complete',ok:false,text:'',request_preserved:operation.requestPreserved,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:true}:{type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:true});active=undefined;operation.finish();}
     stopping=true;server.close();
   }
 }
@@ -85,6 +86,6 @@ createInterface({input:process.stdin}).on('line',line=>{
   let request;try{request=JSON.parse(line);}catch{return;}
   if(request.type==='cancel'){void cancel(request);return;}
   if(request.type!=='prompt' || active || cancelling || stopping){emit({type:'response',id:request.id,success:false,error:'Crush is busy or command is unsupported.'});return;}
-  const operation={request,cancelled:false};operation.done=new Promise(resolve=>operation.finish=resolve);active=operation;void prompt(request,operation);
+  const operation={request,cancelled:false,requestPreserved:false};operation.done=new Promise(resolve=>operation.finish=resolve);active=operation;void prompt(request,operation);
 });
 process.stdin.on('end',()=>{stopping=true;state(false);server.close();process.exit();});

@@ -38,6 +38,16 @@ test('native Stop settles prompt and allows another message',{timeout:15000},asy
   f.send({type:'cancel',id:'stop'});assert((await f.until(r=>r.id==='stop')).success);
   f.send({type:'prompt',id:'two',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
 });
+test('existing history does not prove the next ACP request was preserved',{timeout:15000},async t=>{
+  const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});
+  assert((await f.until(r=>r.type==='complete')).ok);
+  const saved=readFileSync(join(f.directory,'session.json'),'utf8');
+  f.send({type:'prompt',id:'two',message:'reject-before-admission'});
+  const result=await f.until(r=>r.type==='complete' && !r.ok);
+  assert.equal(result.request_preserved,false);
+  assert.equal(readFileSync(join(f.directory,'session.json'),'utf8'),saved);
+});
+
 test('first-prompt initialization failure does not save an unresumable ID',{timeout:15000},async t=>{
   const f=fixture(t,{GAMESMITH_CLINE_FAIL_METHOD:'session/prompt'});f.send({type:'prompt',id:'one',message:'hello'});
   const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,false);assert.equal(result.initialization_failed,false);assert.equal(result.runtime_failed,true);assert.equal(result.request_preserved,false);
