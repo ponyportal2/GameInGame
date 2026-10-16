@@ -21,6 +21,6 @@ func read_all(game_name: String, max_entries: int = 200) -> Array[Dictionary]:
         var parsed = JSON.parse_string(line)
         if typeof(parsed) == TYPE_DICTIONARY:
             out.append(parsed)
-    if out.size() > max_entries:
+    if max_entries > 0 and out.size() > max_entries:
         return out.slice(out.size() - max_entries)
     return out

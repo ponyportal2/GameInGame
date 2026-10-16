@@ -6,7 +6,7 @@ class MemoryTranscript extends RefCounted:
     var rows: Array = []
     func append(_game: String, role: String, text: String) -> void:
         rows.append({"role": role, "content": text})
-    func read_all(_game: String) -> Array:
+    func read_all(_game: String, _max_entries: int = 200) -> Array:
         return rows
 
 class FakeRpc extends Node:
@@ -191,12 +191,13 @@ func run() -> void:
     a.llm_stream_delta.connect(app._append_stream_delta)
     a.llm_stream_end.connect(app._end_stream_block)
     if a.has_signal("transcript_reconciled"):
-        a.connect("transcript_reconciled", app._load_transcript)
+        a.connect("transcript_reconciled", app._reconcile_chat_history)
     var observed: Array = []
     a.status_changed.connect(func(text):
         if text.begins_with("Turn failed."):
             observed.append(app.transcript_view.get_parsed_text())
     )
+    app._append_chat("user", "recover streamed answer")
     a.send_player_request("recover streamed answer")
     await idle(a)
     check(observed.size() == 1 and not "wrong partial" in observed[0], "abandoned stream is removed before retry status")

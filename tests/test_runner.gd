@@ -376,7 +376,10 @@ func _test_llm_snippets_reach_chat() -> void:
     assert_true(not assistant_raw in ui_text, "intermediate assistant text is truncated to a snippet")
     assert_true(tool_snip in ui_text, "tool call snippet reaches chat")
     assert_true("All done." in ui_text, "final assistant message still posts in full")
-    assert_eq(TranscriptStoreScript.new().read_all(name).size(), 2, "snippets stay out of the durable transcript")
+    assert_eq(TranscriptStoreScript.new().read_all(name).size(), 2, "UI snippets stay out of native conversation import")
+    app._load_transcript()
+    assert_eq(app.transcript_view.get_parsed_text(), ui_text, "reopened chat keeps thinking, intermediate replies, tools and final answer")
+    assert_true(app.transcript_view.selection_enabled and app.transcript_view.context_menu_enabled, "chat text is selectable with a copy menu")
     app.queue_free()
     paused = false
     await process_frame

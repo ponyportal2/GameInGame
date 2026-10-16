@@ -23,6 +23,8 @@ const HOST_UI_CANVAS_LAYER = 1023
 var store = WorkspaceStoreScript.new()
 var metadata = MetadataStoreScript.new()
 var transcript = TranscriptStoreScript.new()
+var chat_history = preload("res://src/core/chat_history.gd").new()
+var replaying_chat := false
 var runner
 var agent
 var tools
@@ -375,7 +377,7 @@ func _attach_game_agent() -> void:
     if agent.has_signal("llm_stream_end"):
         agent.llm_stream_end.connect(_end_stream_block)
     if agent.has_signal("transcript_reconciled"):
-        agent.transcript_reconciled.connect(_load_transcript)
+        agent.transcript_reconciled.connect(_reconcile_chat_history)
     agent.finished.connect(_on_agent_finished)
     agent.reload_approval_changed.connect(_reload_approval_changed)
 
@@ -496,6 +498,9 @@ func _stop_agent() -> void:
         agent.cancel()
 
 func _append_chat(role: String, text: String) -> void:
+    if stream_open_kind != "":
+        _end_stream_block(stream_open_kind)
+    _record_chat_event({"type": "message", "role": role, "content": text})
     var label = {"user": "YOU", "assistant": "AGENT", "thinking": "THINK", "tool": "TOOL"}.get(role, "HOST")
     var color = {"user": "8bc7dd", "assistant": "b8e986", "thinking": "97a6ab", "tool": "ecc592"}.get(role, "8393b2")
     transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n%s\n\n" % [color, label, _escape_bbcode(text)])
@@ -507,16 +512,18 @@ func _append_stream_delta(kind: String, text: String) -> void:
         return
     if stream_open_kind != kind:
         if stream_open_kind != "":
-            transcript_view.append_text("\n\n")
-        var label = {"assistant": "AGENT", "thinking": "THINK"}.get(kind, "AGENT")
+            _end_stream_block(stream_open_kind)
+        var label = {"assistant": "AGENT", "thinking": "THINK", "tool": "TOOL", "system": "HOST"}.get(kind, "HOST")
         var color = {"assistant": "b8e986", "thinking": "97a6ab"}.get(kind, "c2f0cb")
         transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n" % [color, label])
         stream_open_kind = kind
+    _record_chat_event({"type": "delta", "role": kind, "content": text})
     transcript_view.append_text(_escape_bbcode(text))
     transcript_view.scroll_to_line(maxi(0, transcript_view.get_line_count() - 1))
 
 func _end_stream_block(kind: String) -> void:
     if stream_open_kind == kind:
+        _record_chat_event({"type": "end", "role": kind})
         transcript_view.append_text("\n\n")
         stream_open_kind = ""
 
@@ -525,11 +532,36 @@ func _escape_bbcode(text: String) -> String:
     # brackets is enough to prevent user/model/tool text from becoming tags.
     return text.replace("[", "[lb]")
 
+func _ensure_chat_history() -> bool:
+    if current_game == "": return false
+    if chat_history.exists(current_game): return true
+    # Old versions saved only final dialogue. Seed it once; native transcripts
+    # cannot reconstruct tool/thinking messages that the host never retained.
+    return chat_history.seed(current_game, transcript.read_all(current_game, 0))
+
+func _record_chat_event(event: Dictionary) -> void:
+    if replaying_chat or not _ensure_chat_history(): return
+    chat_history.append(current_game, event)
+
 func _load_transcript() -> void:
+    _ensure_chat_history()
     transcript_view.clear()
     stream_open_kind = ""
-    for entry in transcript.read_all(current_game):
-        _append_chat(str(entry.get("role", "system")), str(entry.get("content", "")))
+    replaying_chat = true
+    for event in chat_history.read_all(current_game):
+        var role = str(event.get("role", "system"))
+        match event.get("type"):
+            "message": _append_chat(role, str(event.get("content", "")))
+            "delta": _append_stream_delta(role, str(event.get("content", "")))
+            "end": _end_stream_block(role)
+    replaying_chat = false
+
+func _reconcile_chat_history() -> void:
+    var replacement = ""
+    if is_instance_valid(agent) and "result_corrected" in agent and agent.result_corrected and agent.recovery_error == "":
+        replacement = agent.result_text
+    _record_chat_event({"type": "reconcile", "content": replacement})
+    _load_transcript()
 
 func _set_chat_visible(visible: bool) -> void:
     if current_game == "": return
@@ -590,6 +622,8 @@ func _return_to_library() -> void:
     _show_library()
 
 func _on_agent_finished(_ok: bool) -> void:
+    if stream_open_kind != "":
+        _end_stream_block(stream_open_kind)
     _set_chat_busy_controls(false)
 
 func _open_global_logs() -> void:

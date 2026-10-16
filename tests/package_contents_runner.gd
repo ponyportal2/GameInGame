@@ -6,6 +6,10 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
+    if not ResourceLoader.exists("res://src/core/chat_history.gd"):
+        push_error("FAIL: exported GameSmith.pck is missing visible chat history")
+        quit(1)
+        return
     if not ResourceLoader.exists("res://src/core/image_generation.gd"):
         push_error("FAIL: exported GameSmith.pck is missing image generation")
         quit(1)

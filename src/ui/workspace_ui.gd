@@ -271,6 +271,8 @@ static func build_chat(app) -> void:
     app.approve_reload_button.visible = false
     app.transcript_view = RichTextLabel.new()
     app.transcript_view.bbcode_enabled = true
+    app.transcript_view.selection_enabled = true
+    app.transcript_view.context_menu_enabled = true
     app.transcript_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
     app.transcript_view.scroll_active = true
     box.add_child(app.transcript_view)
