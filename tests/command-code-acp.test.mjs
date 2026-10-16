@@ -1,3 +1,4 @@
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,readFileSync,mkdirSync} from 'node:fs';
@@ -8,9 +9,10 @@ import {createInterface} from 'node:readline';
 
 async function fixture(t,mode='') {
   const dir=mkdtempSync(join(tmpdir(),'gs-command-acp-'));mkdirSync(join(dir,'bridge'));
-  const config={workspace:dir,bridge_dir:join(dir,'bridge'),mod:resolve('tools/command-code/gamesmith.ts'),prompt_path:join(dir,'prompt.md'),session_file:join(dir,'session.json'),startup_timeout_ms:['missing-ready','wrong-nonce','missing-session-ready'].includes(mode)?1000:10000,session_id:mode==='load-failed'?'stale':''};
+  const runtime=assembleHarnessRuntime('command-code',join(dir,'adapter'));
+  const config={workspace:dir,bridge_dir:join(dir,'bridge'),mod:join(runtime,'gamesmith.ts'),prompt_path:join(dir,'prompt.md'),session_file:join(dir,'session.json'),startup_timeout_ms:['missing-ready','wrong-nonce','missing-session-ready'].includes(mode)?1000:10000,session_id:mode==='load-failed'?'stale':''};
   writeFileSync(config.prompt_path,'GameSmith instructions');writeFileSync(join(dir,'config.json'),JSON.stringify(config));
-  const child=spawn(process.execPath,['tools/command-code/worker.mjs',join(dir,'config.json')],{env:{...process.env,GAMESMITH_COMMAND_CODE_BIN:resolve('tools/testing/fake-command-code.mjs'),GAMESMITH_FAKE_ACP:mode,GAMESMITH_FAKE_COMPACTION:mode.startsWith('compact-')?mode.slice(8):'summarized'},stdio:['pipe','pipe','pipe']});
+  const child=spawn(process.execPath,[join(runtime,'worker.mjs'),join(dir,'config.json')],{env:{...process.env,GAMESMITH_COMMAND_CODE_BIN:resolve('tools/testing/fake-command-code.mjs'),GAMESMITH_FAKE_ACP:mode,GAMESMITH_FAKE_COMPACTION:mode.startsWith('compact-')?mode.slice(8):'summarized'},stdio:['pipe','pipe','pipe']});
   t.after(()=>child.stdin.end());let errors='';child.stderr.on('data',b=>errors+=b);const records=[],pending=new Map();
   createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);records.push(r);if(r.type==='response'){pending.get(r.id)?.(r);pending.delete(r.id);}});
   const command=(type,message)=>new Promise(resolve=>{const id=String(records.length)+'-'+Math.random();pending.set(id,resolve);child.stdin.write(JSON.stringify({id,type,message})+'\n');});

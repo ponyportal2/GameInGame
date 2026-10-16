@@ -10,9 +10,6 @@ func _retire_after_cancel() -> bool:
 func _native_directory_name() -> String:
     return "grok-build"
 
-func _native_modules() -> Array:
-    return [["worker.mjs", "grok-build/worker.mjs"], ["server.mjs", "grok-build/server.mjs"],
-        ["protocol.mjs", "grok-build/protocol.mjs"], ["mcp.mjs", "grok-build/mcp.mjs"], ["approval.mjs", "grok-build/approval.mjs"]]
 
 func _native_prompt() -> String:
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "GameSmith MCP read/edit/write/search/list").replace("Pi's", "Grok Build's").replace("Pi process", "Grok Build process")

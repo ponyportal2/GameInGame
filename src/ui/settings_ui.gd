@@ -1,5 +1,7 @@
 extends RefCounted
 
+const HarnessInventory = preload("res://src/agent/harness_inventory.gd")
+
 const U = preload("res://src/ui/workspace_ui.gd")
 const T = preload("res://src/ui/theme_factory.gd")
 const Providers = preload("res://src/pi/pi_provider_catalog.gd")
@@ -125,9 +127,9 @@ static func build(app) -> void:
     app.compact_now_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
     var game = page(tabs, "This game")
     app.game_harness_option = OptionButton.new()
-    for pair in [["Pi", "pi"], ["Command-code", "command-code"], ["OpenCode", "opencode"], ["Codex", "codex"], ["Cline", "cline"], ["Cursor", "cursor"], ["Grok Build", "grok-build"], ["AGY (experimental)", "agy"], ["Kimi Code", "kimi"], ["Kiro CLI", "kiro"], ["Kilo CLI", "kilo"], ["Copilot CLI", "copilot"], ["Crush CLI", "crush"], ["OMP", "omp"]]:
-        app.game_harness_option.add_item(pair[0])
-        app.game_harness_option.set_item_metadata(app.game_harness_option.item_count - 1, pair[1])
+    for harness in HarnessInventory.all():
+        app.game_harness_option.add_item(harness.selector_label)
+        app.game_harness_option.set_item_metadata(app.game_harness_option.item_count - 1, harness.id)
     field(game, "Coding harness", app.game_harness_option, "Switch after the agent finishes or is stopped. Files and chat stay with the game. Each harness keeps its own session; switching back resumes it. Save, then reopen settings to configure the selected harness.")
     app.codex_new_session_button = U.button(game, "Start new Codex session", app._request_new_codex_session, "QuietButton")
     app.codex_new_session_button.visible = false
@@ -162,34 +164,9 @@ static func build_new_game(app) -> void:
     app.name_edit.placeholder_text = "Neon Asteroids"
     field(root, "Game name", app.name_edit)
     app.harness_option = OptionButton.new()
-    app.harness_option.add_item("Pi")
-    app.harness_option.set_item_metadata(0, "pi")
-    app.harness_option.add_item("Command-code")
-    app.harness_option.set_item_metadata(1, "command-code")
-    app.harness_option.add_item("OpenCode")
-    app.harness_option.set_item_metadata(2, "opencode")
-    app.harness_option.add_item("Codex")
-    app.harness_option.set_item_metadata(3, "codex")
-    app.harness_option.add_item("Cline")
-    app.harness_option.set_item_metadata(4, "cline")
-    app.harness_option.add_item("Cursor")
-    app.harness_option.set_item_metadata(5, "cursor")
-    app.harness_option.add_item("Grok Build")
-    app.harness_option.set_item_metadata(6, "grok-build")
-    app.harness_option.add_item("AGY (experimental)")
-    app.harness_option.set_item_metadata(7, "agy")
-    app.harness_option.add_item("Kimi Code")
-    app.harness_option.set_item_metadata(8, "kimi")
-    app.harness_option.add_item("Kiro CLI")
-    app.harness_option.set_item_metadata(9, "kiro")
-    app.harness_option.add_item("Kilo CLI")
-    app.harness_option.set_item_metadata(10, "kilo")
-    app.harness_option.add_item("Copilot CLI")
-    app.harness_option.set_item_metadata(11, "copilot")
-    app.harness_option.add_item("Crush CLI")
-    app.harness_option.set_item_metadata(12, "crush")
-    app.harness_option.add_item("OMP")
-    app.harness_option.set_item_metadata(13, "omp")
+    for harness in HarnessInventory.all():
+        app.harness_option.add_item(harness.selector_label)
+        app.harness_option.set_item_metadata(app.harness_option.item_count - 1, harness.id)
     field(root, "Coding harness", app.harness_option, "Command-code, OpenCode, Codex, Cline, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP use their own model and provider settings. Cursor uses Auto; the model selected in its editor or interactive CLI is not inherited. OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP handle their own compaction. AGY support is experimental; live model execution has not been verified.")
     app.name_edit.text_submitted.connect(func(_text): app._create_game())
     U.space(root, true)

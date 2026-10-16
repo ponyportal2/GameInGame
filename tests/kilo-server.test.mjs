@@ -1,3 +1,4 @@
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OpenCodeServer } from '../tools/opencode/server.mjs';
@@ -11,9 +12,10 @@ import { readFile } from 'node:fs/promises';
 
 test('adapter streams before completion, rejects overlapping prompts during Stop and cleans up on EOF', {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-worker-'));
-  const config={harness:"kilo",workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const runtime=assembleHarnessRuntime('kilo',join(workspace,'adapter'));
+  const config={harness:"kilo",workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_KILO_BIN:join(process.cwd(),'tools/testing/fake-kilo.mjs')}});
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_KILO_BIN:join(process.cwd(),'tools/testing/fake-kilo.mjs')}});
   const responses=new Map(), records=[];let serial=0;
   const closed=once(worker,'close');
   createInterface({input:worker.stdout}).on('line',line=>{
@@ -69,9 +71,10 @@ test('persistent transport retains one server and native Stop aborts before anot
 
 for (const message of ['partial-stream','lost-stream']) test(`HTTP final answer repairs ${message}`, {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-final-'));
-  const config={harness:"kilo",workspace,bridge_dir:workspace,name:'Final fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const runtime=assembleHarnessRuntime('kilo',join(workspace,'adapter'));
+  const config={harness:"kilo",workspace,bridge_dir:workspace,name:'Final fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_KILO_BIN:join(process.cwd(),'tools/testing/fake-kilo.mjs')}});
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_KILO_BIN:join(process.cwd(),'tools/testing/fake-kilo.mjs')}});
   const records=[]; const closed=once(worker,'close');
   const completion=new Promise(resolve=>createInterface({input:worker.stdout}).on('line',line=>{const record=JSON.parse(line);records.push(record);if(record.type==='complete') resolve(record);}));
   try {
@@ -85,10 +88,11 @@ for (const message of ['partial-stream','lost-stream']) test(`HTTP final answer 
 
 test('stale Kilo session retires the backend and preserves its reference',{timeout:10000},async()=>{
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-kilo-stale-'));
-  const config={harness:'kilo',session:'ses_missing',workspace,bridge_dir:workspace,name:'Stale fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const runtime=assembleHarnessRuntime('kilo',join(workspace,'adapter'));
+  const config={harness:'kilo',session:'ses_missing',workspace,bridge_dir:workspace,name:'Stale fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
   await writeFile(config.session_file,JSON.stringify({session:config.session}));
-  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_KILO_BIN:join(process.cwd(),'tools/testing/fake-kilo.mjs')}});
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_KILO_BIN:join(process.cwd(),'tools/testing/fake-kilo.mjs')}});
   const closed=once(worker,'close');
   const response=new Promise(resolve=>createInterface({input:worker.stdout}).on('line',line=>{const r=JSON.parse(line);if(r.type==='response')resolve(r);}));
   try {

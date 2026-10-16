@@ -1,0 +1,783 @@
+{
+  "version": 1,
+  "harnesses": [
+    {
+      "id": "pi",
+      "label": "Pi",
+      "selector_label": "Pi",
+      "controller": "src/agent/pi_agent_controller.gd",
+      "reset": false,
+      "native_settings": false,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_PI_BIN",
+        "command": "pi"
+      },
+      "modules": [
+        [
+          "gamesmith-extension.ts",
+          "pi/gamesmith-extension.ts"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "model-capabilities.mjs",
+          "pi/model-capabilities.mjs"
+        ],
+        [
+          "diagnostic-delivery.mjs",
+          "pi/diagnostic-delivery.mjs"
+        ],
+        [
+          "empty-response-retry.mjs",
+          "pi/empty-response-retry.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/workspace-paths.test.mjs",
+        "tests/model-capabilities.test.mjs",
+        "tests/diagnostic-delivery.test.mjs",
+        "tests/empty-response-retry.test.mjs"
+      ],
+      "host_runners": [
+        "tests/turn_recovery_runner.gd",
+        "tests/reliability_runner.gd",
+        "tests/diagnostics_runner.gd"
+      ]
+    },
+    {
+      "id": "command-code",
+      "label": "Command-code",
+      "selector_label": "Command-code",
+      "controller": "src/agent/command_code_agent_controller.gd",
+      "reset": true,
+      "native_settings": false,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_COMMAND_CODE_BIN",
+        "command": "command-code"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "command-code/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "command-code/server.mjs"
+        ],
+        [
+          "policy.mjs",
+          "command-code/policy.mjs"
+        ],
+        [
+          "gamesmith.ts",
+          "command-code/gamesmith.ts"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/command-code-acp.test.mjs",
+        "tests/command-code-native.test.mjs",
+        "tests/command-code.test.mjs"
+      ],
+      "host_runners": [
+        "tests/command_code_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "opencode",
+      "label": "OpenCode",
+      "selector_label": "OpenCode",
+      "controller": "src/agent/opencode_agent_controller.gd",
+      "reset": false,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_OPENCODE_BIN",
+        "command": "opencode"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "opencode/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "opencode/server.mjs"
+        ],
+        [
+          "events.mjs",
+          "opencode/events.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "opencode/protocol.mjs"
+        ],
+        [
+          "gamesmith.mjs",
+          "opencode/gamesmith.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "opencode/mcp.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/opencode-events.test.mjs",
+        "tests/opencode-server.test.mjs",
+        "tests/opencode.test.mjs"
+      ],
+      "host_runners": [
+        "tests/opencode_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "selector_label": "Codex",
+      "controller": "src/agent/codex_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_CODEX_BIN",
+        "command": "codex"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "codex/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "codex/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "codex/protocol.mjs"
+        ],
+        [
+          "tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/codex-server.test.mjs",
+        "tests/codex.test.mjs"
+      ],
+      "host_runners": [
+        "tests/codex_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "cline",
+      "label": "Cline",
+      "selector_label": "Cline",
+      "controller": "src/agent/cline_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_CLINE_BIN",
+        "command": "cline"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "cline/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "cline/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "cline/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "cline/mcp.mjs"
+        ],
+        [
+          "approval.mjs",
+          "cline/approval.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/cline-server.test.mjs",
+        "tests/cline.test.mjs"
+      ],
+      "host_runners": [
+        "tests/cline_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "selector_label": "Cursor",
+      "controller": "src/agent/cursor_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_CURSOR_BIN",
+        "command": "cursor-agent"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "cursor/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "cursor/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "cursor/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "cline/mcp.mjs"
+        ],
+        [
+          "approval.mjs",
+          "cline/approval.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/cursor-server.test.mjs",
+        "tests/cursor.test.mjs"
+      ],
+      "host_runners": [
+        "tests/cursor_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "grok-build",
+      "label": "Grok Build",
+      "selector_label": "Grok Build",
+      "controller": "src/agent/grok_build_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_GROK_BUILD_BIN",
+        "command": "grok"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "grok-build/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "grok-build/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "grok-build/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "grok-build/mcp.mjs"
+        ],
+        [
+          "approval.mjs",
+          "grok-build/approval.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/grok-build-server.test.mjs",
+        "tests/grok-build.test.mjs"
+      ],
+      "host_runners": [
+        "tests/grok_build_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "agy",
+      "label": "AGY",
+      "selector_label": "AGY (experimental)",
+      "controller": "src/agent/agy_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": true,
+      "launcher": {
+        "env": "GAMESMITH_AGY_BIN",
+        "command": "agy"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "agy/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "agy/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "agy/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "agy/mcp.mjs"
+        ],
+        [
+          "hook.mjs",
+          "agy/hook.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/agy-server.test.mjs",
+        "tests/agy.test.mjs"
+      ],
+      "host_runners": [
+        "tests/agy_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "kimi",
+      "label": "Kimi",
+      "selector_label": "Kimi Code",
+      "controller": "src/agent/kimi_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_KIMI_BIN",
+        "command": "kimi"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "kimi/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "kimi/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "kimi/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "kimi/mcp.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/kimi-server.test.mjs",
+        "tests/kimi.test.mjs"
+      ],
+      "host_runners": [
+        "tests/kimi_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "kiro",
+      "label": "Kiro",
+      "selector_label": "Kiro CLI",
+      "controller": "src/agent/kiro_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_KIRO_BIN",
+        "command": "kiro-cli"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "kiro/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "kiro/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "kiro/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "kiro/mcp.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/kiro-server.test.mjs",
+        "tests/kiro.test.mjs"
+      ],
+      "host_runners": [
+        "tests/kiro_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "kilo",
+      "label": "Kilo",
+      "selector_label": "Kilo CLI",
+      "controller": "src/agent/kilo_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_KILO_BIN",
+        "command": "kilo"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "opencode/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "opencode/server.mjs"
+        ],
+        [
+          "events.mjs",
+          "opencode/events.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "opencode/protocol.mjs"
+        ],
+        [
+          "gamesmith.mjs",
+          "opencode/gamesmith.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "opencode/mcp.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/kilo-server.test.mjs",
+        "tests/kilo.test.mjs"
+      ],
+      "host_runners": [
+        "tests/kilo_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "copilot",
+      "label": "Copilot",
+      "selector_label": "Copilot CLI",
+      "controller": "src/agent/copilot_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_COPILOT_BIN",
+        "command": "copilot"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "copilot/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "copilot/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "copilot/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "kiro/mcp.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/copilot-server.test.mjs",
+        "tests/copilot.test.mjs"
+      ],
+      "host_runners": [
+        "tests/copilot_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "crush",
+      "label": "Crush",
+      "selector_label": "Crush CLI",
+      "controller": "src/agent/crush_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_CRUSH_BIN",
+        "command": "crush"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "crush/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "crush/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "crush/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "kiro/mcp.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/crush-server.test.mjs",
+        "tests/crush.test.mjs"
+      ],
+      "host_runners": [
+        "tests/crush_lifecycle_runner.gd"
+      ]
+    },
+    {
+      "id": "omp",
+      "label": "OMP",
+      "selector_label": "OMP",
+      "controller": "src/agent/omp_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_OMP_BIN",
+        "command": "omp"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "omp/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "omp/server.mjs"
+        ],
+        [
+          "policy.mjs",
+          "omp/policy.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/omp-server.test.mjs",
+        "tests/omp.test.mjs"
+      ],
+      "host_runners": [
+        "tests/omp_lifecycle_runner.gd"
+      ]
+    }
+  ]
+}

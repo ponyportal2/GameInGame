@@ -9,8 +9,6 @@ func _uses_reload_grants() -> bool:
 func _retire_after_cancel() -> bool:
     return true
 
-func _native_modules() -> Array:
-    return [["worker.mjs", "omp/worker.mjs"], ["server.mjs", "omp/server.mjs"], ["policy.mjs", "omp/policy.mjs"]]
 
 func _native_prompt() -> String:
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "GameSmith host read/edit/write/search/list").replace("Pi's", "OMP's").replace("Pi process", "OMP process")

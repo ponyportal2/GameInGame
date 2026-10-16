@@ -1,3 +1,4 @@
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -13,7 +14,7 @@ async function fixtureWorker({session,env={}}={}) {
   const config={workspace,bridge_dir:workspace,session,session_file:join(workspace,'session.json'),prompt_path:join(workspace,'prompt.md')};
   const path=join(workspace,'runtime.json');await writeFile(path,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
   if(session)await writeFile(config.session_file,JSON.stringify({session}));
-  const child=spawn(process.execPath,['tools/codex/worker.mjs',path],{windowsHide:true,env:{...process.env,GAMESMITH_CODEX_BIN:resolve('tools/testing/fake-codex.mjs'),...env}});
+  const child=spawn(process.execPath,[join(assembleHarnessRuntime('codex',join(workspace,'adapter')),'worker.mjs'),path],{windowsHide:true,env:{...process.env,GAMESMITH_CODEX_BIN:resolve('tools/testing/fake-codex.mjs'),...env}});
   const closed=once(child,'close'),records=[];child.stderr.resume();
   createInterface({input:child.stdout}).on('line',line=>records.push(JSON.parse(line)));
   return {child,closed,records,workspace,config,send(message){child.stdin.write(JSON.stringify({id:'prompt',type:'prompt',message})+'\n');},
@@ -108,7 +109,7 @@ test('persistent Codex adapter streams, interrupts, resumes explicitly and clean
   const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
   function launch() {
-    const child=spawn(process.execPath,['tools/codex/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_CODEX_BIN:resolve('tools/testing/fake-codex.mjs')}});
+    const child=spawn(process.execPath,[join(assembleHarnessRuntime('codex',join(workspace,'adapter')),'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_CODEX_BIN:resolve('tools/testing/fake-codex.mjs')}});
     const records=[],pending=new Map();let serial=0;const closed=once(child,'close');child.stderr.resume();
     createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);records.push(r);pending.get(r.id)?.(r);pending.delete(r.id);});
     return {child,records,closed,send(type,message){const id=String(++serial);const promise=new Promise(resolveResult=>pending.set(id,resolveResult));child.stdin.write(JSON.stringify({id,type,message})+'\n');return promise;},async until(predicate){while(!predicate(records))await new Promise(r=>setTimeout(r,10));}};
@@ -153,7 +154,7 @@ test('native Codex backend death fails the active turn and retires the adapter',
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-codex-exit-'));
   const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),prompt_path:join(workspace,'prompt.md')};
   const path=join(workspace,'runtime.json');await writeFile(path,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const child=spawn(process.execPath,['tools/codex/worker.mjs',path],{windowsHide:true,env:{...process.env,GAMESMITH_CODEX_BIN:resolve('tools/testing/fake-codex.mjs')}});
+  const child=spawn(process.execPath,[join(assembleHarnessRuntime('codex',join(workspace,'adapter')),'worker.mjs'),path],{windowsHide:true,env:{...process.env,GAMESMITH_CODEX_BIN:resolve('tools/testing/fake-codex.mjs')}});
   const closed=once(child,'close'),records=[];child.stderr.resume();
   const started=new Promise(resolveStart=>createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);records.push(r);if(r.type==='delta')resolveStart();}));
   child.stdin.write(JSON.stringify({id:'death',type:'prompt',message:'wait'})+'\n');

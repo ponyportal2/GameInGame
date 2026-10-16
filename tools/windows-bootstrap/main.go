@@ -64,7 +64,7 @@ func main() {
 	if _, err := exec.LookPath("git.exe"); err != nil {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
-	if !hasAgentHarness(os.Getenv("GAMESMITH_PI_BIN"), os.Getenv("GAMESMITH_COMMAND_CODE_BIN"), os.Getenv("GAMESMITH_OPENCODE_BIN"), os.Getenv("GAMESMITH_CODEX_BIN"), os.Getenv("GAMESMITH_CLINE_BIN"), os.Getenv("GAMESMITH_CURSOR_BIN"), os.Getenv("GAMESMITH_GROK_BUILD_BIN"), os.Getenv("GAMESMITH_AGY_BIN"), os.Getenv("GAMESMITH_KIMI_BIN"), os.Getenv("GAMESMITH_KIRO_BIN"), os.Getenv("GAMESMITH_KILO_BIN"), os.Getenv("GAMESMITH_COPILOT_BIN"), os.Getenv("GAMESMITH_CRUSH_BIN"), os.Getenv("GAMESMITH_OMP_BIN"), exec.LookPath) {
+	if !hasInstalledHarness(exec.LookPath) {
 		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, experimental AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI, or OMP to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.0.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\nCursor Agent CLI: https://cursor.com/docs/cli/installation\nGrok Build: https://docs.x.ai/build\nAGY (experimental): https://antigravity.google/docs/cli/installation\nKimi Code: https://moonshotai.github.io/kimi-code/\nKiro CLI: https://kiro.dev/docs/cli/\nKilo CLI: npm install -g @kilocode/cli\nCopilot CLI: npm install -g @github/copilot\nCrush CLI: winget install charmbracelet.crush\nOMP: https://github.com/can1357/oh-my-pi\n\nThen restart GameSmith and choose the installed harness when creating a game.")
 	}
 
@@ -78,41 +78,50 @@ func main() {
 }
 
 func hasAgentHarness(piConfigured, commandConfigured, openCodeConfigured, codexConfigured, clineConfigured, cursorConfigured, grokConfigured, agyConfigured, kimiConfigured, kiroConfigured, kiloConfigured, copilotConfigured, crushConfigured, ompConfigured string, lookPath func(string) (string, error)) bool {
-	if _, err := resolvePiExecutable(piConfigured, lookPath); err == nil {
+	configured := map[string]string{"pi": piConfigured, "command-code": commandConfigured, "opencode": openCodeConfigured, "codex": codexConfigured, "cline": clineConfigured, "cursor": cursorConfigured, "grok-build": grokConfigured, "agy": agyConfigured, "kimi": kimiConfigured, "kiro": kiroConfigured, "kilo": kiloConfigured, "copilot": copilotConfigured, "crush": crushConfigured, "omp": ompConfigured}
+	return hasConfiguredHarness(configured, lookPath)
+}
+
+func hasConfiguredHarness(configured map[string]string, lookPath func(string) (string, error)) bool {
+	if _, err := resolvePiExecutable(configured["pi"], lookPath); err == nil {
 		return true
 	}
-	if strings.TrimSpace(cursorConfigured) == "" {
+	if strings.TrimSpace(configured["cursor"]) == "" {
 		standard := filepath.Join(os.Getenv("LOCALAPPDATA"), "cursor-agent", "cursor-agent.cmd")
 		if info, err := os.Stat(standard); err == nil && !info.IsDir() {
 			return true
 		}
 	}
-	if strings.TrimSpace(grokConfigured) == "" {
+	if strings.TrimSpace(configured["grok-build"]) == "" {
 		standard := filepath.Join(os.Getenv("USERPROFILE"), ".grok", "bin", "grok.exe")
 		if info, err := os.Stat(standard); err == nil && !info.IsDir() {
 			return true
 		}
 	}
-	if strings.TrimSpace(agyConfigured) == "" {
+	if strings.TrimSpace(configured["agy"]) == "" {
 		standard := filepath.Join(os.Getenv("LOCALAPPDATA"), "agy", "bin", "agy.exe")
 		if info, err := os.Stat(standard); err == nil && !info.IsDir() {
 			return true
 		}
 	}
-	if strings.TrimSpace(kimiConfigured) == "" {
+	if strings.TrimSpace(configured["kimi"]) == "" {
 		standard := filepath.Join(os.Getenv("USERPROFILE"), ".kimi-code", "bin", "kimi.exe")
 		if info, err := os.Stat(standard); err == nil && !info.IsDir() {
 			return true
 		}
 	}
-	if strings.TrimSpace(kiroConfigured) == "" {
+	if strings.TrimSpace(configured["kiro"]) == "" {
 		standard := filepath.Join(os.Getenv("LOCALAPPDATA"), "Kiro-Cli", "kiro-cli.exe")
 		if info, err := os.Stat(standard); err == nil && !info.IsDir() {
 			return true
 		}
 	}
 
-	for _, harness := range []struct{ configured, fallback string }{{commandConfigured, "command-code"}, {openCodeConfigured, "opencode"}, {codexConfigured, "codex"}, {clineConfigured, "cline"}, {cursorConfigured, "cursor-agent"}, {grokConfigured, "grok"}, {agyConfigured, "agy"}, {kimiConfigured, "kimi"}, {kiroConfigured, "kiro-cli"}, {kiloConfigured, "kilo"}, {copilotConfigured, "copilot"}, {crushConfigured, "crush"}, {ompConfigured, "omp"}} {
+	for _, entry := range harnessInventory {
+		if entry.id == "pi" {
+			continue
+		}
+		harness := struct{ configured, fallback string }{configured[entry.id], entry.command}
 		command := strings.TrimSpace(harness.configured)
 		if command == "" {
 			command = harness.fallback
@@ -295,4 +304,12 @@ func extractZip(zipPath, dstDir string) error {
 		}
 	}
 	return nil
+}
+
+func hasInstalledHarness(lookPath func(string) (string, error)) bool {
+	configured := make(map[string]string)
+	for _, entry := range harnessInventory {
+		configured[entry.id] = os.Getenv(entry.env)
+	}
+	return hasConfiguredHarness(configured, lookPath)
 }

@@ -1,3 +1,4 @@
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OpenCodeServer, resolveExecutable } from '../tools/opencode/server.mjs';
@@ -20,9 +21,10 @@ test('Chocolatey launcher resolves to the native executable without a transient 
 
 test('OpenCode startup rejection is explicitly initialization failure, not a failed model turn', {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-opencode-init-'));
-  const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
+  const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));
-  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(workspace,'missing-opencode.exe')}});
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(workspace,'missing-opencode.exe')}});
   const closed=once(worker,'close');
   const response=new Promise((resolve,reject)=>{
     worker.once('error',reject);worker.once('exit',code=>reject(new Error('Worker exited before response: '+code)));
@@ -36,9 +38,10 @@ test('OpenCode startup rejection is explicitly initialization failure, not a fai
 
 test('adapter streams before completion, rejects overlapping prompts during Stop and cleans up on EOF', {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-worker-'));
-  const config={workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
+  const config={workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
   const responses=new Map(), records=[];let serial=0;
   const closed=once(worker,'close');
   createInterface({input:worker.stdout}).on('line',line=>{
@@ -89,9 +92,10 @@ test('persistent transport retains one server and native Stop aborts before anot
 
 for (const message of ['partial-stream','lost-stream']) test(`HTTP final answer repairs ${message}`, {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-final-'));
-  const config={workspace,bridge_dir:workspace,name:'Final fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
+  const config={workspace,bridge_dir:workspace,name:'Final fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
   const records=[]; const closed=once(worker,'close');
   const completion=new Promise(resolve=>createInterface({input:worker.stdout}).on('line',line=>{const record=JSON.parse(line);records.push(record);if(record.type==='complete') resolve(record);}));
   try {

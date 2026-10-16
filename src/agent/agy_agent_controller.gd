@@ -11,11 +11,6 @@ func _uses_reload_grants() -> bool:
     # AGY MCP calls wait directly for the ordinary host reload approval.
     return false
 
-func _native_modules() -> Array:
-    var result: Array = []
-    for file in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "hook.mjs"]:
-        result.append([file, "agy/" + file])
-    return result
 
 func _native_prompt() -> String:
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "GameSmith MCP read/edit/write/search/list").replace("Pi's", "AGY's").replace("Pi process", "AGY process")

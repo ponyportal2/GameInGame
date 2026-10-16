@@ -89,9 +89,8 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for pair in _native_modules() + [["workspace-tools.mjs", "codex/tools.mjs"], ["workspace-paths.mjs", "pi/workspace-paths.mjs"], ["host-tools.mjs", "opencode/host-tools.mjs"], ["process-tree.mjs", "agent/process-tree.mjs"]]:
-        if not JsonStore.write_bytes_atomic(directory.path_join(pair[0]), FileAccess.get_file_as_bytes("res://tools/" + pair[1])):
-            return {"ok": false, "error": "Could not prepare " + _harness_name() + " integration: " + pair[0]}
+    var assembled = HarnessInventory.assemble_runtime(_native_directory_name(), directory)
+    if not assembled.ok: return assembled
     var prompt = _native_prompt()
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write " + _harness_name() + " game instructions."}
@@ -120,11 +119,6 @@ func compact_now() -> Dictionary:
 func _native_directory_name() -> String:
     return _harness_name().to_lower()
 
-func _native_modules() -> Array:
-    var result: Array = []
-    for file in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "approval.mjs"]:
-        result.append([file, "cline/" + file])
-    return result
 
 func _native_prompt() -> String:
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "gamesmith__read/edit/write/search/list").replace("Pi's", "Cline's").replace("Pi process", "Cline process")

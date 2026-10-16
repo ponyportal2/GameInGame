@@ -20,71 +20,15 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing " + module)
             quit(1)
             return
-    for module in ["worker.mjs", "server.mjs", "policy.mjs", "gamesmith.ts", "host-tools.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/command-code/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Command-code " + module)
+    var inventory = preload("res://src/agent/harness_inventory.gd")
+    for harness in inventory.all():
+        if not ResourceLoader.exists("res://" + str(harness.controller)):
+            push_error("FAIL: missing controller " + str(harness.id))
             quit(1)
             return
-    for module in ["worker.mjs", "server.mjs", "events.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs", "workspace-paths.mjs"]:
-        if not FileAccess.file_exists("res://tools/opencode/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing OpenCode " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "tools.mjs", "host-tools.mjs", "workspace-paths.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/codex/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Codex " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "approval.mjs", "workspace-tools.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/cline/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Cline " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "approval.mjs", "workspace-tools.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/cursor/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Cursor " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "approval.mjs", "workspace-tools.mjs", "workspace-paths.mjs", "host-tools.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/grok-build/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Grok Build " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "hook.mjs", "workspace-tools.mjs", "workspace-paths.mjs", "host-tools.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/agy/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing AGY " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "workspace-tools.mjs", "workspace-paths.mjs", "host-tools.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/kimi/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Kimi " + module)
-            quit(1)
-            return
-    # Kiro support implementations are copied from the shared sources checked above.
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs", "mcp.mjs", "workspace-tools.mjs", "process-tree.mjs"]:
-        if not FileAccess.file_exists("res://tools/kiro/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Kiro " + module)
-            quit(1)
-            return
-    # Copilot reuses the Kiro MCP and shared support modules checked above.
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs"]:
-        if not FileAccess.file_exists("res://tools/copilot/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Copilot " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "protocol.mjs"]:
-        if not FileAccess.file_exists("res://tools/crush/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing Crush " + module)
-            quit(1)
-            return
-    for module in ["worker.mjs", "server.mjs", "policy.mjs"]:
-        if not FileAccess.file_exists("res://tools/omp/" + module):
-            push_error("FAIL: exported GameSmith.pck is missing OMP " + module)
-            quit(1)
-            return
-    for script in ["omp_agent_controller.gd", "crush_agent_controller.gd", "copilot_agent_controller.gd", "kilo_agent_controller.gd", "kiro_agent_controller.gd", "kimi_agent_controller.gd", "agy_agent_controller.gd", "command_code_agent_controller.gd", "command_code_session.gd", "opencode_agent_controller.gd", "codex_agent_controller.gd", "cline_agent_controller.gd", "cursor_agent_controller.gd", "grok_build_agent_controller.gd"]:
-        if not ResourceLoader.exists("res://src/agent/" + script):
-            push_error("FAIL: exported GameSmith.pck is missing " + script)
+        var assembled = inventory.assemble_runtime(harness.id, "user://package-runtime/" + str(harness.id))
+        if not assembled.ok:
+            push_error("FAIL: " + str(assembled.error))
             quit(1)
             return
     for script in ["workspace_ui.gd", "settings_ui.gd", "theme_factory.gd"]:

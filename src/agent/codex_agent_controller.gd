@@ -36,12 +36,8 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "server.mjs", "protocol.mjs", "tools.mjs"]:
-        if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/codex/" + file)):
-            return {"ok": false, "error": "Could not prepare Codex integration: " + file}
-    for pair in [["workspace-paths.mjs", "pi/workspace-paths.mjs"], ["host-tools.mjs", "opencode/host-tools.mjs"], ["process-tree.mjs", "agent/process-tree.mjs"]]:
-        if not JsonStore.write_bytes_atomic(directory.path_join(pair[0]), FileAccess.get_file_as_bytes("res://tools/" + pair[1])):
-            return {"ok": false, "error": "Could not prepare Codex integration: " + pair[0]}
+    var assembled = HarnessInventory.assemble_runtime("codex", directory)
+    if not assembled.ok: return assembled
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "gamesmith_read/edit/write/search/list").replace("Pi's", "Codex's").replace("Pi process", "Codex process")
     prompt += "\nAll GameSmith tools are native dynamic tools named gamesmith_<command>, including gamesmith_start_test_game, gamesmith_reload_game, and gamesmith_git_commit. Use gamesmith_read with 1-based offset/limit, gamesmith_edit with path/old_text/new_text, gamesmith_write with path/content, gamesmith_search with a literal pattern, and gamesmith_list for files. Native shell, delegation and native file-write approvals are unavailable; use the GameSmith tools. Model, reasoning and automatic compaction are managed by your Codex configuration.\n"
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):

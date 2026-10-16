@@ -8,9 +8,6 @@ func _retire_after_cancel() -> bool:
     # Resume the same native conversation in a fresh backend after Stop.
     return true
 
-func _native_modules() -> Array:
-    return [["worker.mjs", "cursor/worker.mjs"], ["server.mjs", "cursor/server.mjs"],
-        ["protocol.mjs", "cursor/protocol.mjs"], ["mcp.mjs", "cline/mcp.mjs"], ["approval.mjs", "cline/approval.mjs"]]
 
 func _native_prompt() -> String:
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "GameSmith MCP read/edit/write/search/list").replace("Pi's", "Cursor's").replace("Pi process", "Cursor process")

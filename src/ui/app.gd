@@ -1,23 +1,12 @@
 extends Control
 
+const HarnessInventory = preload("res://src/agent/harness_inventory.gd")
+
 const WorkspaceStoreScript = preload("res://src/core/workspace_store.gd")
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const GameRunnerScript = preload("res://src/core/game_runner.gd")
 const GameToolsScript = preload("res://src/core/game_tools.gd")
 const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
-const OpenCodeAgentControllerScript = preload("res://src/agent/opencode_agent_controller.gd")
-const OmpAgentControllerScript = preload("res://src/agent/omp_agent_controller.gd")
-const CrushAgentControllerScript = preload("res://src/agent/crush_agent_controller.gd")
-const CopilotAgentControllerScript = preload("res://src/agent/copilot_agent_controller.gd")
-const KiloAgentControllerScript = preload("res://src/agent/kilo_agent_controller.gd")
-const KiroAgentControllerScript = preload("res://src/agent/kiro_agent_controller.gd")
-const KimiAgentControllerScript = preload("res://src/agent/kimi_agent_controller.gd")
-const AgyAgentControllerScript = preload("res://src/agent/agy_agent_controller.gd")
-const GrokBuildAgentControllerScript = preload("res://src/agent/grok_build_agent_controller.gd")
-const CursorAgentControllerScript = preload("res://src/agent/cursor_agent_controller.gd")
-const ClineAgentControllerScript = preload("res://src/agent/cline_agent_controller.gd")
-const CodexAgentControllerScript = preload("res://src/agent/codex_agent_controller.gd")
-const CommandCodeAgentControllerScript = preload("res://src/agent/command_code_agent_controller.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
@@ -365,21 +354,9 @@ func _open_game(name: String) -> void:
         _append_chat("system", "This workspace is empty. Tell the agent what game to build.")
 
 func _attach_game_agent() -> void:
-    match str(metadata.read_game(current_game).get("harness", "pi")):
-        "command-code": agent = CommandCodeAgentControllerScript.new()
-        "opencode": agent = OpenCodeAgentControllerScript.new()
-        "codex": agent = CodexAgentControllerScript.new()
-        "cline": agent = ClineAgentControllerScript.new()
-        "cursor": agent = CursorAgentControllerScript.new()
-        "grok-build": agent = GrokBuildAgentControllerScript.new()
-        "agy": agent = AgyAgentControllerScript.new()
-        "kimi": agent = KimiAgentControllerScript.new()
-        "kiro": agent = KiroAgentControllerScript.new()
-        "kilo": agent = KiloAgentControllerScript.new()
-        "copilot": agent = CopilotAgentControllerScript.new()
-        "crush": agent = CrushAgentControllerScript.new()
-        "omp": agent = OmpAgentControllerScript.new()
-        _: agent = PiAgentControllerScript.new()
+    var harness = HarnessInventory.get_harness(str(metadata.read_game(current_game).get("harness", "pi")))
+    if harness.is_empty(): harness = HarnessInventory.get_harness("pi")
+    agent = load("res://" + str(harness.controller)).new()
     add_child(agent)
     agent.editor_guard = game_edit_guard
     agent.configure(current_game, tools)
@@ -695,7 +672,7 @@ func _delete_game_confirmed() -> void:
     _show_library()
 
 func _request_new_codex_session() -> void:
-    if current_game == "" or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["command-code", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]:
+    if current_game == "" or not is_instance_valid(agent) or agent.busy or not HarnessInventory.supports_reset(str(metadata.read_game(current_game).get("harness", "pi"))):
         return
     native_session_title.text = "Start a new %s session?" % _native_harness_label()
     native_session_description.text = "The next message starts a fresh %s conversation. The previous session reference is archived, and your chat and game files are kept. The old conversation will not be included in the new agent context." % _native_harness_label()
@@ -708,7 +685,7 @@ func _cancel_new_codex_session() -> void:
     codex_session_dialog.visible = false
 
 func _confirm_new_codex_session() -> void:
-    if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or metadata.read_game(current_game).get("harness") not in ["command-code", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]:
+    if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or not HarnessInventory.supports_reset(str(metadata.read_game(current_game).get("harness", "pi"))):
         _cancel_new_codex_session()
         return
     var result = agent.start_new_session()
@@ -722,7 +699,7 @@ func _confirm_new_codex_session() -> void:
 func _open_settings() -> void:
     game_harness_option.disabled = current_game == "" or (is_instance_valid(agent) and agent.busy)
     var saved_harness = str(metadata.read_game(current_game).get("harness", "pi")) if current_game != "" else "pi"
-    codex_new_session_button.visible = current_game != "" and saved_harness in ["command-code", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]
+    codex_new_session_button.visible = current_game != "" and HarnessInventory.supports_reset(saved_harness)
     codex_new_session_button.text = "Start new %s session" % _native_harness_label()
     codex_new_session_button.disabled = not is_instance_valid(agent) or agent.busy
     for i in game_harness_option.item_count:
@@ -795,10 +772,10 @@ func _uses_native_agent_settings() -> bool:
     return _uses_command_code() or _uses_native_compaction()
 
 func _uses_native_compaction() -> bool:
-    return current_game != "" and metadata.read_game(current_game).get("harness", "pi") in ["opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]
+    return current_game != "" and bool(HarnessInventory.get_harness(str(metadata.read_game(current_game).get("harness", "pi"))).get("native_settings", false))
 
 func _native_harness_label() -> String:
-    return {"command-code": "Command-code", "codex": "Codex", "cline": "Cline", "cursor": "Cursor", "grok-build": "Grok Build", "agy": "AGY", "kimi": "Kimi", "kiro": "Kiro", "opencode": "OpenCode", "kilo": "Kilo", "copilot": "Copilot", "crush": "Crush", "omp": "OMP"}.get(metadata.read_game(current_game).get("harness", "pi"), "OpenCode")
+    return str(HarnessInventory.get_harness(str(metadata.read_game(current_game).get("harness", "pi"))).get("label", "OpenCode"))
 
 func _close_settings() -> void:
     _cancel_new_codex_session()

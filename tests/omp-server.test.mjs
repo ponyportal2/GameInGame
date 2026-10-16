@@ -1,3 +1,4 @@
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -10,11 +11,7 @@ import {killProcessTree} from '../tools/agent/process-tree.mjs';
 function fixture(t,extra={},saved,directory=mkdtempSync(join(tmpdir(),'gs-omp-runtime-'))){
   mkdirSync(join(directory,'bridge'),{recursive:true});
   // Exercise the controller's actual assembled bundle, including shared modules.
-  const controller=readFileSync('src/agent/omp_agent_controller.gd','utf8').split('func _native_modules()')[1].split('func _native_prompt()')[0];
-  const inherited=readFileSync('src/agent/cline_agent_controller.gd','utf8').split('for pair in _native_modules() + ')[1].split(':')[0];
-  const pairs=[...controller.matchAll(/\["([^"]+)", "([^"]+)"\]/g),...inherited.matchAll(/\["([^"]+)", "([^"]+)"\]/g)];
-  assert.equal(pairs.length,7);
-  for(const [,target,source] of pairs)copyFileSync(join('tools',source),join(directory,target));
+  assembleHarnessRuntime('omp',directory);
   const config={workspace:directory,bridge_dir:join(directory,'bridge'),session_file:join(directory,'session.json'),prompt_path:join(directory,'prompt.md')};
   if(saved){config.session=saved;writeFileSync(config.session_file,JSON.stringify({session:saved}));}
   const trace=join(directory,'trace.jsonl');writeFileSync(trace,'');

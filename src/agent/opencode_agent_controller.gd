@@ -67,11 +67,8 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "server.mjs", "events.mjs", "protocol.mjs", "gamesmith.mjs", "mcp.mjs", "host-tools.mjs"]:
-        if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/opencode/" + file)):
-            return {"ok": false, "error": "Could not prepare " + _harness_name() + " integration: " + file}
-    if not JsonStore.write_bytes_atomic(directory.path_join("workspace-paths.mjs"), FileAccess.get_file_as_bytes("res://tools/pi/workspace-paths.mjs")):
-        return {"ok": false, "error": "Could not prepare " + _harness_name() + " workspace policy."}
+    var assembled = HarnessInventory.assemble_runtime(_harness_id(), directory)
+    if not assembled.ok: return assembled
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", _harness_name() + "'s read/edit/write/grep/glob/list").replace("Pi's", _harness_name() + "'s").replace("Pi process", _harness_name() + " process")
     prompt += "\nGameSmith tools are exposed by native MCP with the gamesmith_ prefix (for example gamesmith_start_test_game and gamesmith_reload_game). Use those tools for game testing, reload, and Git. Shell and delegation are unavailable; use native read/write/edit/apply_patch tools for files.\n"
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):

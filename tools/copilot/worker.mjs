@@ -1,3 +1,4 @@
+import {atomicSaveSession,failureRecord} from './session-state.mjs';
 import {readFileSync,writeFileSync,renameSync} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -14,7 +15,7 @@ function state(enabled){writeFileSync(stateFile+'.tmp',JSON.stringify({active:en
 state(false);
 function saveSession(){
   if(sessionSaved)return;
-  writeFileSync(config.session_file+'.tmp',JSON.stringify({session,context_tokens:contextTokens}));renameSync(config.session_file+'.tmp',config.session_file);sessionSaved=true;
+  atomicSaveSession(config.session_file,{session,context_tokens:contextTokens});sessionSaved=true;
   emit({type:'session',session});
 }
 const server=new CopilotServer(config,{
@@ -28,7 +29,7 @@ const server=new CopilotServer(config,{
     // usage_update is a current-context measurement and can arrive after the
     // final prompt response. Per-turn result.usage.totalTokens is not context.
     if(p.update?.sessionUpdate==='usage_update' && sessionSaved){
-      for(const r of normalizeUpdate(p.update)){contextTokens=r.tokens;writeFileSync(config.session_file+'.tmp',JSON.stringify({session,context_tokens:contextTokens}));renameSync(config.session_file+'.tmp',config.session_file);emit(r);}return;
+      for(const r of normalizeUpdate(p.update)){contextTokens=r.tokens;atomicSaveSession(config.session_file,{session,context_tokens:contextTokens});emit(r);}return;
     }
     if(!active?.accepted || active.cancelled)return;
     for(const r of normalizeUpdate(p.update)){saveSession();if(r.type==='delta' && r.kind==='assistant')active.text+=r.text;emit(r);}
@@ -74,7 +75,7 @@ async function prompt(request,operation){
     // session/new allocates an ID before a native conversation exists. Do not
     // persist an unresumable reference if runtime setup fails before any event.
     if(!sessionSaved){stopping=true;server.close();error.runtimeFailed=true;}
-    if(active===operation && !operation.cancelled)emit(operation.accepted ? {type:'complete',ok:false,text:operation.text,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:!!error.runtimeFailed} : {type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:!!error.runtimeFailed});
+    if(active===operation && !operation.cancelled)emit(failureRecord(operation,error));
   }
   finally{if(active===operation){active=undefined;state(false);}operation.finish();}
 }

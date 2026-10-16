@@ -1,6 +1,8 @@
 class_name WorkspaceStore
 extends RefCounted
 
+const HarnessInventory = preload("res://src/agent/harness_inventory.gd")
+
 const GAMES_ROOT = "user://games"
 var git = GitService.new()
 var metadata = MetadataStore.new()
@@ -26,7 +28,7 @@ func list_games() -> Array[String]:
     return names
 
 func create_game(raw_name: String, harness: String = "pi") -> Dictionary:
-    if harness not in ["pi", "command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]:
+    if HarnessInventory.get_harness(harness).is_empty():
         return {"ok": false, "error": "Unknown coding harness: " + harness}
     ensure()
     var base = PathUtils.sanitize_game_name(raw_name)

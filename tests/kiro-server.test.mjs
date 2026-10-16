@@ -1,3 +1,4 @@
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -8,13 +9,7 @@ import {tmpdir} from 'node:os';
 import {killProcessTree} from '../tools/agent/process-tree.mjs';
 function fixture(t,extra={},saved){
   const directory=mkdtempSync(join(tmpdir(),'gs-kiro-server-'));mkdirSync(join(directory,'bridge'));
-  // Assemble exactly the files selected by the GDScript controller, rather than
-  // testing source-tree relative imports that differ from the shipped runtime.
-  const controller=readFileSync('src/agent/kiro_agent_controller.gd','utf8').split('func _native_modules()')[1].split('func _native_prompt()')[0];
-  const inherited=readFileSync('src/agent/cline_agent_controller.gd','utf8').split('for pair in _native_modules() + ')[1].split(':')[0];
-  const pairs=[...controller.matchAll(/\["([^"]+)", "([^"]+)"\]/g),...inherited.matchAll(/\["([^"]+)", "([^"]+)"\]/g)];
-  assert.equal(pairs.length,8);
-  for(const [,target,source] of pairs)copyFileSync(join('tools',source),join(directory,target));
+  assembleHarnessRuntime('kiro',directory);
   const config={workspace:directory,bridge_dir:join(directory,'bridge'),session_file:join(directory,'session.json'),mcp:join(directory,'mcp.mjs'),prompt_path:join(directory,'prompt.md'),config_path:join(directory,'runtime.json')};
   if(saved){config.session=saved;writeFileSync(config.session_file,JSON.stringify({session:saved}));}
   writeFileSync(config.prompt_path,'Use only GameSmith tools.');writeFileSync(config.config_path,JSON.stringify(config));

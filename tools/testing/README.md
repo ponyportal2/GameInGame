@@ -1,18 +1,45 @@
 # GameSmith verification workflow
 
-Run the whole source verification stack with Godot 4.7.2:
+The default is a compact, portable verification command:
 
-```bash
-GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64 tools/testing/run-verification.sh
+```powershell
+node tools/testing/verify.mjs --suite affected
+node tools/testing/verify.mjs --suite full --output summary
+node tools/testing/verify.mjs --suite copilot --output errors
+node tools/testing/verify.mjs --suite release --output full
+node tools/testing/verify.mjs --rerun-failed C:/path/to/results.json
+node tools/testing/verify.mjs --suite full --reuse C:/path/to/results.json
 ```
 
-For Windows or Linux, the portable runners isolate application data under a temporary directory and print its location:
+`summary`, `errors`, and `full` execute the same selection and save the same complete evidence. Summary prints phases, failures, infrequent long-running notices and the final result. Errors adds bounded failure excerpts. Full streams child stdout/stderr. Expected `ERROR` diagnostics never determine pass/fail: child exit status and deadlines do. Failed entries link a bounded diagnostic JSON and full log. `results.json` is authoritative; atomic `progress.json` is only for checking an apparent stall. No continuous polling is needed.
 
-```bash
-node tools/testing/run-host-tests.mjs /path/to/godot
-node --test tests/workspace-paths.test.mjs tests/model-capabilities.test.mjs tests/diagnostic-delivery.test.mjs tests/empty-response-retry.test.mjs tests/command-code.test.mjs tests/opencode.test.mjs
-node tools/testing/run-pi-e2e.mjs /path/to/godot /path/to/pi
-```
+Each run gets a new temporary artifact directory (printed at completion), or use `--artifacts <new-directory>`. All child logs, Godot engine logs and isolated application data remain available. `--jobs 4` bounds parallel Node files; Godot runners remain separate serial processes. `--timeout <milliseconds>` is a test deadline, never a product/model timeout. Missing tools and setup failures fail the verification instead of quietly skipping required tests.
+
+Suites:
+
+- `smoke`: orchestration, canonical assembly, core host and library checks.
+- `affected`: explicit conservative path mapping in `verification-plan.mjs`. Harness-local changes select its protocol/lifecycle tests plus shared ownership/recovery/assembly coverage. Pi, OpenCode, shared or unknown code changes select full coverage; documentation-only changes select none.
+- `<harness>`: harness Node suites, lifecycle, harness switching, shared native recovery and assembly.
+- `node`, `host`, `package`, `launcher`: individual layers.
+- `full`: all discovered Node files, all listed isolated host runners, PCK contents/structure and Go launcher tests. No paid model calls.
+- `acceptance`: installed Pi against the local provider emulator, process-level data migration and windowed input ownership. Windowed coverage is explicitly skipped only if Linux has neither a display nor `xvfb-run`.
+- `release`: full plus acceptance. It requires installed pinned Pi, Godot, Python and Go.
+
+`--test host:copilot_lifecycle,node:copilot-server` selects exact IDs. `--rerun-failed` selects only failed/interrupted/blocked entries from an earlier result, including children blocked by import failure; build failure also repeats the build. Fixes are allowed before a rerun. This is new evidence for that selection, not a claim that the old full run passed.
+
+Reuse is opt-in and recorded per test as `status: "reused"` with `evidence_from`. It requires matching HEAD, working-tree content, suite definition, runtime identities and hashed environment knobs, plus existing complete logs. Changes during execution invalidate the run. Builds, live calls and acceptance are never reused. Runtime fingerprints include Node/platform, the Godot binary, Python/Go when needed, and installed Blender identity. Avoid editing sources while verification runs. No secret environment values are written to results.
+
+`--godot <executable>` or `GODOT_BIN` selects Godot; Windows defaults to the bundled executable. `--build-package` refreshes the PCK before testing. Live native inference is separate and explicit: `--live copilot`, for example. Codex live acceptance refuses to start unless `GAMESMITH_CODEX_BIN` points at `tools/testing/codex-luna-launcher.mjs`, which supplies the required explicit `-c model="gpt-6-luna"` override. No CI is dispatched by these commands.
+
+The compatibility entrypoints `run-host-tests.mjs` and `run-verification.sh` delegate to this runner; `GAMESMITH_VERIFY_OUTPUT` controls their output mode. The manual Windows workflow uses the same release selection and uploads its complete artifact directory. Automatic CI remains disabled.
+
+## Harness inventory and runtime parity
+
+`tools/agent/harnesses.json` owns display labels, controllers, reset/settings capabilities, native module maps, launcher identities and focused suite membership. It is data, not permission policy. Native security/admission tests remain independent.
+
+`HarnessInventory.assemble_runtime()` is the single module materialization implementation. Production controllers use it; Node fixtures invoke it through a small Godot adapter and execute the resulting tree; PCK checks assemble every harness from the exported resources. Tests no longer parse controller source or maintain their own copies of production assembly lists. Source-only `session-state.mjs` re-exports preserve direct worker compatibility; assembled runtimes contain the shared implementation itself.
+
+After updating launcher metadata, run `node tools/testing/generate-harness-inventory.mjs`. The generator also derives the export include filter from the same module sources. A regression verifies both match the JSON. Harness-specific executable identity probes remain independent. Shared ACP code is limited to atomic session persistence and standard failure records; permission, resume, settlement and Stop semantics remain in each native adapter.
 
 The usual host tests also cover standalone process ownership, hung-action polling, graceful/forced stop, test-storage retention and safe recovery, plus compaction failure backoff and unknown checkpoint usage. Real Pi verifies automatic compaction resumes unfinished tool work without another player message. On Linux, rendered tests require `xvfb-run` or a display.
 
@@ -33,15 +60,6 @@ Identified direct runtime-loading calls are restricted to literal paths using ap
 The scanner recognizes bare `load()` and the three direct `ResourceLoader` methods above. Unrelated methods such as `ConfigFile.load()`, `Image.load()` and custom `.load()` methods are outside this policy, as are aliases and indirect calls. Comments and quoted examples are ignored. Unfinished strings, unmatched delimiters and invalid loading-call arity defer to Godot's compiler. This is a coding-policy check, not a security sandbox or complete revision isolation: indirect resource loading is prohibited by model instructions but outside the check, and games can still read ordinary files or assets later.
 
 `script_load_policy_runner.gd` applies a shared safe/unsafe path matrix across all loading APIs, checks hints only on APIs that accept them, and tests malformed-call compiler rejection, file/line reporting, nested unused scripts, metadata exclusions, cache preservation, corrected reloads and model instructions. Both cache suites and the policy suite run in the usual portable and Linux verification commands.
-
-The workflow performs, in order:
-
-1. deterministic verification of the root Windows folder;
-2. `tools/windows-bootstrap` Go unit tests when Go is available;
-3. the fast headless Godot host/core/UI suite;
-4. the real-window hostile generated-input regression under `xvfb-run` when available;
-5. one real globally installed Pi run covering Parts 1–4: normal-agent behavior, native compaction, migration/runtime removal, and packaging/discovery;
-6. a process-level migration check from the old `GameSmith Host` writable directory to `GameSmithHost`.
 
 ## Real Pi acceptance
 

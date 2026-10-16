@@ -1,3 +1,4 @@
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -8,10 +9,11 @@ import {tmpdir} from 'node:os';
 import {killProcessTree} from '../tools/agent/process-tree.mjs';
 function fixture(t,extra={},session='') {
   const directory=mkdtempSync(join(tmpdir(),'gs-agy-server-'));mkdirSync(join(directory,'bridge'));
-  const config={workspace:directory,bridge_dir:join(directory,'bridge'),session,session_file:join(directory,'session.json'),mcp:resolve('tools/agy/mcp.mjs'),prompt_path:join(directory,'prompt.md'),config_path:join(directory,'runtime.json')};
+  assembleHarnessRuntime('agy',directory);
+  const config={workspace:directory,bridge_dir:join(directory,'bridge'),session,session_file:join(directory,'session.json'),mcp:join(directory,'mcp.mjs'),prompt_path:join(directory,'prompt.md'),config_path:join(directory,'runtime.json')};
   // Runtime layout is the same as a host-prepared integration.
-  config.mcp=resolve('tools/agy/mcp.mjs');writeFileSync(config.prompt_path,'Use only GameSmith tools.');writeFileSync(config.config_path,JSON.stringify(config));
-  const child=spawn(process.execPath,['tools/agy/worker.mjs',config.config_path],{env:{...process.env,GAMESMITH_AGY_BIN:resolve('tools/testing/fake-agy.mjs'),...extra},windowsHide:true});
+  config.mcp=join(directory,'mcp.mjs');writeFileSync(config.prompt_path,'Use only GameSmith tools.');writeFileSync(config.config_path,JSON.stringify(config));
+  const child=spawn(process.execPath,[join(directory,'worker.mjs'),config.config_path],{env:{...process.env,GAMESMITH_AGY_BIN:resolve('tools/testing/fake-agy.mjs'),...extra},windowsHide:true});
   const records=[],waiters=[];let stderr='';child.stderr.on('data',d=>stderr+=d);
   createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);records.push(r);for(const w of [...waiters])if(w.predicate(r)){waiters.splice(waiters.indexOf(w),1);w.resolve(r);}});
   function until(predicate){const found=records.find(predicate);if(found)return Promise.resolve(found);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Fixture timed out: '+stderr)),10000);waiters.push({predicate,resolve:r=>{clearTimeout(timer);resolve(r);}});});}

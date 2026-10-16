@@ -24,23 +24,9 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
         if err != OK and err != ERR_ALREADY_EXISTS:
             return {"ok": false, "error": "Could not create Pi runtime directory: " + dir}
 
-    var extension_source = FileAccess.get_file_as_string("res://tools/pi/gamesmith-extension.ts")
-    if extension_source == "":
-        return {"ok": false, "error": "Bundled GameSmith Pi extension is missing."}
     var extension_path = agent_dir.path_join("gamesmith-extension.ts")
-    var extension_file = FileAccess.open(extension_path, FileAccess.WRITE)
-    if extension_file == null:
-        return {"ok": false, "error": "Could not write Pi extension."}
-    extension_file.store_string(extension_source)
-    extension_file.close()
-
-    for module in ["workspace-paths.mjs", "model-capabilities.mjs", "diagnostic-delivery.mjs", "empty-response-retry.mjs"]:
-        var module_source = FileAccess.get_file_as_string("res://tools/pi/" + module)
-        var module_file = FileAccess.open(agent_dir.path_join(module), FileAccess.WRITE)
-        if module_source == "" or module_file == null:
-            return {"ok": false, "error": "Could not prepare Pi module: " + module}
-        module_file.store_string(module_source)
-        module_file.close()
+    var assembled = preload("res://src/agent/harness_inventory.gd").assemble_runtime("pi", agent_dir)
+    if not assembled.ok: return assembled
 
     var prompt_file = FileAccess.open(agent_dir.path_join("APPEND_SYSTEM.md"), FileAccess.WRITE)
     if prompt_file == null:

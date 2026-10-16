@@ -1,0 +1,13 @@
+import {mkdtempSync,mkdirSync,writeFileSync,existsSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+const home=mkdtempSync(join(tmpdir(),'gamesmith-migration-'));
+const base=process.platform==='win32'?join(home,'Godot/app_userdata'):process.platform==='darwin'?join(home,'Library/Application Support/Godot/app_userdata'):join(home,'.local/share/godot/app_userdata');
+const old=join(base,'GameSmith Host'),current=join(base,'GameSmithHost');
+mkdirSync(join(old,'games/Legacy Game'),{recursive:true});mkdirSync(join(old,'host'));
+writeFileSync(join(old,'games/Legacy Game/main.gd'),'extends Node\n');writeFileSync(join(old,'host/settings.json'),'{"provider":"custom"}');
+const child=spawnSync(resolve(process.argv[2]),['--headless','--path',resolve('.'),'--quit-after','3'],{env:{...process.env,APPDATA:home,HOME:home,XDG_DATA_HOME:join(home,'.local/share')},stdio:'inherit',windowsHide:true,timeout:30000});
+if(child.status!==0)throw child.error||new Error('Migration launch failed: '+child.status);
+for(const path of [join(current,'games/Legacy Game/main.gd'),join(current,'host/settings.json'),join(current,'logs/gamesmith-app.log'),join(old,'games/Legacy Game/main.gd')])if(!existsSync(path))throw new Error('Missing migration evidence: '+path);
+console.log('PASS: launch migrates legacy data while preserving the old directory');

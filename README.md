@@ -367,3 +367,5 @@ The full workflow verifies:
 6. process-level migration from `GameSmith Host` to `GameSmithHost`.
 
 The deterministic Pi provider fixture is `tools/fake-openai-endpoint/pi-server.mjs`; it requires Node but no `npm install`.
+
+Verification uses `node tools/testing/verify.mjs --suite full --output summary`. Complete evidence is saved even with compact output; see [verification commands, failure reruns and reuse](tools/testing/README.md).

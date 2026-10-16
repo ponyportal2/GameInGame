@@ -1,5 +1,7 @@
 extends "res://src/agent/pi_agent_controller.gd"
 
+const HarnessInventory = preload("res://src/agent/harness_inventory.gd")
+
 const CommandSession = preload("res://src/agent/command_code_session.gd")
 
 var result_corrected := false
@@ -80,16 +82,9 @@ func _start_command_runtime() -> Dictionary:
     var absolute = ProjectSettings.globalize_path(directory)
     var bridge = absolute.path_join("bridge-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
     DirAccess.make_dir_recursive_absolute(bridge)
-    for file in ["worker.mjs", "server.mjs", "policy.mjs", "gamesmith.ts"]:
-        if not JsonStore.write_bytes_atomic(directory.path_join(file), FileAccess.get_file_as_bytes("res://tools/command-code/" + file)):
-            return {"ok": false, "error": "Could not prepare Command-code integration: " + file}
-    if not JsonStore.write_bytes_atomic(directory.path_join("host-tools.mjs"), FileAccess.get_file_as_bytes("res://tools/opencode/host-tools.mjs")):
-        return {"ok": false, "error": "Could not prepare shared GameSmith tools."}
-    if not JsonStore.write_bytes_atomic(directory.path_join("workspace-paths.mjs"), FileAccess.get_file_as_bytes("res://tools/pi/workspace-paths.mjs")):
-        return {"ok": false, "error": "Could not prepare Command-code workspace policy."}
+    var assembled = HarnessInventory.assemble_runtime("command-code", directory)
+    if not assembled.ok: return assembled
     var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
-    if not JsonStore.write_bytes_atomic(directory.path_join("process-tree.mjs"), FileAccess.get_file_as_bytes("res://tools/agent/process-tree.mjs")):
-        return {"ok": false, "error": "Could not prepare Command-code process cleanup."}
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write Command-code game instructions."}
     var session_file = absolute.path_join("session.json")
