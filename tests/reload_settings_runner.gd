@@ -44,6 +44,16 @@ func run() -> void:
         quit(1)
         return
     check(not app.metadata.global_settings().get("auto_approve_reloads", false), "automatic approval defaults off")
+    check(app.metadata.global_settings().get("image_backend", "") == "", "Image generation has no default vendor")
+    app._open_settings()
+    check(not is_instance_valid(app.image_probe), "Opening ordinary settings does not start native image processes")
+    app._select_image_backend("codex")
+    app._save_settings()
+    check(app.metadata.global_settings().get("image_backend", "") == "codex", "Selected native image backend persists")
+    app._open_settings()
+    check(app.image_backend_option.get_item_metadata(app.image_backend_option.selected) == "codex", "Settings restores selected image backend")
+    app._select_image_backend("")
+    app._save_settings()
     check(not app.metadata.global_settings().get("auto_approve_blender_scripts", true), "Blender automatic approval defaults off")
     check(app.get("auto_blender_check") != null, "settings offers independent Blender automatic approval")
     if app.get("auto_blender_check") == null:

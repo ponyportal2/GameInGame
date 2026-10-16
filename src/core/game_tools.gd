@@ -12,6 +12,13 @@ var runner: GameRunner
 var test_supervisor: Node
 var blender_supervisor: Node
 var blender_enabled := true
+var image_supervisor: Node
+
+func generate_image(args: Dictionary) -> Dictionary:
+    if not is_instance_valid(image_supervisor):
+        image_supervisor = preload("res://src/core/image_generation.gd").new()
+        runner.add_child(image_supervisor)
+    return image_supervisor.execute(workspace, args)
 
 func blender(args: Dictionary) -> Dictionary:
     if not blender_enabled:
@@ -165,6 +172,7 @@ func read_runtime_log(args: Dictionary = {}) -> Dictionary:
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
         "blender": return blender(args)
+        "generate_image": return generate_image(args)
         "list_files": return list_files(str(args.get("path", "")))
         "read_file": return read_file(str(args.get("path", "")), int(args.get("offset", 1)), int(args.get("limit", DEFAULT_READ_LINES)))
         "search_text": return search_text(str(args.get("query", "")))

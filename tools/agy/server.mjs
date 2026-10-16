@@ -17,14 +17,14 @@ export class AgyServer {
   async start() {
     const exe=resolveExecutable(),directory=dirname(this.config.session_file);
     this.cwd=join(directory,'native-workspace');mkdirSync(join(this.cwd,'.agents','agents'),{recursive:true});
-    const hook=join(directory,'hook.mjs');
+    const hook=join(directory,this.config.image_job?'image-hook.mjs':'hook.mjs');
     const command=[process.execPath,hook,this.config.config_path].map(s=>'"'+s.replaceAll('"','\\"')+'"').join(' ');
     writeFileSync(join(this.cwd,'.agents','hooks.json'),JSON.stringify({'gamesmith-policy':{
       PreToolUse:[{matcher:'*',hooks:[{type:'command',command,timeout:10}]}]
     }}));
-    const front={name:'gamesmith',description:'GameSmith game editing',mainAgent:true,subagent:false,
+    const front={name:'gamesmith',description:this.config.image_job?'Isolated image generation':'GameSmith game editing',mainAgent:true,subagent:false,
       inheritCustomizations:false,inheritMcp:false,hooks:['gamesmith-policy'],
-      mcpServers:[{name:'gamesmith',command:process.execPath,args:[this.config.mcp,this.config.config_path]}]};
+      mcpServers:this.config.image_job?[]:[{name:'gamesmith',command:process.execPath,args:[this.config.mcp,this.config.config_path]}]};
     writeFileSync(join(this.cwd,'.agents','agents','gamesmith.md'),'---\n'+Object.entries(front).map(([k,v])=>k+': '+JSON.stringify(v)).join('\n')+'\n---\n'+readFileSync(this.config.prompt_path,'utf8'));
     const args=[...exe.prefix,'--agent','gamesmith','--disable-slash-commands','--input-format','stream-json','--output-format','stream-json'];
     if(this.config.session)args.push('--conversation',this.config.session);

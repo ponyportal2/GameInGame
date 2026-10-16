@@ -26,6 +26,7 @@ export async function callHost(command, args, signal) {
 export default async function (cmd) {
   const prompt = await readFile(process.env.GAMESMITH_PROMPT_PATH!, 'utf8');
   const tools = {
+    generate_image: hostTools.generate_image,
     blender: hostTools.blender,
     reload_game: {description:'After successful headless testing of the current edits, request loading the game before handoff. Waits for player approval unless auto-approval is enabled.',properties:{}},
     read_runtime_log: {description:'Read live game errors and runtime logs.',properties:{since_sequence:{type:'integer'},limit:{type:'integer'}}},

@@ -22,10 +22,18 @@ export class GrokBuildServer {
     const exe=resolveExecutable();
     this.cwd=join(dirname(this.config.session_file),'native-workspace');
     mkdirSync(join(this.cwd,'.grok'),{recursive:true});
+    if(this.config.image_job){
+      mkdirSync(join(this.cwd,'.grok/hooks'),{recursive:true});
+      const command=[process.execPath,join(dirname(this.config.session_file),'image-native-hook.mjs'),'grok-build',this.cwd].map(s=>'"'+s.replaceAll('"','\\"')+'"').join(' ');
+      writeFileSync(join(this.cwd,'.grok/hooks/image-policy.json'),JSON.stringify({hooks:{PreToolUse:[{matcher:'*',hooks:[{type:'command',command,timeout:10}]}]}}));
+    }
     // Native tool restrictions apply even when the ordinary CLI is auto-approved.
     // MCP calls must still match the active ACP permission announcement.
-    writeFileSync(join(this.cwd,'.grok/config.toml'),'[permission]\nask = ["MCPTool(*)"]\ndeny = ["Bash", "Read", "Edit", "Write", "Grep", "Glob", "WebFetch", "WebSearch"]\n');
-    this.child=spawn(exe.bin,[...exe.prefix,'--tools','use_tool,search_tool','--no-subagents','--disable-web-search','--permission-mode','default','agent','--no-leader','stdio'],{cwd:this.cwd,env:{...process.env},windowsHide:true,stdio:['pipe','pipe','pipe']});
+    // ImageGen also belongs to Grok's broad Edit permission class. For image
+    // jobs the hook denies ordinary edits/writes without denying ImageGen.
+    writeFileSync(join(this.cwd,'.grok/config.toml'),'[permission]\nask = ["'+(this.config.image_job?'ImageGen':'MCPTool(*)')+'"]\ndeny = ["Bash", "Read", '+(this.config.image_job?'':'"Edit", "Write", ')+'"Grep", "Glob", "WebFetch", "WebSearch"'+(this.config.image_job?', "MCPTool(*)"':'')+']\n');
+    const nativeTools=this.config.image_job?'image_gen,image_edit':'use_tool,search_tool';
+    this.child=spawn(exe.bin,[...exe.prefix,...(this.config.image_job?['--trust']:[]),'--tools',nativeTools,'--no-subagents','--disable-web-search','--permission-mode','default','agent','--no-leader','stdio'],{cwd:this.cwd,env:{...process.env},windowsHide:true,stdio:['pipe','pipe','pipe']});
     const fail=error=>{for(const p of this.pending.values())p.reject(error);this.pending.clear();if(!this.closing)this.onExit(error);};
     this.child.once('error',fail);this.child.once('exit',code=>fail(new Error(`Grok Build ACP exited with code ${code}.`)));
     createInterface({input:this.child.stderr}).on('line',this.onStderr);
@@ -42,7 +50,7 @@ export class GrokBuildServer {
       await this.request('authenticate',{methodId:'cached_token'});
     }catch(error){this.close();throw error;}
   }
-  sessionParams(){return {cwd:this.cwd,mcpServers:[{name:'gamesmith',command:process.execPath,args:[this.config.mcp,this.config.config_path],env:[]}],_meta:{yoloMode:false,autoMode:false}};}
+  sessionParams(){return {cwd:this.cwd,mcpServers:this.config.image_job?[]:[{name:'gamesmith',command:process.execPath,args:[this.config.mcp,this.config.config_path],env:[]}],_meta:{yoloMode:false,autoMode:false}};}
   send(record){if(this.child?.stdin.writable)this.child.stdin.write(JSON.stringify({jsonrpc:'2.0',...record})+'\n');}
   request(method,params={}) {
     if(this.closing || !this.child || this.child.exitCode!==null)return Promise.reject(new Error('Grok Build ACP is unavailable.'));

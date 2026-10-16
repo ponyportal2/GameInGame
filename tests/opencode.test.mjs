@@ -61,7 +61,8 @@ test('MCP approval waits send progress and preserve structured host failures as 
     assert.equal(records.find(r=>r.id===1).result.protocolVersion,'2024-11-05');
     child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list'})+'\n');
     await wait(()=>records.some(r=>r.id===2));
-    assert.equal(records.find(r=>r.id===2).result.tools.length,13);
+    assert.equal(records.find(r=>r.id===2).result.tools.length,14);
+    assert(records.find(r=>r.id===2).result.tools.some(tool=>tool.name==='generate_image'));
     child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'reload_game',arguments:{},_meta:{progressToken:'approval'}}})+'\n');
     await wait(()=>records.some(r=>r.method==='notifications/progress'));
     assert.equal(records.find(r=>r.method==='notifications/progress').params.progressToken,'approval');

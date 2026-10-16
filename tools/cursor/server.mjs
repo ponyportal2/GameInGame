@@ -38,12 +38,16 @@ export class CursorServer {
   async start(){
     const exe=resolveExecutable();
     mkdirSync(join(this.cwd,'.cursor'),{recursive:true});
-    const deny=['Shell(*)','Write(**)','Read(**)','WebFetch(*)'];
+    const deny=['Shell(*)',...(!this.config.image_job?['Write(**)']:[]),'Read(**)','WebFetch(*)'];
     // Global MCP servers are still loaded by Cursor. Deny them at the native
     // policy layer too, including any native auto-approval configuration.
     const registry=join(homedir(),'.cursor/mcp.json');
-    if(existsSync(registry))for(const name of Object.keys(JSON.parse(readFileSync(registry,'utf8')).mcpServers || {}))if(name!=='gamesmith')deny.push(`Mcp(${name}:*)`);
-    writeFileSync(join(this.cwd,'.cursor/cli.json'),JSON.stringify({permissions:{allow:[],deny}}));
+    if(existsSync(registry))for(const name of Object.keys(JSON.parse(readFileSync(registry,'utf8')).mcpServers || {}))if(this.config.image_job || name!=='gamesmith')deny.push(`Mcp(${name}:*)`);
+    writeFileSync(join(this.cwd,'.cursor/cli.json'),JSON.stringify({permissions:{allow:this.config.image_job?['Write(output.png)']:[],deny}}));
+    if(this.config.image_job){
+      const command=[process.execPath,join(dirname(this.config.session_file),'image-native-hook.mjs'),'cursor',this.cwd].map(s=>'"'+s.replaceAll('"','\\"')+'"').join(' ');
+      writeFileSync(join(this.cwd,'.cursor/hooks.json'),JSON.stringify({version:1,hooks:{preToolUse:[{command,matcher:'*',failClosed:true}]}}));
+    }
     const options={cwd:this.cwd,env:{...process.env},windowsHide:true,stdio:['pipe','pipe','pipe']};
     // ACP authenticate can open a browser when logged out. Report actionable
     // login guidance first; this child is also owned by the Stop process tree.
@@ -57,6 +61,7 @@ export class CursorServer {
     this.statusReject=undefined;
     if(this.closing)throw new Error('Cursor stopped.');
     if(!status.isAuthenticated)throw new Error('Cursor CLI is not logged in. Run cursor-agent login, then send your message again.');
+    if(this.config.image_job)return;
     this.child=spawn(exe.bin,[...exe.prefix,'acp'],options);
     const fail=error=>{for(const p of this.pending.values())p.reject(error);this.pending.clear();if(!this.closing)this.onExit(error);};
     this.child.once('error',fail);this.child.once('exit',code=>fail(new Error(`Cursor ACP exited with code ${code}.`)));
@@ -74,7 +79,23 @@ export class CursorServer {
       await this.request('authenticate',{methodId:'cursor_login'});
     }catch(error){this.close();throw error;}
   }
-  sessionParams(){return {cwd:this.cwd,mcpServers:[{name:'gamesmith',command:process.execPath,args:[this.config.mcp,this.config.config_path],env:[]}]};}
+  sessionParams(){return {cwd:this.cwd,mcpServers:this.config.image_job?[]:[{name:'gamesmith',command:process.execPath,args:[this.config.mcp,this.config.config_path],env:[]}]};}
+  async generateImage(prompt){
+    const exe=resolveExecutable();
+    this.child=spawn(exe.bin,[...exe.prefix,'--print','--output-format','stream-json','--trust','--workspace',this.cwd,prompt],{cwd:this.cwd,windowsHide:true,stdio:['pipe','pipe','pipe']});
+    return new Promise((resolve,reject)=>{
+      let artifact,error='',stderr='';
+      this.child.stderr.on('data',data=>stderr=(stderr+data).slice(-2000));
+      createInterface({input:this.child.stdout}).on('line',line=>{
+        let r;try{r=JSON.parse(line);}catch{return;}
+        const call=r.tool_call?.generateImageToolCall;
+        if(call?.result?.error)error=call.result.error.error || 'Cursor image generation failed.';
+        if(call?.result?.success)artifact=join(this.cwd,'output.png');
+      });
+      this.child.once('error',reject);
+      this.child.once('exit',code=>artifact && code===0?resolve({path:artifact}):reject(new Error(error || stderr || 'Cursor did not return a generated image artifact.')));
+    });
+  }
   send(record){if(this.child?.stdin.writable)this.child.stdin.write(JSON.stringify({jsonrpc:'2.0',...record})+'\n');}
   request(method,params={}){
     if(this.closing || !this.child || this.child.exitCode!==null)return Promise.reject(new Error('Cursor ACP is unavailable.'));

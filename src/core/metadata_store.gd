@@ -98,6 +98,7 @@ func global_settings() -> Dictionary:
         "allow_rendered_tests": false,
         "auto_approve_reloads": false,
         "auto_approve_blender_scripts": false,
+        "image_backend": "",
     })
 
 func save_global_settings(data: Dictionary) -> bool:

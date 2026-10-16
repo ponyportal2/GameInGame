@@ -72,6 +72,9 @@ var compaction_keep_spin: SpinBox
 var rendered_tests_check: CheckBox
 var auto_reload_check: CheckBox
 var auto_blender_check: CheckBox
+var image_backend_option: OptionButton
+var image_backend_labels: Dictionary = {}
+var image_probe: Node
 var compact_now_button: Button
 var compaction_status_label: Label
 var library_button: Button
@@ -618,6 +621,10 @@ func _open_rename(name: String = "") -> void:
     rename_edit.select_all()
 
 func _rename_game() -> void:
+    if tools != null and is_instance_valid(tools.image_supervisor) and tools.image_supervisor.has_running():
+        tools.image_supervisor.stop_all()
+        _toast("Stopping image generation. Rename again after it exits.")
+        return
     if tools != null and is_instance_valid(tools.blender_supervisor) and tools.blender_supervisor.has_running():
         tools.blender_supervisor.stop_all()
         _toast("Stopping Blender. Rename again after it exits.")
@@ -757,6 +764,7 @@ func _open_settings() -> void:
     rendered_tests_check.button_pressed = bool(settings.get("allow_rendered_tests", false))
     auto_reload_check.button_pressed = bool(settings.get("auto_approve_reloads", false))
     auto_blender_check.button_pressed = bool(settings.get("auto_approve_blender_scripts", false))
+    _select_image_backend(str(settings.get("image_backend", "")))
     game_blender_check.disabled = current_game == ""
     game_blender_check.button_pressed = bool(metadata.read_game(current_game).get("blender_enabled", true)) if current_game != "" else false
     if current_game != "":
@@ -898,6 +906,7 @@ func _save_settings(confirm_blender_reset: bool = false) -> void:
         host_settings.allow_rendered_tests = rendered_tests_check.button_pressed
         host_settings.auto_approve_reloads = auto_reload_check.button_pressed
         host_settings.auto_approve_blender_scripts = auto_blender_check.button_pressed
+        host_settings.image_backend = str(image_backend_option.get_item_metadata(image_backend_option.selected))
         if not metadata.save_global_settings(host_settings):
             _toast("Could not save host settings.")
             return
@@ -916,6 +925,7 @@ func _save_settings(confirm_blender_reset: bool = false) -> void:
     settings.allow_rendered_tests = rendered_tests_check.button_pressed
     settings.auto_approve_reloads = auto_reload_check.button_pressed
     settings.auto_approve_blender_scripts = auto_blender_check.button_pressed
+    settings.image_backend = str(image_backend_option.get_item_metadata(image_backend_option.selected))
     var failures: Array[String] = []
     if not metadata.save_global_settings(settings):
         failures.append("global settings")
@@ -972,3 +982,24 @@ func _maybe_capture() -> void:
             await get_tree().process_frame; await get_tree().process_frame; await get_tree().process_frame
             get_viewport().get_texture().get_image().save_png(path)
             get_tree().quit()
+
+func _select_image_backend(id: String) -> void:
+    for index in image_backend_option.item_count:
+        if str(image_backend_option.get_item_metadata(index)) == id:
+            image_backend_option.select(index)
+            return
+    image_backend_option.select(0)
+
+func _refresh_image_backends() -> void:
+    if not is_instance_valid(image_probe):
+        image_probe = preload("res://src/core/image_generation.gd").new()
+        add_child(image_probe)
+        image_probe.capability_changed.connect(func(id, result):
+            if image_backend_labels.has(id):
+                image_backend_labels[id].text = id + ": " + str(result.get("reason", "Unknown capability"))
+                var index = ["", "agy", "codex", "grok-build", "cursor"].find(id)
+                image_backend_option.set_item_tooltip(index, str(result.get("reason", "")))
+        )
+    for id in image_backend_labels:
+        image_backend_labels[id].text = str(id) + ": checking installed CLI and sign-in..."
+    image_probe.probe_all()

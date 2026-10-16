@@ -283,6 +283,8 @@ func cancel() -> void:
     finished.emit(false)
 
 func restart_runtime() -> void:
+    if tools != null and is_instance_valid(tools.image_supervisor):
+        tools.image_supervisor.stop_all()
     if tools != null and is_instance_valid(tools.blender_supervisor):
         tools.blender_supervisor.stop_all()
     pending_blender_commands.clear()
@@ -588,6 +590,8 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
             reload_approval_changed.emit(true)
             return
         result = {"ok": false, "error": "Another reload is already waiting for player approval."}
+    elif command == "generate_image":
+        result = tools.execute("generate_image", request.get("args", {}))
     elif command in ["blender", "authorize_blender"]:
         if not tools.blender_enabled:
             _write_host_response(directory, request, {"ok": false, "error": "Blender tools are disabled for this game."})

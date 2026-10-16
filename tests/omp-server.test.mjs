@@ -29,7 +29,7 @@ test('assembled runtime reconciles partial streaming, uses native context and re
   const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,true);assert.equal(result.text,'Fixture complete');
   assert.equal(f.records.filter(r=>r.type==='delta' && r.kind==='assistant').map(r=>r.text).join(''),result.text);
   assert.equal((await f.until(r=>r.type==='context')).tokens,4321);
-  const backend=JSON.parse(readFileSync(join(f.directory,'backend.json')));assert.equal(backend.tools.length,18);assert.equal(backend.model,'fixture-free');
+  const backend=JSON.parse(readFileSync(join(f.directory,'backend.json')));assert.equal(backend.tools.length,19);assert(backend.tools.includes('gamesmith_generate_image'));assert.equal(backend.model,'fixture-free');
   f.send({type:'prompt',id:'two',message:'/compact'});assert.equal((await f.until(r=>r.id==='two')).success,true);
   while(f.records.filter(r=>r.type==='complete').length<2)await new Promise(r=>setTimeout(r,10));
   assert.equal(JSON.parse(readFileSync(join(f.directory,'backend.json'))).pid,backend.pid);

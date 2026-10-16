@@ -82,9 +82,9 @@ func run() -> void:
     app._open_settings()
     await settle()
     var tabs = app.settings_dialog.find_child("SettingsTabs", true, false)
-    check(tabs.get_tab_count() == 4, "settings groups model, agent, conversation and game preferences")
+    check(tabs.get_tab_count() == 5, "settings groups model, agent, images, conversation and game preferences")
     await capture("settings")
-    tabs.current_tab = 2
+    tabs.current_tab = 3
     await settle()
     check(app.compact_now_button.is_visible_in_tree(), "conversation tools are reachable on their settings tab")
     var escape = InputEventKey.new()
@@ -98,6 +98,9 @@ func run() -> void:
     app._open_settings()
     await settle()
     check(inside(tabs), "settings fit at minimum window size")
+    tabs.current_tab = 2
+    await settle()
+    check(app.image_backend_option.is_visible_in_tree() and inside(app.image_backend_option), "image backend selection fits at minimum window size")
     await capture("settings-small")
     app._close_settings()
     app._return_to_library()

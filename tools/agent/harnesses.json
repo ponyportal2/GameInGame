@@ -193,6 +193,18 @@
         [
           "process-tree.mjs",
           "agent/process-tree.mjs"
+        ],
+        [
+          "image-worker.mjs",
+          "images/image-worker.mjs"
+        ],
+        [
+          "image-backend.mjs",
+          "images/image-backend.mjs"
+        ],
+        [
+          "image-job.mjs",
+          "images/image-job.mjs"
         ]
       ],
       "node_suites": [
@@ -317,6 +329,22 @@
         [
           "session-state.mjs",
           "agent/session-state.mjs"
+        ],
+        [
+          "image-worker.mjs",
+          "images/image-worker.mjs"
+        ],
+        [
+          "image-backend.mjs",
+          "images/image-backend.mjs"
+        ],
+        [
+          "image-job.mjs",
+          "images/image-job.mjs"
+        ],
+        [
+          "image-native-hook.mjs",
+          "images/image-native-hook.mjs"
         ]
       ],
       "node_suites": [
@@ -379,6 +407,22 @@
         [
           "session-state.mjs",
           "agent/session-state.mjs"
+        ],
+        [
+          "image-worker.mjs",
+          "images/image-worker.mjs"
+        ],
+        [
+          "image-backend.mjs",
+          "images/image-backend.mjs"
+        ],
+        [
+          "image-job.mjs",
+          "images/image-job.mjs"
+        ],
+        [
+          "image-native-hook.mjs",
+          "images/image-native-hook.mjs"
         ]
       ],
       "node_suites": [
@@ -437,6 +481,22 @@
         [
           "process-tree.mjs",
           "agent/process-tree.mjs"
+        ],
+        [
+          "image-worker.mjs",
+          "images/image-worker.mjs"
+        ],
+        [
+          "image-backend.mjs",
+          "images/image-backend.mjs"
+        ],
+        [
+          "image-job.mjs",
+          "images/image-job.mjs"
+        ],
+        [
+          "image-hook.mjs",
+          "images/image-hook.mjs"
         ]
       ],
       "node_suites": [

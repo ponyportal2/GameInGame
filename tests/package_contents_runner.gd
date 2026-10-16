@@ -6,6 +6,10 @@ func _init() -> void:
     call_deferred("_run")
 
 func _run() -> void:
+    if not ResourceLoader.exists("res://src/core/image_generation.gd"):
+        push_error("FAIL: exported GameSmith.pck is missing image generation")
+        quit(1)
+        return
     for module in ["jobs.mjs", "ownership.mjs", "bootstrap.py", "guide.md", "example.py"]:
         if not FileAccess.file_exists("res://tools/blender/" + module):
             push_error("FAIL: exported GameSmith.pck is missing Blender " + module)

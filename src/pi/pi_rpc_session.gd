@@ -234,7 +234,7 @@ func _command_line(config: Dictionary) -> String:
         "--no-context-files",
         "--append-system-prompt", str(config.prompt_path),
         "--no-builtin-tools",
-        "--tools", "read,edit,write,grep,find,ls,delete_path,move_path,git_status,git_diff,git_log,git_commit,reload_game,read_runtime_log,start_test_game,read_test_log,stop_test_game,test_game_action" + (",blender" if bool(config.get("blender_enabled", true)) else ""),
+        "--tools", "read,edit,write,grep,find,ls,delete_path,move_path,git_status,git_diff,git_log,git_commit,reload_game,read_runtime_log,start_test_game,read_test_log,stop_test_game,test_game_action,generate_image" + (",blender" if bool(config.get("blender_enabled", true)) else ""),
         "--extension", str(config.extension_path),
         "--approve"
     ]

@@ -115,6 +115,16 @@ static func build(app) -> void:
     app.rendered_tests_check.text = "Allow rendered agent tests (minimized window)"
     agent_page.add_child(app.rendered_tests_check)
     U.paragraph(agent_page, "Headless tests are always available. Rendered tests open minimized, without taking focus. Neither interrupts your live game.")
+    var images = page(tabs, "Images")
+    app.image_backend_option = OptionButton.new()
+    for pair in [["Disabled", ""], ["Antigravity / AGY", "agy"], ["Codex", "codex"], ["Grok Build", "grok-build"], ["Cursor", "cursor"]]:
+        app.image_backend_option.add_item(pair[0])
+        app.image_backend_option.set_item_metadata(app.image_backend_option.item_count - 1, pair[1])
+    field(images, "Image generation backend", app.image_backend_option, "Uses the selected CLI's existing sign-in in a separate conversation. No direct image API keys and no vendor fallback. Native account limits may only be known when generating. Save to apply.")
+    for id in ["agy", "codex", "grok-build", "cursor"]:
+        app.image_backend_labels[id] = U.paragraph(images, id + ": not checked")
+    U.button(images, "Check installed backends", app._refresh_image_backends, "QuietButton")
+    U.paragraph(images, "An older Codex game conversation may not know this new tool. Use This game > Start new Codex session to refresh its tool list; this starts fresh native context and preserves the displayed chat.")
     var conversation = page(tabs, "Conversation")
     U.paragraph(conversation, "Summarize older conversation to make room for new work. Recent messages stay intact.")
     app.compaction_auto_spin = spin(0, 2000000, 1000)
