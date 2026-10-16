@@ -666,7 +666,7 @@ func _service_pending_test_commands() -> void:
         var state: Dictionary = tools.tests().status(pending.run_id)
         var result: Dictionary = {}
         if pending.command == "stop_test_game" and state.get("state") == "exited":
-            result = state
+            result = tools.execute("stop_test_game", {"run_id": pending.run_id})
         if not result.is_empty():
             pending_test_commands.erase(pending)
             _write_host_response(bridge_dir, pending.request, result)

@@ -10,6 +10,19 @@ import {hostTools,toolContent} from '../tools/opencode/host-tools.mjs';
 import {processIdentity,cleanupJob} from '../tools/blender/ownership.mjs';
 
 const workspace=()=>mkdtempSync(join(tmpdir(),'gs-blender-'));
+test('warning recognition uses diagnostic tokens and phrases, not identifier substrings',()=>{
+  const capture=warningCapture();
+  const diagnostics=['WARNING: export dropped vertex colors','Warning: missing image',
+    'DeprecationWarning: Material.use_nodes','ERROR: export failed',
+    'unsupported material connection','Feature is not supported',
+    'Using fallback material','Falling back to CPU'];
+  const ordinary=['INFO: Extracting primitive: WaterfallBackMesh','INFO: ErrorMaterial',
+    'INFO: WarningMaterial','INFO: UnsupportedMesh','INFO: FallbackMaterial',
+    'INFO: not supportedMaterial','INFO: falling backMesh'];
+  capture.push(Buffer.from([...ordinary,...diagnostics].join('\n')));
+  capture.finish();
+  assert.deepEqual(capture.snapshot(),{warnings:diagnostics,warnings_dropped:0});
+});
 test('warning summaries survive progress, chunk boundaries and separate output streams',()=>{
   const capture=warningCapture(),warning=Buffer.from('WARNING: matériau unsupported\n');
   const split=warning.indexOf(Buffer.from('é'))+1;

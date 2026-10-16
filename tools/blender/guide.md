@@ -36,6 +36,38 @@ if model != null:
 
 7. Verify integration, not only export. First run a successful **headless** test. Then, for visual changes, start a `rendered` test if the player has enabled rendered testing, and request `test_game_action(action="screenshot")`. Poll its action ID to receive the actual Godot image. Inspect framing, scale, orientation, materials, lighting and animation there: the Blender preview alone does not prove the imported scene looks right. Use `inspect` on the test root, then copy returned `path` values exactly, preserving `@`. Set `depth=2` (maximum 4, total 100 nodes) for a bounded hierarchy; assign stable node names in generated code. Stop the test and request reload before handoff. If rendered testing or vision is unavailable, state that the in-game appearance was not visually verified; do not bypass the player's setting.
 
+## Iterate on a saved scene
+
+For non-trivial assets, establish the major forms and composition first, render a cheap preview and inspect it before investing in detail. Preview again after significant visual changes.
+
+First save the guide's `example_script` as `art/build.py` and run `blender(action="start", script="art/build.py", render="art/preview.png")`. It builds the scene, saves `art/source.blend` and exports `art/model.glb`; the optional tool render then writes the preview. Poll until completion and inspect the PNG.
+
+For subsequent adjustments, write `art/tweak.py` instead of rebuilding the scene. This complete example modifies the existing `Body` material from the guide example, saves the updated source again and re-exports only the asset hierarchy:
+
+```python
+from pathlib import Path
+import bpy
+
+out = Path.cwd() / 'art'
+body = bpy.data.objects['Body']
+material = body.data.materials[0]
+material.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.8
+
+# Preserve these edits for the next iteration.
+bpy.ops.wm.save_as_mainfile(filepath=str(out / 'source.blend'))
+asset = bpy.data.objects['AssetRoot']
+bpy.ops.object.select_all(action='DESELECT')
+for obj in [asset, *asset.children_recursive]:
+    obj.select_set(True)
+bpy.ops.export_scene.gltf(filepath=str(out / 'model.glb'), export_format='GLB',
+                          use_selection=True, export_yup=True,
+                          export_cameras=False, export_lights=False)
+```
+
+Run `blender(action="start", blend="art/source.blend", script="art/tweak.py", render="art/preview.png")`, poll until completion and inspect the new preview. The saved camera, lights and render settings are reused. Scripts still follow the existing approval policy. Adapt object names and export selection to your own scene.
+
+Camera and lighting changes affect Blender previews; when those objects are excluded from GLB export, they do not change the imported game's camera or lighting. Make the corresponding game-side changes in Godot and verify the imported result there.
+
 ## Export and animation conventions
 
 The guide response includes `example_script`, a complete reusable bpy starting point. It exports only `AssetRoot` and its descendants; preview camera/lights stay in the editable blend but out of the GLB. Keep preview-only backdrop geometry out of the export too. Decide which objects belong to Blender and which effects/lighting remain dynamic in Godot, to avoid duplicates.

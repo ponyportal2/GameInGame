@@ -227,12 +227,19 @@ func request_stop(id: String) -> Dictionary:
     if run.state == "interrupted":
         return {"ok": false, "error": "Test owner was lost; its watchdog handles cleanup. A recovered PID is never killed blindly."}
     if run.state == "exited" or run.stop_deadline > 0:
-        return _public(run)
+        return _stop_response(run)
     if not JsonStore.write_dict(run.path.path_join("stop.json"), {"stop": true}):
         run.stop_reason = "Could not send graceful shutdown request."
     run.stop_method = "requested"
     run.stop_deadline = Time.get_ticks_msec() + grace_ms
-    return _public(run)
+    return _stop_response(run)
+
+func _stop_response(run: Dictionary) -> Dictionary:
+    var result = _public(run)
+    # The last action may contain a screenshot. Stop reports lifecycle only;
+    # action polling still exposes the retained result without resending it here.
+    result.erase("action_result")
+    return result
 
 func stop_all() -> void:
     for id in runs:
