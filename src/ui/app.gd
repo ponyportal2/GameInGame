@@ -235,6 +235,15 @@ func _reload_game() -> void:
         return
     runner.load_game(store.game_path(current_game))
     _set_chat_busy_controls(false)
+    if not chat_overlay.visible:
+        _release_host_keyboard_focus()
+
+func _release_host_keyboard_focus() -> void:
+    # A clicked HUD button otherwise consumes the game's next Enter/Space as
+    # ui_accept (and Reload can restart the game again). Preserve game-owned focus.
+    var focused = get_viewport().gui_get_focus_owner()
+    if focused != null and host_ui_root.is_ancestor_of(focused):
+        focused.release_focus()
 
 func _reload_approval_changed(pending: bool) -> void:
     reload_notice.visible = pending
@@ -583,6 +592,7 @@ func _set_chat_visible(visible: bool) -> void:
         _restore_generated_input()
         chat_overlay.visible = false
         play_hud.visible = true
+        _release_host_keyboard_focus()
         Input.mouse_mode = gameplay_mouse_mode
         get_tree().paused = false
 

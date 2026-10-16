@@ -59,6 +59,7 @@ func put(path: String, text: String) -> void:
 func run() -> void:
     await test_empty_run_state()
     await test_manual_execution()
+    await test_reload_keyboard_focus()
     await test_reload_approval()
     await test_fallback()
     await test_startup_and_dependencies()
@@ -163,6 +164,50 @@ func test_manual_execution() -> void:
     app.agent.busy = false
     app._on_agent_finished(true)
     check(app.reload_game_buttons.all(func(button): return not button.disabled), "settling agent re-enables manual Reload")
+    app._show_library()
+    app.queue_free()
+    await process_frame
+    store.delete_game(created.name)
+
+func test_reload_keyboard_focus() -> void:
+    var store = Store.new()
+    var created = store.create_game("Reload Keyboard Regression")
+    put(created.path.path_join("main.gd"), "extends Node\nvar started = false\nfunc _unhandled_input(event):\n    if event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER, KEY_SPACE]:\n        started = true\n")
+    var app = load("res://main.tscn").instantiate()
+    root.add_child(app)
+    await process_frame
+    app._open_game(created.name)
+    app._run_game()
+    for iteration in 2:
+        var button = app.reload_game_buttons[0]
+        # A mouse click gives a normal Button keyboard focus before emitting pressed.
+        button.grab_focus()
+        button.pressed.emit()
+        await process_frame
+        var game = app.runner.active_game
+        var version = app.runner.runtime_log.load_version
+        var key = InputEventKey.new()
+        key.keycode = KEY_ENTER if iteration == 0 else KEY_SPACE
+        key.physical_keycode = key.keycode
+        key.pressed = true
+        root.push_input(key)
+        key = key.duplicate()
+        key.pressed = false
+        root.push_input(key)
+        await process_frame
+        check(app.runner.runtime_log.load_version == version and app.runner.active_game == game, "Enter/Space after gameplay Reload does not activate Reload again (%d)" % iteration)
+        check(is_instance_valid(game) and game.started, "Enter/Space after gameplay Reload reaches the game's start handler (%d)" % iteration)
+    app._set_chat_visible(true)
+    app.reload_game_buttons[1].grab_focus()
+    app.reload_game_buttons[1].pressed.emit()
+    check(app.chat_overlay.visible and app.chat_input.has_focus(), "chat Reload restores keyboard focus to chat input")
+    app._set_chat_visible(false)
+    check(root.gui_get_focus_owner() == null or not app.host_ui_root.is_ancestor_of(root.gui_get_focus_owner()), "resuming gameplay releases host keyboard focus")
+    var field = LineEdit.new()
+    app.runner.active_game.add_child(field)
+    field.grab_focus()
+    app._release_host_keyboard_focus()
+    check(field.has_focus(), "game-owned keyboard focus is preserved")
     app._show_library()
     app.queue_free()
     await process_frame
