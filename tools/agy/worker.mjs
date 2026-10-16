@@ -9,13 +9,13 @@ let session=config.session || '',active,started=false,stopping=false;
 const stateFile=join(config.bridge_dir,'operation.json');
 function state(enabled){writeFileSync(stateFile+'.tmp',JSON.stringify({active:enabled,session}));renameSync(stateFile+'.tmp',stateFile);}
 state(false);
-function finish(ok,error='',final) {
+function finish(ok,error='',final,initializationFailed=false) {
   if(!active)return;
   const operation=active;active=undefined;state(false);
   const result=reconcileText(operation.text,final);
   if(result.suffix)emit({type:'delta',kind:'assistant',text:result.suffix});
   if(!ok){stopping=true;server.close();}
-  emit(operation.accepted ? {type:'complete',ok,text:result.text,corrected:result.corrected,error,initialization_failed:!ok}
+  emit(operation.accepted ? {type:'complete',ok,text:result.text,corrected:result.corrected,error,runtime_failed:!ok,initialization_failed:initializationFailed}
     : {type:'response',id:operation.request.id,success:false,error,initialization_failed:true});
 }
 const server=new AgyServer(config,{
@@ -26,7 +26,7 @@ const server=new AgyServer(config,{
     if(record.event==='init'){
       const id=record.conversation_id;
       if(typeof id!=='string' || !id || (session && id!==session)){
-        finish(false,'AGY session could not be resumed. Start a new AGY session in Settings. The previous reference and chat are kept.');return;
+        finish(false,'AGY session could not be resumed. Start a new AGY session in Settings. The previous reference and chat are kept.',undefined,true);return;
       }
       session=id;state(true);
       writeFileSync(config.session_file+'.tmp',JSON.stringify({session}));renameSync(config.session_file+'.tmp',config.session_file);

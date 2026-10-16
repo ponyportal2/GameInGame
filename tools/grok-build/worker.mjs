@@ -65,8 +65,8 @@ async function prompt(request,operation){
   }catch(error){
     // session/new allocates an ID before a native conversation exists. Do not
     // persist an unresumable reference if runtime setup fails before any event.
-    if(!sessionSaved){stopping=true;server.close();error.initializationFailed=true;}
-    if(active===operation && !operation.cancelled)emit(operation.accepted ? {type:'complete',ok:false,text:operation.text,error:error.message,initialization_failed:!!error.initializationFailed} : {type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed});
+    if(!sessionSaved){stopping=true;server.close();error.runtimeFailed=true;}
+    if(active===operation && !operation.cancelled)emit(operation.accepted ? {type:'complete',ok:false,text:operation.text,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:!!error.runtimeFailed} : {type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:!!error.runtimeFailed});
   }
   finally{if(active===operation)active=undefined;operation.finish();}
 }

@@ -29,7 +29,7 @@ test('persistent native stream turns, canonical final answer, native model setti
   const args=JSON.parse(readFileSync(join(f.directory,'native-workspace','.agy-fixture-argv.json')));
   assert.deepEqual(args,['--agent','gamesmith','--disable-slash-commands','--input-format','stream-json','--output-format','stream-json']);
   f.send({type:'prompt',id:'three',message:'provider-error'});
-  const result=await f.until(r=>r.type==='complete' && !r.ok);assert.match(result.error,/Fixture provider error/);assert(result.initialization_failed);
+  const result=await f.until(r=>r.type==='complete' && !r.ok);assert.match(result.error,/Fixture provider error/);assert(result.runtime_failed);assert.notEqual(result.initialization_failed,true);
   assert.equal(JSON.parse(readFileSync(join(f.directory,'session.json'))).session,'agy-fixture-session');
 });
 test('explicit resume is passed and mismatched identity cannot overwrite reference',{timeout:15000},async t=>{

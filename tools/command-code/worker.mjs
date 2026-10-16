@@ -28,6 +28,7 @@ function policy(event){
   if(event.type==='compaction_start')emit({type:'status',text:'Command-code is compacting context…'});
   if(event.type==='mod_error'){
     const error=new Error('GameSmith policy mod failed: '+(event.error || event.message || JSON.stringify(event)));
+    error.initializationFailed=true;
     if(active)active.error=error;
     server?.close();
   }
@@ -88,8 +89,9 @@ createInterface({input:process.stdin}).on('line',async line=>{
       emit({type:'response',id:r.id,success:data.ok,data,error:data.error});
     }else emit({type:'complete',ok:result.stopReason==='end_turn',text:operation.text,error:result.stopReason==='end_turn'?'':'Command-code stopped: '+result.stopReason});
   }catch(error){
+    error=operation.error || error;
     if(!operation.cancelled){const initialization_failed=!operation.accepted;retire();const message=error.message+(session && initialization_failed?' Saved conversation was kept; check native Command-code session availability.':'');
-      emit(operation.accepted?{type:'complete',ok:false,text:operation.text,error:message,initialization_failed:true}:{type:'response',id:r.id,success:false,error:message,initialization_failed,data:{ok:false,error:message}});}
+      emit(operation.accepted?{type:'complete',ok:false,text:operation.text,error:message,initialization_failed:!!error.initializationFailed,runtime_failed:true}:{type:'response',id:r.id,success:false,error:message,initialization_failed,data:{ok:false,error:message}});}
   }finally{if(active===operation)active=undefined;}
 });
 process.stdin.on('end',()=>{retire();process.exit();});

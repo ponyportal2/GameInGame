@@ -6,6 +6,7 @@ signal assistant_message(text: String)
 signal llm_snippet(kind: String, text: String)
 signal llm_stream_delta(kind: String, text: String)
 signal llm_stream_end(kind: String)
+signal transcript_reconciled
 signal finished(ok: bool)
 signal reload_approval_changed(pending: bool)
 
@@ -57,6 +58,7 @@ var recovery_active := false
 var recovery_error := ""
 var recovery_attempt := 0
 var request_admitted := false
+var initialization_failed := false
 
 func configure(p_game_name: String, p_tools) -> void:
     game_name = p_game_name
@@ -90,6 +92,7 @@ func send_player_request(text: String) -> void:
     while generation == recovery_generation:
         recovery_error = ""
         request_admitted = false
+        initialization_failed = false
         await _send_player_attempt(RECOVERY_MESSAGE if admitted else text)
         if generation != recovery_generation:
             return
@@ -100,9 +103,10 @@ func send_player_request(text: String) -> void:
         # A dead adapter can leave a native backend alive. Retire the tree before
         # waiting/reopening the exact saved session, never replace its history.
         restart_runtime()
-        llm_stream_end.emit("assistant")
-        llm_stream_end.emit("thinking")
-        if recovery_attempt >= recovery_delays.size():
+        # Abandoned deltas are not durable chat. Rebuild the view before either
+        # retry status or the final error; preserve persisted tools and dialogue.
+        transcript_reconciled.emit()
+        if initialization_failed or recovery_attempt >= recovery_delays.size():
             recovery_active = false
             _fail(recovery_error)
             return
@@ -153,6 +157,7 @@ func _send_player_attempt(text: String) -> void:
         return
     _record_player_request(text)
     if not bool(ready.get("ok", false)):
+        initialization_failed = true
         _fail(str(ready.get("error", "Pi is unavailable.")))
         return
 
@@ -168,6 +173,7 @@ func _send_player_attempt(text: String) -> void:
     if operation != operation_id:
         return
     if not bool(accepted.get("success", false)):
+        initialization_failed = bool(accepted.get("initialization_failed", false))
         _fail("Pi rejected the prompt: " + str(accepted.get("error", "unknown error")))
         return
     request_admitted = true

@@ -44,7 +44,8 @@ function ready() {
     else session=(await server.request('/session','POST',{title:config.name})).id;
     saveSession();emit({type:'session',session});
   })().catch(async error=>{
-    if(harness==='kilo'){stopping=true;await server.close();error.initializationFailed=true;}
+    error.initializationFailed=true;
+    if(harness==='kilo'){stopping=true;await server.close();}
     throw error;
   });
 }

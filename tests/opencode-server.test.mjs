@@ -18,6 +18,22 @@ test('Chocolatey launcher resolves to the native executable without a transient 
   assert.equal(resolveExecutable(shim,'win32').bin,native);
 });
 
+test('OpenCode startup rejection is explicitly initialization failure, not a failed model turn', {timeout:10000}, async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-opencode-init-'));
+  const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));
+  const worker=spawn(process.execPath,['tools/opencode/worker.mjs',configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(workspace,'missing-opencode.exe')}});
+  const closed=once(worker,'close');
+  const response=new Promise((resolve,reject)=>{
+    worker.once('error',reject);worker.once('exit',code=>reject(new Error('Worker exited before response: '+code)));
+    createInterface({input:worker.stdout}).on('line',line=>{const r=JSON.parse(line);if(r.type==='response')resolve(r);});
+  });
+  try {
+    worker.stdin.write(JSON.stringify({id:'init',type:'prompt',message:'hello'})+'\n');
+    const result=await response;assert.equal(result.success,false);assert.equal(result.initialization_failed,true);
+  } finally {worker.stdin.end();await closed;}
+});
+
 test('adapter streams before completion, rejects overlapping prompts during Stop and cleans up on EOF', {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-worker-'));
   const config={workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),plugin:join(process.cwd(),'tools/opencode/gamesmith.mjs'),mcp:join(process.cwd(),'tools/opencode/mcp.mjs'),prompt_path:join(workspace,'prompt.md')};

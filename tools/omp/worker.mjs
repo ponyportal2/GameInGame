@@ -19,7 +19,7 @@ const server=new OmpServer(config,{
   onExit:error=>{
     if(stopping)return;
     stopping=true;
-    if(active){active.abort.abort();emit(active.dispatched ? {type:'complete',ok:false,text:active.text,error:error.message,initialization_failed:true} : {type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.resolve?.({status:'aborted'});active.settle();active.finish();active=undefined;}
+    if(active){active.abort.abort();emit(active.dispatched ? {type:'complete',ok:false,text:active.text,error:error.message,runtime_failed:true} : {type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.resolve?.({status:'aborted'});active.settle();active.finish();active=undefined;}
     server.close();
     // Retire the adapter even if no player turn was active. Otherwise the host
     // sees a live worker and keeps sending requests to a dead native backend.

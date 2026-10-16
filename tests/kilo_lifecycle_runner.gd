@@ -10,9 +10,9 @@ func check(value: bool, message: String) -> void:
     if not value:
         failures += 1
 
-func wait_idle() -> void:
+func wait_idle(preserve_recovery := false) -> void:
     # Isolate native lifecycle failures; shared recovery has its own matrix.
-    app.agent.recovery_delays = []
+    if not preserve_recovery: app.agent.recovery_delays = []
     while app.agent.busy:
         await process_frame
 
@@ -96,13 +96,17 @@ func run() -> void:
     app._show_library()
     JsonStore.write_dict(session_file, {"session": "ses_missing"})
     app._open_game(game)
+    # Keep automatic recovery enabled: a stale reference must bypass it.
+    app.agent.recovery_delays = [0.02, 0.02, 0.02, 0.02]
     app.agent.send_player_request("follow up")
-    await wait_idle()
+    await wait_idle(true)
+    check(app.agent.recovery_attempt == 0, "stale Kilo session immediately bypasses automatic backoff")
     check("Start a new Kilo session" in app.agent.last_error, "missing native Kilo session explains reset recovery")
     check(app.agent.rpc == null or not app.agent.rpc.running, "failed Kilo initialization retires its adapter")
     check(JsonStore.read_dict(session_file, {}).get("session") == "ses_missing", "failed resume preserves the saved reference")
     app._open_settings()
     check(app.codex_new_session_button.visible and "Kilo" in app.codex_new_session_button.text, "Kilo settings expose native session reset")
+    check(not app.codex_new_session_button.disabled, "failed initialization immediately enables session reset")
     app._request_new_codex_session()
     check(app.codex_session_dialog.visible, "Kilo reset asks for confirmation")
     app._cancel_new_codex_session()

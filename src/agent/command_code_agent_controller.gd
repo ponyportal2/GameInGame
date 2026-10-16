@@ -1,7 +1,6 @@
 extends "res://src/agent/pi_agent_controller.gd"
 
 const CommandSession = preload("res://src/agent/command_code_session.gd")
-signal transcript_reconciled
 
 var result_corrected := false
 var result_received := false
@@ -28,6 +27,7 @@ func _send_player_attempt(text: String) -> void:
     var ready = _start_command_runtime()
     _record_player_request(text)
     if not ready.get("ok", false):
+        initialization_failed = true
         _fail(str(ready.get("error", _harness_name() + " is unavailable.")))
         return
     await _maybe_auto_compact("before_request")
@@ -42,7 +42,8 @@ func _send_player_attempt(text: String) -> void:
     if operation != operation_id:
         return
     if not accepted.get("success", false):
-        restart_after_finish = bool(accepted.get("initialization_failed", false))
+        initialization_failed = bool(accepted.get("initialization_failed", false))
+        restart_after_finish = initialization_failed or bool(accepted.get("runtime_failed", false))
         _fail(str(accepted.get("error", _harness_name() + " rejected the request.")))
         return
     request_admitted = true
@@ -131,7 +132,8 @@ func _on_command_record(record: Dictionary) -> void:
         "context":
             last_context_tokens = int(record.tokens) if record.get("tokens") != null else 0
         "complete":
-            restart_after_finish = bool(record.get("initialization_failed", false))
+            initialization_failed = bool(record.get("initialization_failed", false))
+            restart_after_finish = initialization_failed or bool(record.get("runtime_failed", false))
             result_corrected = bool(record.get("corrected", false))
             result_received = true
             result_text = str(record.get("text", ""))

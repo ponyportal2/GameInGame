@@ -37,6 +37,18 @@ test('unknown permission/terminal requests are denied rather than inferred from 
   assert.equal(answers.terminal.error.code,-32601);
   assert.equal(answers.filesystem.error.code,-32601);
 });
+
+test('provider rejection after admission retires runtime without claiming initialization failed',async t=>{
+  const f=await fixture(t);assert.equal((await f.command('prompt','provider-error')).success,true);
+  const result=await f.complete();assert.equal(result.ok,false);assert.match(result.error,/Fixture provider error/);
+  assert.equal(result.initialization_failed,false);assert.equal(result.runtime_failed,true);
+});
+
+test('policy failure after admission remains non-retryable',async t=>{
+  const f=await fixture(t);assert.equal((await f.command('prompt','policy-error')).success,true);
+  const result=await f.complete();assert.equal(result.ok,false);assert.match(result.error,/Fixture policy validation failed/);
+  assert.equal(result.initialization_failed,true);assert.equal(result.runtime_failed,true);
+});
 for(const outcome of ['summarized','too-small','failed','unexpected'])test('persistent native compaction outcome: '+outcome,async t=>{
   const f=await fixture(t,'compact-'+outcome);await f.command('prompt','hello');await f.complete();
   const before=JSON.parse(readFileSync(join(f.dir,'backend.json'))).pid;f.clear();

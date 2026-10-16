@@ -143,7 +143,7 @@ test('explicit saved file survives worker recreation and native Stop',{timeout:1
 
 test('backend exit requests host retirement rather than poisoning subsequent requests',{timeout:15000},async t=>{
   const f=fixture(t);f.send({type:'prompt',id:'one',message:'exit-backend'});
-  const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,false);assert.equal(result.initialization_failed,true);
+  const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,false);assert.equal(result.runtime_failed,true);assert.notEqual(result.initialization_failed,true);
 });
 
 test('provider failure settles without forgetting established native history',{timeout:15000},async t=>{

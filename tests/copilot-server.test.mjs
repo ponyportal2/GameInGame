@@ -91,7 +91,7 @@ test('native Stop settles its prompt before host retirement',{timeout:15000},asy
 });
 test('first-prompt initialization failure does not save an unresumable ID',{timeout:15000},async t=>{
   const f=fixture(t,{GAMESMITH_COPILOT_FAIL_METHOD:'session/prompt'});f.send({type:'prompt',id:'one',message:'hello'});
-  const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,false);assert.equal(result.initialization_failed,true);
+  const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,false);assert.equal(result.initialization_failed,false);assert.equal(result.runtime_failed,true);
   assert.equal(existsSync(join(f.directory,'session.json')),false);
 });
 

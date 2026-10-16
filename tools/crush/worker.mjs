@@ -13,7 +13,7 @@ state(false);
 function saveSession(){if(saved)return;writeFileSync(config.session_file+'.tmp',JSON.stringify({session}));renameSync(config.session_file+'.tmp',config.session_file);saved=true;emit({type:'session',session});}
 function fail(error){
   if(stopping)return;stopping=true;state(false);
-  if(active){emit(active.accepted?{type:'complete',ok:false,text:active.stream?[...active.stream.texts.values()].join(''):'',error:error.message,initialization_failed:true}:{type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.finish();active=undefined;}
+  if(active){emit(active.accepted?{type:'complete',ok:false,text:active.stream?[...active.stream.texts.values()].join(''):'',error:error.message,runtime_failed:true}:{type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});active.finish();active=undefined;}
   server.close();
 }
 const server=new CrushServer(config,{
@@ -68,7 +68,7 @@ async function prompt(request,operation){
     // Accepted native turns are durable even if Stop occurs before first text.
     if(active===operation)saveSession();
   }catch(error){
-    if(active===operation){state(false);if(!operation.cancelled)emit(operation.accepted?{type:'complete',ok:false,text:'',error:error.message,initialization_failed:true}:{type:'response',id:request.id,success:false,error:error.message,initialization_failed:true});active=undefined;operation.finish();}
+    if(active===operation){state(false);if(!operation.cancelled)emit(operation.accepted?{type:'complete',ok:false,text:'',error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:true}:{type:'response',id:request.id,success:false,error:error.message,initialization_failed:!!error.initializationFailed,runtime_failed:true});active=undefined;operation.finish();}
     stopping=true;server.close();
   }
 }
