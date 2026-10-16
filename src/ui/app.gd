@@ -376,22 +376,33 @@ func _attach_game_agent() -> void:
     agent.finished.connect(_on_agent_finished)
     agent.reload_approval_changed.connect(_reload_approval_changed)
 
-func _finish_settings_save() -> void:
+func _finish_settings_save(confirm_blender_reset: bool = false) -> void:
     if current_game != "":
         var selected = str(game_harness_option.get_item_metadata(game_harness_option.selected))
         var game_meta = metadata.read_game(current_game)
         var blender_changed = game_blender_check.button_pressed != bool(game_meta.get("blender_enabled", true))
-        if blender_changed:
+        var harness_changed = selected != str(game_meta.get("harness", "pi"))
+        var archive = ""
+        if blender_changed and confirm_blender_reset:
+            var archived = preload("res://src/agent/codex_agent_controller.gd").archive_session(metadata, current_game)
+            if not archived.get("ok", false):
+                _toast(str(archived.get("error", "Could not preserve the Codex session.")))
+                return
+            archive = str(archived.get("archive", ""))
+        if blender_changed or harness_changed:
             game_meta.blender_enabled = game_blender_check.button_pressed
+            game_meta.harness = selected
+            # Commit both per-game changes together, before retiring any runtime.
             if not metadata.write_game(current_game, game_meta):
-                _toast("Could not save Blender availability for this game.")
+                var message = "Could not save game settings. Blender availability and harness were not changed."
+                if archive != "":
+                    var session_file = ProjectSettings.globalize_path(metadata.game_meta_dir(current_game).path_join("codex/session.json"))
+                    if FileAccess.file_exists(session_file) or DirAccess.rename_absolute(archive, session_file) != OK:
+                        message += " Could not restore the Codex session reference; it is preserved at %s." % archive
+                _toast(message)
                 return
             tools.blender_enabled = game_blender_check.button_pressed
-        if selected != str(game_meta.get("harness", "pi")):
-            game_meta.harness = selected
-            if not metadata.write_game(current_game, game_meta):
-                _toast("Could not save the game harness. Try again after fixing storage access.")
-                return
+        if harness_changed:
             if is_instance_valid(agent):
                 agent.editor_guard = null # Transfer ownership without releasing it.
                 remove_child(agent) # _exit_tree closes the old backend before replacement.
@@ -404,6 +415,10 @@ func _finish_settings_save() -> void:
             _append_chat("system", "Switched to %s. Game files and chat are shared; each harness keeps its own agent session." % game_harness_option.get_item_text(game_harness_option.selected))
         elif blender_changed and is_instance_valid(agent):
             agent.restart_runtime()
+        elif not _uses_native_agent_settings() and is_instance_valid(agent) and agent.has_method("settings_changed"):
+            agent.settings_changed()
+        if archive != "":
+            _append_chat("system", "Blender availability changed. The previous Codex session reference was archived; the next Codex message starts a fresh conversation. Chat and game files were kept.")
     settings_dialog.visible = false
     _toast("Settings saved.")
 
@@ -703,15 +718,8 @@ func _confirm_new_codex_session() -> void:
         if codex_session_game != current_game or not is_instance_valid(agent) or agent.busy:
             _cancel_new_codex_session()
             return
-        var archived = preload("res://src/agent/codex_agent_controller.gd").archive_session(metadata, current_game)
         _cancel_new_codex_session()
-        if not archived.get("ok", false):
-            _toast(str(archived.get("error", "Could not preserve the Codex session.")))
-            return
-        if str(metadata.read_game(current_game).get("harness", "pi")) == "codex":
-            agent.restart_runtime()
-        _append_chat("system", "Blender availability changed. The previous Codex session reference was archived; the next Codex message starts a fresh conversation. Chat and game files were kept.")
-        _save_settings()
+        _save_settings(true)
         return
     if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or not HarnessInventory.supports_reset(str(metadata.read_game(current_game).get("harness", "pi"))):
         _cancel_new_codex_session()
@@ -860,7 +868,7 @@ func _provider_changed(index: int) -> void:
     key_edit.text = str(creds.get(id, ""))
     custom_base_edit.get_parent().visible = id == "custom"
 
-func _save_settings() -> void:
+func _save_settings(confirm_blender_reset: bool = false) -> void:
     if current_game != "" and not game_edit_guard.acquire():
         _toast(game_edit_guard.error)
         return
@@ -875,7 +883,7 @@ func _save_settings() -> void:
         if is_instance_valid(tools.blender_supervisor) and tools.blender_supervisor.has_running():
             _toast("Stop Blender or wait for it to finish before changing Blender tools.")
             return
-        if FileAccess.file_exists(metadata.game_meta_dir(current_game).path_join("codex/session.json")):
+        if not confirm_blender_reset and FileAccess.file_exists(metadata.game_meta_dir(current_game).path_join("codex/session.json")):
             native_session_title.text = "Update Blender tools?"
             native_session_description.text = "Codex cannot change an existing conversation's tool list. Applying this setting starts a fresh Codex conversation next time you use it. The previous session reference is archived; your chat and game files are kept. The old conversation will not be included in the new Codex context."
             codex_session_game = current_game
@@ -893,7 +901,7 @@ func _save_settings() -> void:
         if not metadata.save_global_settings(host_settings):
             _toast("Could not save host settings.")
             return
-        _finish_settings_save()
+        _finish_settings_save(confirm_blender_reset)
         return
     var id = str(provider_option.get_item_metadata(provider_option.selected))
     var settings = metadata.global_settings()
@@ -922,15 +930,13 @@ func _save_settings() -> void:
         game_meta.model_override = game_override_model.text.strip_edges()
         if not metadata.write_game(current_game, game_meta):
             failures.append("game settings")
-        if is_instance_valid(agent) and agent.has_method("settings_changed"):
-            agent.settings_changed()
     if not failures.is_empty():
         var message = "Could not save %s. Some other changes may have been saved; retry after fixing storage access." % ", ".join(failures)
         AppLoggerScript.global_event("settings.save_failed", message, "ERROR")
         compaction_status_label.text = message
         _toast(message)
         return
-    _finish_settings_save()
+    _finish_settings_save(confirm_blender_reset)
 
 func _select_provider_id(id: String) -> void:
     for i in provider_option.item_count:

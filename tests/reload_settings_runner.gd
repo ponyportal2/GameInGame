@@ -1,5 +1,29 @@
 extends SceneTree
 
+class FailingMetadata extends "res://src/core/metadata_store.gd":
+    var failure := ""
+    var failures_seen := 0
+    var archived_at_failure := false
+
+    func save_global_settings(data: Dictionary) -> bool:
+        if failure == "global":
+            failures_seen += 1
+            return false
+        return super.save_global_settings(data)
+
+    func save_credentials(data: Dictionary) -> bool:
+        if failure == "credentials":
+            failures_seen += 1
+            return false
+        return super.save_credentials(data)
+
+    func write_game(game: String, data: Dictionary) -> bool:
+        if failure == "provider" or (failure == "commit" and not data.get("blender_enabled", true)):
+            failures_seen += 1
+            archived_at_failure = not FileAccess.file_exists(game_meta_dir(game).path_join("codex/session.json"))
+            return false
+        return super.write_game(game, data)
+
 var failures := 0
 
 func _init() -> void:
@@ -86,6 +110,8 @@ func run() -> void:
         check(not app.agent.pending_reload.is_empty() and not FileAccess.file_exists(bridge.path_join("response-manual.json")), "turning automatic approval off restores the wait for harness %d" % harness)
         app.agent._clear_pending_reload()
         app._show_library()
+    for harness_id in ["pi", "codex"]:
+        await check_failed_blender_apply(app, harness_id)
     var prompt = preload("res://src/pi/pi_runtime_config.gd")._game_prompt()
     app._open_new_game()
     app.new_game_blender_check.button_pressed = true
@@ -120,3 +146,49 @@ func run() -> void:
     app.queue_free()
     await process_frame
     quit(1 if failures else 0)
+
+func check_failed_blender_apply(app, harness_id: String) -> void:
+    app._open_new_game()
+    app.name_edit.text = "Blender transaction " + harness_id
+    for i in app.harness_option.item_count:
+        if str(app.harness_option.get_item_metadata(i)) == harness_id:
+            app.harness_option.select(i)
+    app.new_game_blender_check.button_pressed = true
+    app._create_game()
+    var original_metadata = app.metadata
+    var failing = FailingMetadata.new()
+    app.metadata = failing
+    var session_path = failing.game_meta_dir(app.current_game).path_join("codex/session.json")
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(session_path.get_base_dir()))
+    var session_contents = '{"session":"transaction-retained-thread"}'
+    var file = FileAccess.open(session_path, FileAccess.WRITE)
+    file.store_string(session_contents)
+    file.close()
+    var modes = ["global", "commit"] if harness_id == "codex" else ["global", "credentials", "provider", "commit"]
+    for mode in modes:
+        app._open_settings()
+        app.game_blender_check.button_pressed = false
+        app.agent.bridge_dir = "transaction-runtime-fixture"
+        var chat_before = app.transcript_view.get_parsed_text()
+        failing.failure = mode
+        failing.failures_seen = 0
+        app._save_settings()
+        check(app.codex_session_dialog.visible and failing.failures_seen == 0, "%s/%s asks before any settings writes" % [harness_id, mode])
+        app._confirm_new_codex_session()
+        check(failing.failures_seen == 1, "%s/%s injects the intended save failure" % [harness_id, mode])
+        check(failing.read_game(app.current_game).blender_enabled and app.tools.blender_enabled, "%s/%s preserves Blender availability" % [harness_id, mode])
+        check(FileAccess.get_file_as_string(session_path) == session_contents, "%s/%s preserves exact active Codex reference" % [harness_id, mode])
+        check(DirAccess.get_files_at(session_path.get_base_dir()).size() == 1, "%s/%s leaves no stranded session archive" % [harness_id, mode])
+        check(app.transcript_view.get_parsed_text() == chat_before, "%s/%s emits no false success transcript" % [harness_id, mode])
+        check(app.agent.bridge_dir == "transaction-runtime-fixture", "%s/%s does not retire the active runtime" % [harness_id, mode])
+        check(app.settings_dialog.visible, "%s/%s keeps settings open for retry" % [harness_id, mode])
+        if mode == "commit":
+            check(failing.archived_at_failure, "%s exercises rollback after actual archiving" % harness_id)
+    failing.failure = ""
+    app._save_settings()
+    app._confirm_new_codex_session()
+    check(not failing.read_game(app.current_game).blender_enabled and not FileAccess.file_exists(session_path), "%s retries successfully after storage recovery" % harness_id)
+    check(app.agent.bridge_dir == "" and app.transcript_view.get_parsed_text().contains("Blender availability changed"), "%s announces and retires only after commit" % harness_id)
+    app.metadata = original_metadata
+    app._show_library()
+    await process_frame
