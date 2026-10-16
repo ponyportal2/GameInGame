@@ -13,12 +13,14 @@ node tools/testing/verify.mjs --suite full --reuse C:/path/to/results.json
 
 `summary`, `errors`, and `full` execute the same selection and save the same complete evidence. Summary prints phases, failures, infrequent long-running notices and the final result. Errors adds bounded failure excerpts. Full streams child stdout/stderr. Expected `ERROR` diagnostics never determine pass/fail: child exit status and deadlines do. Failed entries link a bounded diagnostic JSON and full log. `results.json` is authoritative; atomic `progress.json` is only for checking an apparent stall. No continuous polling is needed.
 
+`--rerun-failed` normally selects failed, interrupted or blocked tests. If the prior run reports `inputs_changed`, it reruns the entire original selection because that evidence was invalidated, even if every child test passed.
+
 Each run gets a new temporary artifact directory (printed at completion), or use `--artifacts <new-directory>`. All child logs, Godot engine logs and isolated application data remain available. `--jobs 4` bounds parallel Node files; Godot runners remain separate serial processes. `--timeout <milliseconds>` is a test deadline, never a product/model timeout. Missing tools and setup failures fail the verification instead of quietly skipping required tests.
 
 Suites:
 
 - `smoke`: orchestration, canonical assembly, core host and library checks.
-- `affected`: explicit conservative path mapping in `verification-plan.mjs`. Harness-local changes select its protocol/lifecycle tests plus shared ownership/recovery/assembly coverage. Pi, OpenCode, shared or unknown code changes select full coverage; documentation-only changes select none.
+- `affected`: explicit conservative path mapping in `verification-plan.mjs`. Harness-local changes select its protocol/lifecycle tests plus shared ownership/recovery/assembly coverage. Shared runtime modules select every inventory consumer. Changes to inherited Pi, Command-code, OpenCode or Cline controllers, and unknown code paths, select full coverage; documentation-only changes select none.
 - `<harness>`: harness Node suites, lifecycle, harness switching, shared native recovery and assembly.
 - `node`, `host`, `package`, `launcher`: individual layers.
 - `full`: all discovered Node files, all listed isolated host runners, PCK contents/structure and Go launcher tests. No paid model calls.

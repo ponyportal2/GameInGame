@@ -60,6 +60,12 @@ test('inventory paths and launcher stay synchronized; affected mapping is conser
  for(const id of ['node:workspace-paths','node:model-capabilities','node:diagnostic-delivery','node:empty-response-retry','host:turn_recovery','host:reliability','host:diagnostics'])assert(selectTests(root,'pi').some(t=>t.id===id),'Pi suite missing '+id);
  assert.equal(selectTests(root,'affected',['README.md']).length,0);
  assert.equal(selectTests(root,'affected',['src/core/game_tools.gd']).length,selectTests(root,'full').length);
+ for(const source of ['cline/mcp.mjs','codex/tools.mjs','kiro/mcp.mjs']){
+  const selected=new Set(selectTests(root,'affected',['tools/'+source]).map(t=>t.id));
+  for(const consumer of catalog.harnesses.filter(h=>h.modules.some(([,file])=>file===source)))
+   for(const entry of selectTests(root,consumer.id))assert(selected.has(entry.id),source+' misses '+consumer.id+': '+entry.id);
+ }
+ for(const parent of ['cline','command_code'])assert.equal(selectTests(root,'affected',['src/agent/'+parent+'_agent_controller.gd']).length,selectTests(root,'full').length,'inherited '+parent+' controller needs broad coverage');
  assert.equal(resolveTest(root,'host:opencode_stop').file,'tests/opencode_stop_runner.gd');
  assert.equal(resolveTest(root,'acceptance:windowed').phase,'acceptance');
  assert.throws(()=>resolveTest(root,'host:codex_integration'),/Unknown test/);
@@ -71,6 +77,8 @@ test('shared session persistence and failure records preserve native lifecycle d
  const error=Object.assign(new Error('bad policy'),{initializationFailed:true});
  assert.deepEqual(failureRecord({request:{id:'one'},accepted:false},error),{type:'response',id:'one',success:false,error:'bad policy',initialization_failed:true,runtime_failed:false});
  assert.equal(failureRecord({request:{id:'one'},accepted:true,text:'partial'},error).text,'partial');
+ assert.equal(failureRecord({request:{id:'one'},accepted:true},error,{requestPreserved:false}).request_preserved,false);
+ assert.equal(failureRecord({request:{id:'one'},accepted:true},error,{requestPreserved:true}).request_preserved,true);
 });
 
 test('deadlines fail boundedly and preserve diagnostics',async t=>{
@@ -84,6 +92,8 @@ test('changes during a run invalidate the evidence',async t=>{
  const dir=repository(t);writeFileSync(join(dir,'tests/mutate.test.mjs'),"import {writeFileSync} from 'node:fs';writeFileSync('changed.json','{}');\n");
  const result=await runVerification(parseArgs(['--test','node:mutate']),dir);
  assert.equal(result.tests[0].status,'passed');assert.equal(result.status,'failed');assert.equal(result.inputs_changed,true);
+ const rerun=await runVerification(parseArgs(['--rerun-failed',result.results_path]),dir);
+ assert.deepEqual(rerun.selection,['node:mutate']);assert.equal(rerun.tests[0].status,'passed');assert.equal(rerun.status,'passed');
 });
 
 test('missing runtime records setup failure and blocked selections for a focused rerun',async t=>{

@@ -44,6 +44,7 @@ func _send_player_attempt(text: String) -> void:
     if operation != operation_id:
         return
     if not accepted.get("success", false):
+        request_preserved = bool(accepted.get("request_preserved", true))
         initialization_failed = bool(accepted.get("initialization_failed", false))
         restart_after_finish = initialization_failed or bool(accepted.get("runtime_failed", false))
         _fail(str(accepted.get("error", _harness_name() + " rejected the request.")))
@@ -127,6 +128,7 @@ func _on_command_record(record: Dictionary) -> void:
         "context":
             last_context_tokens = int(record.tokens) if record.get("tokens") != null else 0
         "complete":
+            request_preserved = bool(record.get("request_preserved", true))
             initialization_failed = bool(record.get("initialization_failed", false))
             restart_after_finish = initialization_failed or bool(record.get("runtime_failed", false))
             result_corrected = bool(record.get("corrected", false))

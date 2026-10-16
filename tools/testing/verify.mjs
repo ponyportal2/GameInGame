@@ -35,7 +35,9 @@ export async function runVerification(options,root=ROOT){
   let tests=selectTests(root,options.suite,changed);
   if(options['rerun-failed']){
     const prior=JSON.parse(readFileSync(resolve(options['rerun-failed']),'utf8'));
-    const failed=prior.tests.filter(t=>['failed','interrupted','blocked'].includes(t.status)&&!t.id.startsWith('setup:')&&!t.id.startsWith('build:')).map(t=>t.id);
+    // Invalidated evidence proves none of the original selection against the
+    // current inputs, even when every individual process exited successfully.
+    const failed=prior.inputs_changed?prior.selection:prior.tests.filter(t=>['failed','interrupted','blocked'].includes(t.status)&&!t.id.startsWith('setup:')&&!t.id.startsWith('build:')).map(t=>t.id);
     if(prior.tests.some(t=>t.id==='build:package'&&t.status==='failed'))options.build=true;
     tests=failed.map(id=>{if(id.startsWith('live:')){options.live=id.slice(5);return {id,phase:'host',file:'tests/'+options.live.replaceAll('-','_')+'_integration_runner.gd'};}return resolveTest(root,id);});
   }

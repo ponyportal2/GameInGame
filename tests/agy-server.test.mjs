@@ -69,3 +69,9 @@ test('native hook and MCP guard fail closed with unavailable or idle operation s
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'write',arguments:{path:'idle.txt',content:'bad'}}})+'\n');
   assert.equal((await reply).result.isError,true);assert.equal(existsSync(join(directory,'idle.txt')),false);
 });
+
+ test('backend exit before native init retains the original recovery objective',{timeout:15000},async t=>{
+  const f=fixture(t,{GAMESMITH_AGY_EXIT_BEFORE_INIT:'1'});f.send({type:'prompt',id:'one',message:'build a game'});
+  const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,false);assert.equal(result.request_preserved,false);
+  assert.equal(existsSync(join(f.directory,'session.json')),false);
+});

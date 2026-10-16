@@ -66,7 +66,7 @@ for(const flag of ['GAMESMITH_CRUSH_WRONG_VERSION','GAMESMITH_CRUSH_WRONG_POLICY
 });
 test('HTTP prompt rejection does not save an allocated but unused session',{timeout:15000},async t=>{
   const f=fixture(t,{GAMESMITH_CRUSH_FAIL_METHOD:'agent/prompt'});f.send({type:'prompt',id:'one',message:'hello'});
-  const r=await f.until(r=>r.type==='complete');assert.equal(r.ok,false);assert.equal(r.initialization_failed,false);assert.equal(r.runtime_failed,true);assert.equal(existsSync(join(f.directory,'session.json')),false);
+  const r=await f.until(r=>r.type==='complete');assert.equal(r.ok,false);assert.equal(r.initialization_failed,false);assert.equal(r.runtime_failed,true);assert.equal(r.request_preserved,false);assert.equal(existsSync(join(f.directory,'session.json')),false);
 });
 test('SSE loss fails and retires rather than leaving a busy turn indefinitely',{timeout:15000},async t=>{
   const f=fixture(t);f.send({type:'prompt',id:'one',message:'lost-stream'});

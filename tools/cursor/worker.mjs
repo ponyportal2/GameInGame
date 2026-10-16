@@ -44,7 +44,7 @@ const server=new CursorServer(config,{
   },
   onExit:error=>{
     if(stopping)return;stopping=true;
-    if(active)emit(active.accepted ? {type:'complete',ok:false,text:active.text,error:error.message} : {type:'response',id:active.request.id,success:false,error:error.message,initialization_failed:true});
+    if(active)emit(failureRecord(active,Object.assign(error,{initializationFailed:!active.accepted,runtimeFailed:true}),{requestPreserved:sessionSaved}));
     active?.finish();active=undefined;server.close();process.stdout.write('',()=>process.exit(1));
   }
 });
@@ -69,7 +69,7 @@ async function prompt(request,operation){
     // session/new allocates an ID before a native conversation exists. Do not
     // persist an unresumable reference if runtime setup fails before any event.
     if(!sessionSaved){stopping=true;server.close();error.runtimeFailed=true;}
-    if(active===operation && !operation.cancelled)emit(failureRecord(operation,error));
+    if(active===operation && !operation.cancelled)emit(failureRecord(operation,error,{requestPreserved:sessionSaved}));
   }
   finally{if(active===operation)active=undefined;operation.finish();}
 }

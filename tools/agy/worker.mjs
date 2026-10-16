@@ -15,7 +15,7 @@ function finish(ok,error='',final,initializationFailed=false) {
   const result=reconcileText(operation.text,final);
   if(result.suffix)emit({type:'delta',kind:'assistant',text:result.suffix});
   if(!ok){stopping=true;server.close();}
-  emit(operation.accepted ? {type:'complete',ok,text:result.text,corrected:result.corrected,error,runtime_failed:!ok,initialization_failed:initializationFailed}
+  emit(operation.accepted ? {type:'complete',ok,text:result.text,corrected:result.corrected,error,runtime_failed:!ok,initialization_failed:initializationFailed,request_preserved:!!session}
     : {type:'response',id:operation.request.id,success:false,error,initialization_failed:true});
 }
 const server=new AgyServer(config,{

@@ -24,6 +24,9 @@ class FakeRpc extends Node:
         var ok: bool = owner_agent.prompts.size() > owner_agent.failures_before_success
         if owner_agent.stream:
             owner_agent._on_command_record({"type": "delta", "kind": "assistant", "text": "done" if ok else "wrong partial"})
+        if owner_agent.prompts.size() <= owner_agent.discard_attempts:
+            owner_agent._on_command_record({"type": "complete", "ok": false, "error": "fixture lost unsaved conversation", "request_preserved": false})
+            return {"success": true}
         owner_agent._on_command_record({"type": "complete", "ok": ok, "text": ("" if owner_agent.empty_answer else "done") if ok else "partial", "error": "" if ok else "fixture failed", "initialization_failed": not ok and owner_agent.initialization_failure})
         return {"success": true}
     func retire() -> void:
@@ -39,6 +42,7 @@ class Agent extends "res://src/agent/opencode_agent_controller.gd":
     var stream := false
     var initialization_failure := false
     var startup_failure := false
+    var discard_attempts := 0
     var restarts := 0
     var waits: Array = []
     var completions: Array = []
@@ -113,6 +117,15 @@ func idle(a) -> void:
     check(not a.busy, "request settles within fixture deadline")
 func run() -> void:
     var a = agent()
+    a.discard_attempts = 1
+    a.failures_before_success = 2
+    a.send_player_request("build a tower-defense game")
+    await idle(a)
+    check(a.prompts == ["build a tower-defense game", "build a tower-defense game", a.RECOVERY_MESSAGE], "lost first conversation retries original objective, then durable admission uses continuation")
+    check(a.transcript.rows.size() == 2 and a.transcript.rows[0].content == "build a tower-defense game", "first-turn recovery records original objective exactly once")
+    a.queue_free()
+    await process_frame
+    a = agent()
     a.failures_before_success = 2
     a.send_player_request("build once")
     await idle(a)

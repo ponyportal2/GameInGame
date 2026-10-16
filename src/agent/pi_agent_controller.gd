@@ -58,6 +58,7 @@ var recovery_active := false
 var recovery_error := ""
 var recovery_attempt := 0
 var request_admitted := false
+var request_preserved := true
 var initialization_failed := false
 
 func configure(p_game_name: String, p_tools) -> void:
@@ -92,11 +93,12 @@ func send_player_request(text: String) -> void:
     while generation == recovery_generation:
         recovery_error = ""
         request_admitted = false
+        request_preserved = true
         initialization_failed = false
         await _send_player_attempt(RECOVERY_MESSAGE if admitted else text)
         if generation != recovery_generation:
             return
-        admitted = admitted or request_admitted
+        admitted = (admitted or request_admitted) if request_preserved else false
         if recovery_error == "":
             recovery_active = false
             return

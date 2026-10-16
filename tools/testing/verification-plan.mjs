@@ -42,10 +42,11 @@ export function selectTests(root,suite='full',changed=[]) {
   const selected=new Map();
   for(const path of changed){
     if(/\.(md|png|jpg|zip)$/.test(path)&&!path.startsWith('tools/blender/'))continue;
-    const h=harnesses.find(h=>path.startsWith('tools/'+h.id+'/')||path==='src/agent/'+h.id.replaceAll('-','_')+'_agent_controller.gd');
-    // Pi controller and OpenCode transport are inherited by other adapters.
-    const isolated=h&&!['pi','opencode'].includes(h.id);
-    const subset=isolated?selectTests(root,h.id):tests;
+    const consumers=harnesses.filter(h=>path.startsWith('tools/'+h.id+'/')||path===h.controller||h.modules.some(([,source])=>path==='tools/'+source));
+    // These controllers own inherited lifecycle behavior, not just one harness.
+    // Keep this explicit rather than guessing GDScript dependencies.
+    const inherited=['pi','command_code','opencode','cline'].some(id=>path==='src/agent/'+id+'_agent_controller.gd');
+    const subset=consumers.length&&!inherited?consumers.flatMap(h=>selectTests(root,h.id)):tests;
     for(const t of subset)selected.set(t.id,t);
   }
   return [...selected.values()];
