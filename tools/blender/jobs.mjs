@@ -14,7 +14,7 @@ export function warningCapture() {
   const warnings=[],seen=new Set(),streams=new Map();let dropped=0;
   const line=text=>{
     text=text.replace(/\x1b\[[0-9;]*m/g,'').trim();
-    if(!/\b(?:\w*warning|warn|error|unsupported|fallback)\b|\b(?:not\s+supported|falling\s+back)\b/i.test(text))return;
+    if(!/\b(?:warn(?:ing)?|(?:Bytes|Deprecation|Encoding|Future|Import|PendingDeprecation|Resource|Runtime|Syntax|Unicode|User)Warning)\s*:|\b(?:error|unsupported|fallback)\b|\b(?:not\s+supported|falling\s+back)\b/i.test(text))return;
     text=text.slice(0,384);
     if(seen.has(text))return;
     if(warnings.length===16){dropped++;return;}

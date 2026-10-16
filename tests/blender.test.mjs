@@ -13,12 +13,17 @@ const workspace=()=>mkdtempSync(join(tmpdir(),'gs-blender-'));
 test('warning recognition uses diagnostic tokens and phrases, not identifier substrings',()=>{
   const capture=warningCapture();
   const diagnostics=['WARNING: export dropped vertex colors','Warning: missing image',
-    'DeprecationWarning: Material.use_nodes','ERROR: export failed',
+    'DeprecationWarning: Material.use_nodes','RuntimeWarning: invalid value',
+    'UserWarning: missing UV map','WARN: export advisory','ERROR: export failed',
     'unsupported material connection','Feature is not supported',
     'Using fallback material','Falling back to CPU'];
   const ordinary=['INFO: Extracting primitive: WaterfallBackMesh','INFO: ErrorMaterial',
     'INFO: WarningMaterial','INFO: UnsupportedMesh','INFO: FallbackMaterial',
-    'INFO: not supportedMaterial','INFO: falling backMesh'];
+    'INFO: not supportedMaterial','INFO: falling backMesh',
+    'INFO: Extracting object: TextureWarning','INFO: Mesh: NoWarning',
+    'INFO: MaterialWarning','INFO: MaterialWarning: exported',
+    'INFO: TextureWarning: exported','INFO: NoWarning: exported',
+    'INFO: UserWarningMaterial','INFO: CustomRuntimeWarning: exported'];
   capture.push(Buffer.from([...ordinary,...diagnostics].join('\n')));
   capture.finish();
   assert.deepEqual(capture.snapshot(),{warnings:diagnostics,warnings_dropped:0});
@@ -38,7 +43,7 @@ test('warning summaries survive progress, chunk boundaries and separate output s
 });
 test('warning summaries bound noisy output and disclose omissions',()=>{
   const capture=warningCapture();
-  for(let n=0;n<20;n++)capture.push(Buffer.from('WARNING '+n+': '+'x'.repeat(500)+'\n'));
+  for(let n=0;n<20;n++)capture.push(Buffer.from('WARNING: '+n+' '+'x'.repeat(500)+'\n'));
   capture.finish();
   assert.equal(capture.snapshot().warnings.length,16);
   assert.equal(capture.snapshot().warnings_dropped,4);
