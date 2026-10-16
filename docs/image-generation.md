@@ -36,6 +36,10 @@ AGY subagent IDs come from its documented [`subagent_info` stream records](https
 
 Capability probes cannot guarantee image entitlement, regional availability or remaining quota without an actual image turn. Native generation failures are retained outside the game and shown alongside later capability checks. Resolve the reported problem and explicitly retry the selected backend. No vendor switch happens automatically. A five-minute deadline and the existing GameSmith process-tree cancellation path bound native jobs.
 
+Grok artifacts may come from its configured `GROK_HOME` (default `~/.grok`). GameSmith validates the returned file under that storage root and the exact native session's image directory, treating the cwd-group name as opaque, including Grok's hashed long-path groups.
+
+After worker shutdown, GameSmith removes each terminal job's private directory, including reference copies and intermediate images; capability-probe directories are also removed. Small result/error metadata and the published game image remain. Native harness caches remain managed by their harnesses. Cleanup failures are logged; directories from older versions or an interrupted host are not automatically swept.
+
 Older Codex coding conversations have a fixed tool registry. If they predate `generate_image`, use **Settings > This game > Start new Codex session** to obtain the new tool. This explicitly starts fresh native context and preserves the displayed chat; image settings never silently archive a conversation.
 
 ## Verification

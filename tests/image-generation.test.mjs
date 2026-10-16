@@ -13,13 +13,13 @@ import {permittedImageTool} from '../tools/images/image-native-hook.mjs';
 
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==','base64');
 function fixture(t,harness='codex',mode='',extra={}){
-  const base=mkdtempSync(join(tmpdir(),'gs-image-test-')),directory=join(base,'private'),workspace=join(base,'game');
+  const base=mkdtempSync(join(tmpdir(),'gs-image-test-')),directory=join(base,mode==='grok-long'?'private-'+ 'é'.repeat(35):'private'),workspace=join(base,'game');
   mkdirSync(directory);mkdirSync(workspace);writeFileSync(join(workspace,'keep.txt'),'unchanged');writeFileSync(join(workspace,'ref.png'),png);
   assembleHarnessRuntime(harness,directory);
   const config={harness,directory,workspace,prompt:'A circle',target_path:'assets/generated/circle.png',...extra};
   writeFileSync(join(directory,'job.json'),JSON.stringify(config));
   const variable={codex:'CODEX',agy:'AGY',cursor:'CURSOR','grok-build':'GROK_BUILD'}[harness];
-  const child=spawn(process.execPath,[join(directory,'image-worker.mjs'),join(directory,'job.json')],{env:{...process.env,USERPROFILE:join(base,'native-home'),HOME:join(base,'native-home'),['GAMESMITH_'+variable+'_BIN']:resolve('tools/testing/fake-image-native.mjs'),GAMESMITH_IMAGE_FIXTURE:mode},windowsHide:true});
+  const child=spawn(process.execPath,[join(directory,'image-worker.mjs'),join(directory,'job.json')],{env:{...process.env,USERPROFILE:join(base,'native-home'),HOME:join(base,'native-home'),GROK_HOME:mode==='grok-custom'?join(base,'custom-grok'):'',['GAMESMITH_'+variable+'_BIN']:resolve('tools/testing/fake-image-native.mjs'),GAMESMITH_IMAGE_FIXTURE:mode},windowsHide:true});
   let stderr='';child.stderr.on('data',b=>stderr+=b);const records=[],waiters=[];
   createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);records.push(r);for(const w of [...waiters])if(w.p(r)){waiters.splice(waiters.indexOf(w),1);clearTimeout(w.timer);w.resolve(r)}});
   t.after(()=>{if(child.exitCode===null)killProcessTree(child.pid)});
@@ -88,6 +88,16 @@ test('capability detection rejects unavailable native capability without generat
 test('AGY discovers the single image belonging to its dedicated image-generator subagent',async t=>{
   const f=fixture(t,'agy','agy-subagent');await f.until(r=>r.type==='image_ready');
   assert.deepEqual(readFileSync(join(f.directory,'result.raw')),png);
+});
+for(const mode of ['grok-session','grok-custom','grok-long'])test('Grok accepts exact-session native artifact: '+mode,async t=>{
+  const f=fixture(t,'grok-build',mode);
+  if(mode==='grok-long')assert(Buffer.byteLength(encodeURIComponent(join(f.directory,'native-workspace')))>255);
+  await f.until(r=>r.type==='image_ready');assert.deepEqual(readFileSync(join(f.directory,'result.raw')),png);
+  assert(!existsSync(join(f.directory,'native-workspace/output.png')),'artifact came from native session storage');
+});
+for(const mode of ['grok-foreign','grok-link','grok-outside'])test('Grok rejects foreign-session or escaping native artifact: '+mode,async t=>{
+  const f=fixture(t,'grok-build',mode),r=await f.until(r=>r.type==='image_error');
+  assert.match(r.error,/escaped its allowed output locations/);assert(!existsSync(join(f.workspace,'assets')));
 });
 test('AGY rejects ambiguous native artifacts instead of guessing',async t=>{
   const f=fixture(t,'agy','agy-ambiguous');const r=await f.until(r=>r.type==='image_error');assert.match(r.error,/multiple image artifacts/);

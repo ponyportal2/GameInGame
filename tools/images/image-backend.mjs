@@ -1,6 +1,6 @@
 import * as Native from './server.mjs';
 import {writeFile,mkdir,realpath,readdir} from 'node:fs/promises';
-import {join,resolve} from 'node:path';
+import {join,resolve,relative,sep} from 'node:path';
 import {homedir} from 'node:os';
 import {within,imageBytes,snapshot} from './image-job.mjs';
 
@@ -23,7 +23,15 @@ export function createBackend(config){
   }
   async function safeArtifact(value,session,conversations=[]){
     const roots=[await realpath(join(config.directory,'native-workspace'))];
-    if(config.harness==='grok-build' && /^[a-zA-Z0-9_-]+$/.test(session || ''))roots.push(join(homedir(),'.grok','sessions',encodeURIComponent(server.cwd),session,'images'));
+    const grokSessions=config.harness==='grok-build' && /^[a-zA-Z0-9_-]+$/.test(session || '')
+      ? await realpath(join(process.env.GROK_HOME || join(homedir(),'.grok'),'sessions')).catch(error=>{if(error.code==='ENOENT')return undefined;throw error;}) : undefined;
+    function grokArtifact(path){
+      if(!grokSessions || !within(grokSessions,path))return false;
+      // Grok owns the cwd-group name (including its long-path hash format).
+      // Validate the returned artifact, never reconstruct or scan that group.
+      const parts=relative(grokSessions,path).split(sep);
+      return parts.length>=4 && parts[1]===session && parts[2]==='images';
+    }
     const agyRoots=config.harness==='agy'?conversations.map(id=>join(homedir(),'.gemini','antigravity','brain',id)):[];
     roots.push(...agyRoots);
     const candidates=[];
@@ -39,7 +47,7 @@ export function createBackend(config){
     async function selected(paths){
       for(const candidate of paths){
         let path;try{path=await realpath(resolve(server.cwd || config.directory,candidate));}catch{continue;}
-        if(!roots.some(root=>within(root,path)))throw new Error('Native image artifact escaped its allowed output locations.');
+        if(!roots.some(root=>within(root,path)) && !grokArtifact(path))throw new Error('Native image artifact escaped its allowed output locations.');
         try{await imageBytes(path);return {path};}catch{}
       }
     }

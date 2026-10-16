@@ -4,6 +4,7 @@ signal capability_changed(harness: String, result: Dictionary)
 
 const Inventory = preload("res://src/agent/harness_inventory.gd")
 const Session = preload("res://src/agent/command_code_session.gd")
+const Evidence = preload("res://src/core/test_evidence.gd")
 const BACKENDS = ["agy", "codex", "grok-build", "cursor"]
 var jobs: Dictionary = {}
 var sessions: Dictionary = {}
@@ -143,7 +144,16 @@ func _retire(id: String) -> void:
     if sessions.has(id):
         var session = sessions[id]
         sessions.erase(id)
+        var pid = session.pid
+        # retire synchronously shuts down the process tree before yielding.
         session.retire()
+        if pid > 0 and OS.is_process_running(pid):
+            push_warning("Image worker did not exit; keeping its private directory: " + id)
+            return
+    var root = ProjectSettings.globalize_path("user://host/images")
+    var directory = root.path_join(id)
+    if DirAccess.dir_exists_absolute(directory) and not Evidence.remove_tree(root, directory):
+        push_warning("Could not remove private image job directory: " + id)
 
 func stop_all() -> void:
     for id in sessions.keys():

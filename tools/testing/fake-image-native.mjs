@@ -1,5 +1,5 @@
 import {createInterface} from 'node:readline';
-import {writeFileSync,mkdirSync} from 'node:fs';
+import {writeFileSync,mkdirSync,symlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {homedir} from 'node:os';
 const valid=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==','base64');
@@ -41,8 +41,22 @@ createInterface({input:process.stdin}).on('line',line=>{
       if(waiting())return;
       const meta={'x.ai/tool':{name:'image_gen'}};
       emit({method:'session/update',params:{update:{sessionUpdate:'tool_call',toolCallId:'image',_meta:meta}}});
-      if(!fail)writeFileSync('output.png',bytes);
-      emit({method:'session/update',params:{update:{sessionUpdate:'tool_call_update',toolCallId:'image',status:fail?'failed':'completed',rawOutput:fail?{message:'Fixture image limit'}:{path:join(process.cwd(),'output.png')}}}});return reply({stopReason:'end_turn'});
+      let artifact=join(process.cwd(),'output.png');
+      if(mode.startsWith('grok-')){
+        const group=mode==='grok-long'?'native-workspace-a1b2c3d4':encodeURIComponent(process.cwd());
+        const root=join(process.env.GROK_HOME || join(homedir(),'.grok'),'sessions',group);
+        const images=join(root,mode==='grok-foreign'?'other-session':'image-fixture','images');
+        mkdirSync(root,{recursive:true});
+        if(mode==='grok-long')writeFileSync(join(root,'.cwd'),process.cwd());
+        if(mode==='grok-link' || mode==='grok-outside'){
+          const outside=mode==='grok-link'?join(root,'other-session','images'):join(process.cwd(),'../../outside-images');
+          mkdirSync(outside,{recursive:true});mkdirSync(join(root,'image-fixture'),{recursive:true});
+          symlinkSync(outside,images,process.platform==='win32'?'junction':'dir');
+        }else mkdirSync(images,{recursive:true});
+        artifact=join(images,'native.png');
+      }
+      if(!fail)writeFileSync(artifact,bytes);
+      emit({method:'session/update',params:{update:{sessionUpdate:'tool_call_update',toolCallId:'image',status:fail?'failed':'completed',rawOutput:fail?{message:'Fixture image limit'}:{path:artifact}}}});return reply({stopReason:'end_turn'});
     }
     return reply({});
   }
