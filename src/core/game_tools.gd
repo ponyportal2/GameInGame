@@ -11,8 +11,11 @@ var git = GitService.new()
 var runner: GameRunner
 var test_supervisor: Node
 var blender_supervisor: Node
+var blender_enabled := true
 
 func blender(args: Dictionary) -> Dictionary:
+    if not blender_enabled:
+        return {"ok": false, "error": "Blender tools are disabled for this game. Enable them in Settings > This game."}
     if not is_instance_valid(blender_supervisor):
         blender_supervisor = preload("res://src/core/blender_supervisor.gd").new()
         blender_supervisor.approval_changed.connect(func(review): blender_approval_changed.emit(review))

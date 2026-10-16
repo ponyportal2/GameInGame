@@ -14,6 +14,9 @@ export const hostTools = {
     move_path: {description:'Move a workspace path.',properties:{from:{type:'string'},to:{type:'string'}}},
   };
 
+// Set by the host for each game runtime; inherited by native MCP children.
+if (process.env.GAMESMITH_BLENDER_ENABLED === '0') delete hostTools.blender;
+
 export function toolContent(result) {
     const {image_base64,mime_type,...metadata}=result;
     const content=[{type:'text',text:JSON.stringify(metadata)}];

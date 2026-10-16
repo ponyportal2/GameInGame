@@ -88,7 +88,7 @@ func run() -> void:
         var controller_path = "res://src/agent/" + harness + "_agent_controller.gd"
         if FileAccess.file_exists(controller_path):
             var source = FileAccess.get_file_as_string(controller_path)
-            check("_game_prompt()" in source or harness in ["pi", "kilo"], harness + " uses the common Blender instructions")
+            check("_game_prompt(" in source or harness in ["pi", "kilo"], harness + " uses the common Blender instructions")
         else:
             # Exported scripts are compiled resources, not source text. The
             # behavioral bridge/approval checks below still run for all harnesses.
@@ -104,6 +104,13 @@ func run() -> void:
         controller.tools = tools
         controller.bridge_dir = ProjectSettings.globalize_path("user://blender-approval-bridge/" + harness)
         DirAccess.make_dir_recursive_absolute(controller.bridge_dir)
+        tools.blender_enabled = false
+        for command in ["blender", "authorize_blender"]:
+            var request_id = "disabled-" + command
+            controller._dispatch_host_request({"id": request_id, "command": command, "args": {"action": "guide"}}, controller.bridge_dir)
+            var denied = JsonStore.read_dict(controller.bridge_dir.path_join("response-" + request_id + ".json"))
+            check(not denied.get("ok", true) and "disabled" in denied.get("error", "") and controller.pending_blender_commands.is_empty(), harness + " rejects disabled " + command + " without approval")
+        tools.blender_enabled = true
         controller._dispatch_host_request({"id": "approval", "command": "blender", "args": {"action": "start", "script": "build.py"}}, controller.bridge_dir)
         var pending = controller.pending_blender_commands
         var response = controller.bridge_dir.path_join("response-approval.json")
@@ -189,6 +196,7 @@ func run() -> void:
     root.add_child(app)
     await process_frame
     app.name_edit.text = "Blender approval UI"
+    app.new_game_blender_check.button_pressed = true
     app._create_game()
     app.tools.write_file("ui.py", "print('review this source')\n")
     job = app.tools.blender({"action": "start", "script": "ui.py"})

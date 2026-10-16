@@ -40,6 +40,7 @@ export default async function (cmd) {
     delete_path: {description:'Delete a workspace path.',properties:{path:{type:'string'}}},
     move_path: {description:'Move a workspace path.',properties:{from:{type:'string'},to:{type:'string'}}},
   };
+  if (!hostTools.blender) delete tools.blender;
   for (const [name, tool] of Object.entries(tools)) cmd.addTool({
     schema:{name,description:tool.description,input_schema:{type:'object',properties:tool.properties,required:[]}},
     readOnly:['read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),

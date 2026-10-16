@@ -126,6 +126,10 @@ static func build(app) -> void:
     app.compact_now_button = U.button(conversation, "Compact now", app._compact_now_from_settings)
     app.compact_now_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
     var game = page(tabs, "This game")
+    app.game_blender_check = CheckBox.new()
+    app.game_blender_check.text = "Enable Blender tools"
+    game.add_child(app.game_blender_check)
+    U.paragraph(game, "Add Blender tools and asset-creation instructions to this game's agent. You can enable this later. Requires Blender installed on this computer; script approval is configured separately under Agent & testing.")
     app.game_harness_option = OptionButton.new()
     for harness in HarnessInventory.all():
         app.game_harness_option.add_item(harness.selector_label)
@@ -156,7 +160,7 @@ static func build(app) -> void:
 
 static func build_new_game(app) -> void:
     app.new_game_dialog = overlay(app, "NewGameOverlay")
-    var root = U.column(U.margin(panel(app.new_game_dialog, 500, 410), 22, 20), 16)
+    var root = U.column(U.margin(panel(app.new_game_dialog, 500, 560), 22, 20), 10)
     U.label(root, "A NEW BEGINNING", 11, T.ACCENT)
     U.label(root, "What will you make?", 28)
     U.paragraph(root, "Give your game a name. You can shape the idea with the agent in chat and rename it anytime.")
@@ -167,8 +171,13 @@ static func build_new_game(app) -> void:
     for harness in HarnessInventory.all():
         app.harness_option.add_item(harness.selector_label)
         app.harness_option.set_item_metadata(app.harness_option.item_count - 1, harness.id)
-    field(root, "Coding harness", app.harness_option, "Command-code, OpenCode, Codex, Cline, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP use their own model and provider settings. Cursor uses Auto; the model selected in its editor or interactive CLI is not inherited. OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP handle their own compaction. AGY support is experimental; live model execution has not been verified.")
+    app.harness_option.tooltip_text = "Command-code, OpenCode, Codex, Cline, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP use their own model and provider settings. Cursor uses Auto; the model selected in its editor or interactive CLI is not inherited. OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI and OMP handle their own compaction. AGY support is experimental; live model execution has not been verified."
+    field(root, "Coding harness", app.harness_option, "Pi uses GameSmith model settings. Other harnesses use their own settings; Cursor uses Auto. AGY is experimental.")
     app.name_edit.text_submitted.connect(func(_text): app._create_game())
+    app.new_game_blender_check = CheckBox.new()
+    app.new_game_blender_check.text = "Enable Blender tools"
+    root.add_child(app.new_game_blender_check)
+    U.paragraph(root, "Optional 3D models and rendered sprites using Blender. Requires Blender installed on this computer. You can enable this later in Settings > This game.")
     U.space(root, true)
     var actions = U.row(root)
     U.space(actions)

@@ -1,5 +1,7 @@
 # Blender assets in GameSmith
 
+New games offer an optional **Enable Blender tools** checkbox. You can add or remove Blender later in **Settings → This game** while the agent and Blender are idle. This is separate from automatic script approval and requires Blender installed locally. Existing games retain Blender access. Changing availability for a saved Codex conversation requires confirmation to archive its session reference and start a fresh Codex conversation, because Codex cannot replace that conversation's tool list; chat and game files are preserved.
+
 Use the GameSmith `blender` tool (your harness adds its normal tool prefix). No shell, Blender UI or Blender MCP server is needed.
 
 1. Write a reusable workspace-relative `.py` file using your ordinary write/edit tool. It runs with `bpy`, the workspace as cwd, and `GAMESMITH_WORKSPACE` set. Use absolute output paths derived from `Path.cwd()`. Keep inputs, exports and previews inside the game workspace. Python is executable code, not a filesystem sandbox.

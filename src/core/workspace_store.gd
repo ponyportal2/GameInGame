@@ -27,7 +27,7 @@ func list_games() -> Array[String]:
     names.sort_custom(func(a, b): return a.naturalnocasecmp_to(b) < 0)
     return names
 
-func create_game(raw_name: String, harness: String = "pi") -> Dictionary:
+func create_game(raw_name: String, harness: String = "pi", blender_enabled: bool = false) -> Dictionary:
     if HarnessInventory.get_harness(harness).is_empty():
         return {"ok": false, "error": "Unknown coding harness: " + harness}
     ensure()
@@ -45,7 +45,7 @@ func create_game(raw_name: String, harness: String = "pi") -> Dictionary:
     if not git_result.get("ok", false):
         _remove_tree(path)
         return {"ok": false, "error": "Git init failed: " + str(git_result.get("output", "unknown error"))}
-    if not metadata.create_game(name, harness):
+    if not metadata.create_game(name, harness, blender_enabled):
         _remove_tree(path)
         return {"ok": false, "error": "Could not create host metadata."}
     return {"ok": true, "name": name, "path": path}

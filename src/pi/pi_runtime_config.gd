@@ -31,7 +31,7 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
     var prompt_file = FileAccess.open(agent_dir.path_join("APPEND_SYSTEM.md"), FileAccess.WRITE)
     if prompt_file == null:
         return {"ok": false, "error": "Could not write Pi GameSmith prompt."}
-    prompt_file.store_string(_game_prompt())
+    prompt_file.store_string(_game_prompt(bool(game_meta.get("blender_enabled", true))))
     prompt_file.close()
 
     var provider_id = str(game_meta.get("provider_override", ""))
@@ -106,6 +106,7 @@ static func prepare(game_name: String, workspace: String, settings: Dictionary, 
     return {
         "ok": true,
         "workspace": ProjectSettings.globalize_path(workspace),
+        "blender_enabled": bool(game_meta.get("blender_enabled", true)),
         "agent_dir": ProjectSettings.globalize_path(agent_dir),
         "session_dir": ProjectSettings.globalize_path(session_dir),
         "bridge_dir": ProjectSettings.globalize_path(bridge_dir),
@@ -142,8 +143,8 @@ static func _clear_bridge(bridge_dir: String) -> void:
         item = dir.get_next()
     dir.list_dir_end()
 
-static func _game_prompt() -> String:
-    return """You are the game-building agent inside GameSmith. The player expects you to act, not merely explain.
+static func _game_prompt(blender_enabled: bool = true) -> String:
+    var prompt = """You are the game-building agent inside GameSmith. The player expects you to act, not merely explain.
 
 GameSmith-specific rules:
 - The current working directory is the entire generated game workspace. Stay inside it.
@@ -170,4 +171,12 @@ GameSmith-specific rules:
 
 GameSmith, not you, owns the running host UI, game library, session display, and Pi process lifecycle.
 """
+    if not blender_enabled:
+        var lines = PackedStringArray()
+        for line in prompt.split("\n"):
+            if line.begins_with("- Blender is available"):
+                continue
+            lines.append(line.replace(" or generated with Blender", ""))
+        return "\n".join(lines)
+    return prompt
 

@@ -85,13 +85,13 @@ func _start_command_runtime() -> Dictionary:
     DirAccess.make_dir_recursive_absolute(bridge)
     var assembled = HarnessInventory.assemble_runtime("command-code", directory)
     if not assembled.ok: return assembled
-    var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
+    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write Command-code game instructions."}
     var session_file = absolute.path_join("session.json")
     var saved = JsonStore.read_dict(session_file, {})
     last_context_tokens = int(saved.context_tokens) if saved.get("context_tokens") != null else 0
-    var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge,
+    var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge, "blender_enabled": _blender_enabled(),
         "mod": absolute.path_join("gamesmith.ts"), "worker": absolute.path_join("worker.mjs"),
         "context_tokens": saved.get("context_tokens"),
         "prompt_path": absolute.path_join("prompt.md"), "name": game_name,

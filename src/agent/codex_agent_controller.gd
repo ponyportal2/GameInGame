@@ -15,14 +15,18 @@ func _fail(message: String) -> void:
 func start_new_session() -> Dictionary:
     if busy: return {"ok": false, "error": "Stop Codex before starting a new session."}
     if not acquire_editor(): return {"ok": false, "error": last_error}
-    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join("codex"))
+    var result = archive_session(metadata, game_name)
+    if result.get("ok", false): restart_runtime()
+    return result
+
+static func archive_session(game_metadata, target_game: String) -> Dictionary:
+    var directory = ProjectSettings.globalize_path(game_metadata.game_meta_dir(target_game).path_join("codex"))
     var session_file = directory.path_join("session.json")
     var archive = ""
     if FileAccess.file_exists(session_file):
         archive = directory.path_join("session.previous-%d-%d.json" % [Time.get_unix_time_from_system(), Time.get_ticks_usec()])
         if DirAccess.rename_absolute(session_file, archive) != OK:
             return {"ok": false, "error": "Could not preserve the previous Codex session reference. No session was reset."}
-    restart_runtime()
     return {"ok": true, "archive": archive}
 
 func _start_command_runtime() -> Dictionary:
@@ -38,14 +42,14 @@ func _start_command_runtime() -> Dictionary:
     DirAccess.make_dir_recursive_absolute(bridge)
     var assembled = HarnessInventory.assemble_runtime("codex", directory)
     if not assembled.ok: return assembled
-    var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", "gamesmith_read/edit/write/search/list").replace("Pi's", "Codex's").replace("Pi process", "Codex process")
+    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "gamesmith_read/edit/write/search/list").replace("Pi's", "Codex's").replace("Pi process", "Codex process")
     prompt += "\nAll GameSmith tools are native dynamic tools named gamesmith_<command>, including gamesmith_start_test_game, gamesmith_reload_game, and gamesmith_git_commit. Use gamesmith_read with 1-based offset/limit, gamesmith_edit with path/old_text/new_text, gamesmith_write with path/content, gamesmith_search with a literal pattern, and gamesmith_list for files. Native shell, delegation and native file-write approvals are unavailable; use the GameSmith tools. Model, reasoning and automatic compaction are managed by your Codex configuration.\n"
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write Codex game instructions."}
     var session_file = absolute.path_join("session.json")
     var saved = JsonStore.read_dict(session_file, {})
     last_context_tokens = int(saved.context_tokens) if saved.get("context_tokens") != null else 0
-    var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge,
+    var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge, "blender_enabled": _blender_enabled(),
         "worker": absolute.path_join("worker.mjs"), "prompt_path": absolute.path_join("prompt.md"),
         "label": "Codex", "name": game_name, "context_tokens": saved.get("context_tokens"),
         "session": saved.get("session", ""), "session_file": session_file,

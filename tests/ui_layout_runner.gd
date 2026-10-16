@@ -106,6 +106,10 @@ func run() -> void:
     app._open_new_game()
     await settle()
     check(inside(app.name_edit), "new game dialog fits at minimum window size")
+    check(inside(app.new_game_blender_check), "Blender creation option fits at minimum window size")
+    var creation_buttons = app.new_game_dialog.find_children("*", "Button", true, false)
+    for button in creation_buttons:
+        check(inside(button), "creation action stays inside minimum viewport: %s %s" % [button.text, button.get_global_rect()])
     app._input(escape)
     check(not app.new_game_dialog.visible, "Escape dismisses new game dialog")
     app._open_rename(names[0])

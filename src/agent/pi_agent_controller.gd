@@ -67,7 +67,12 @@ func configure(p_game_name: String, p_tools) -> void:
         editor_guard = GameEditGuardScript.new()
     editor_guard.workspace = p_tools.workspace
     tools = p_tools
+    tools.blender_enabled = _blender_enabled()
     process_mode = Node.PROCESS_MODE_ALWAYS
+
+func _blender_enabled() -> bool:
+    # Metadata predating the option keeps its existing tool surface.
+    return bool(metadata.read_game(game_name).get("blender_enabled", true))
 
 func acquire_editor() -> bool:
     if editor_guard == null:
@@ -584,6 +589,9 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
             return
         result = {"ok": false, "error": "Another reload is already waiting for player approval."}
     elif command in ["blender", "authorize_blender"]:
+        if not tools.blender_enabled:
+            _write_host_response(directory, request, {"ok": false, "error": "Blender tools are disabled for this game."})
+            return
         var args: Dictionary = request.get("args", {}).duplicate(true)
         if command == "authorize_blender":
             if not busy or str(args.get("token", "")) == "" or typeof(args.get("blender_args")) != TYPE_DICTIONARY:

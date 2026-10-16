@@ -9,13 +9,14 @@ const CREDENTIALS_PATH = HOST_ROOT + "/credentials.json"
 func ensure() -> void:
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(META_ROOT))
 
-func create_game(name: String, harness: String = "pi") -> bool:
+func create_game(name: String, harness: String = "pi", blender_enabled: bool = false) -> bool:
     ensure()
     var dir = game_meta_dir(name)
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
     return JsonStore.write_dict(dir.path_join("metadata.json"), {
         "name": name,
         "harness": harness,
+        "blender_enabled": blender_enabled,
         "provider_override": "",
         "model_override": "",
         "last_working_commit": "",

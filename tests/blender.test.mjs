@@ -5,11 +5,38 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {prepareJob,inspectImage,resolveBlender,reviewScript,approvedJob,blenderEnvironment,warningCapture} from '../tools/blender/jobs.mjs';
 import {hostTools,toolContent} from '../tools/opencode/host-tools.mjs';
 import {processIdentity,cleanupJob} from '../tools/blender/ownership.mjs';
 
 const workspace=()=>mkdtempSync(join(tmpdir(),'gs-blender-'));
+
+test('Pi registers Blender only when the game enables it',async()=>{
+  const root=workspace();
+  for(const file of ['gamesmith-extension.ts','workspace-paths.mjs','model-capabilities.mjs','diagnostic-delivery.mjs','empty-response-retry.mjs'])
+    copyFileSync(resolve('tools/pi',file),join(root,file));
+  // The extension uses only the schema builder during registration; no model runs.
+  const ai=join(root,'node_modules/@earendil-works/pi-ai');mkdirSync(ai,{recursive:true});
+  writeFileSync(join(ai,'package.json'),JSON.stringify({type:'module',exports:'./index.mjs'}));
+  writeFileSync(join(ai,'index.mjs'),'export const Type=new Proxy({}, {get:()=>()=>({})});');
+  const oldEnabled=process.env.GAMESMITH_BLENDER_ENABLED,oldProvider=process.env.GAMESMITH_MODEL_PROVIDER;
+  process.env.GAMESMITH_MODEL_PROVIDER='openai_subscription';
+  try {
+    const extension=await import(pathToFileURL(join(root,'gamesmith-extension.ts')));
+    for(const enabled of [true,false]){
+      process.env.GAMESMITH_BLENDER_ENABLED=enabled?'1':'0';
+      const tools=[];
+      await extension.default({on:()=>{},registerTool:tool=>tools.push(tool)});
+      assert.equal(tools.some(t=>t.name==='blender'),enabled);
+      assert(tools.some(t=>t.name==='start_test_game'));
+      if(!enabled)assert(!JSON.stringify(tools).toLowerCase().includes('blender'));
+    }
+  } finally {
+    if(oldEnabled===undefined)delete process.env.GAMESMITH_BLENDER_ENABLED;else process.env.GAMESMITH_BLENDER_ENABLED=oldEnabled;
+    if(oldProvider===undefined)delete process.env.GAMESMITH_MODEL_PROVIDER;else process.env.GAMESMITH_MODEL_PROVIDER=oldProvider;
+  }
+});
 test('warning summaries select structured line-start labels, not diagnostic words in ordinary output',()=>{
   const capture=warningCapture();
   const diagnostics=['WARNING: export dropped vertex colors','Warning: missing image',
@@ -149,21 +176,28 @@ test('explicit Blender override is honored and invalid override fails clearly',a
   await assert.rejects(resolveBlender({GAMESMITH_BLENDER_BIN:resolve('missing-blender.exe')}),/Blender/);
 });
 
-for(const harness of ['opencode','cline','grok-build','kimi','kiro','agy'])test(harness+' assembled MCP exposes Blender and delivers a native preview image',{timeout:15000},async()=>{
+for(const enabled of [true,false])for(const harness of ['opencode','cline','grok-build','kimi','kiro','agy'])test(harness+' assembled MCP '+(enabled?'exposes Blender and delivers a native preview image':'omits disabled Blender and rejects direct calls'),{timeout:15000},async()=>{
   const root=workspace(),bridge=join(root,'bridge');mkdirSync(bridge);
   // Assemble the same canonical support modules that the host installs.
   for(const [target,source] of Object.entries({'mcp.mjs':harness+'/mcp.mjs','host-tools.mjs':'opencode/host-tools.mjs','workspace-tools.mjs':'codex/tools.mjs','workspace-paths.mjs':'pi/workspace-paths.mjs','approval.mjs':harness==='grok-build'?'grok-build/approval.mjs':'cline/approval.mjs'}))
     copyFileSync(resolve('tools',source),join(root,target));
   writeFileSync(join(bridge,'operation.json'),JSON.stringify({active:true,session:'fixture'}));
   writeFileSync(join(root,'config.json'),JSON.stringify({workspace:root,bridge_dir:bridge}));
-  const child=spawn(process.execPath,[join(root,'mcp.mjs'),join(root,'config.json')],{env:{...process.env,GAMESMITH_HOST_BRIDGE_DIR:bridge},stdio:['pipe','pipe','pipe']});
+  const child=spawn(process.execPath,[join(root,'mcp.mjs'),join(root,'config.json')],{env:{...process.env,GAMESMITH_HOST_BRIDGE_DIR:bridge,GAMESMITH_BLENDER_ENABLED:enabled?'1':'0'},stdio:['pipe','pipe','pipe']});
   const pending=new Map();let stderr='';child.stderr.on('data',d=>stderr+=d);
   const lines=createInterface({input:child.stdout});lines.on('line',line=>{const r=JSON.parse(line);pending.get(r.id)?.(r);pending.delete(r.id);});
   child.on('exit',()=>{for(const callback of pending.values())callback({error:stderr || 'MCP exited'});pending.clear();});
   let id=0;const call=(method,params)=>new Promise(resolve=>{pending.set(++id,resolve);child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');});
   const pump=setInterval(()=>{for(const file of readdirSync(bridge).filter(n=>/^request-.*\.json$/.test(n))){const r=JSON.parse(readFileSync(join(bridge,file),'utf8'));assert.equal(r.command,'blender');rmSync(join(bridge,file));const response=join(bridge,'response-'+r.id+'.json');writeFileSync(response+'.tmp',JSON.stringify({ok:true,width:1,height:1,mime_type:'image/png',image_base64:'cHJldmlldw=='}));renameSync(response+'.tmp',response);}},20);
   try {
-    const list=await call('tools/list',{});assert(!list.error,JSON.stringify(list));assert(list.result.tools.some(t=>t.name==='blender'));
+    const list=await call('tools/list',{});assert(!list.error,JSON.stringify(list));assert.equal(list.result.tools.some(t=>t.name==='blender'),enabled);
+    if(!enabled){
+      assert(!JSON.stringify(list.result).toLowerCase().includes('blender'));
+      const denied=await call('tools/call',{name:'blender',arguments:{action:'guide'}});
+      assert(denied.error || denied.result?.isError,JSON.stringify(denied));
+      assert.equal(readdirSync(bridge).filter(n=>/^request-/.test(n)).length,0);
+      return;
+    }
     const response=await call('tools/call',{name:'blender',arguments:{action:'inspect',path:'preview.png'}});
     assert(!response.error,JSON.stringify(response));assert.equal(response.result.isError,false);
     assert.deepEqual(response.result.content[1],{type:'image',data:'cHJldmlldw==',mimeType:'image/png'});

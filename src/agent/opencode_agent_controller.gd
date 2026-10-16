@@ -69,14 +69,14 @@ func _start_command_runtime() -> Dictionary:
     DirAccess.make_dir_recursive_absolute(bridge)
     var assembled = HarnessInventory.assemble_runtime(_harness_id(), directory)
     if not assembled.ok: return assembled
-    var prompt = PiRuntimeConfigScript._game_prompt().replace("Pi's read/edit/write/grep/find/ls", _harness_name() + "'s read/edit/write/grep/glob/list").replace("Pi's", _harness_name() + "'s").replace("Pi process", _harness_name() + " process")
+    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", _harness_name() + "'s read/edit/write/grep/glob/list").replace("Pi's", _harness_name() + "'s").replace("Pi process", _harness_name() + " process")
     prompt += "\nGameSmith tools are exposed by native MCP with the gamesmith_ prefix (for example gamesmith_start_test_game and gamesmith_reload_game). Use those tools for game testing, reload, and Git. Shell and delegation are unavailable; use native read/write/edit/apply_patch tools for files.\n"
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write " + _harness_name() + " game instructions."}
     var session_file = absolute.path_join("session.json")
     var saved = JsonStore.read_dict(session_file, {})
     last_context_tokens = int(saved.context_tokens) if saved.get("context_tokens") != null else 0
-    var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge,
+    var config = {"workspace": ProjectSettings.globalize_path(tools.workspace), "bridge_dir": bridge, "blender_enabled": _blender_enabled(),
         "plugin": absolute.path_join("gamesmith.mjs"), "mcp": absolute.path_join("mcp.mjs"),
         "worker": absolute.path_join("worker.mjs"), "prompt_path": absolute.path_join("prompt.md"),
         "label": _harness_name(), "harness": _harness_id(), "name": game_name, "context_tokens": saved.get("context_tokens"),

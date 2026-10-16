@@ -68,3 +68,32 @@ test('mod exposes host tools and guards native absolute paths without taking ove
     else process.env.GAMESMITH_HOST_BRIDGE_DIR = oldBridge;
   }
 });
+
+test('disabled Blender is absent from Command-code registration and policy', async () => {
+  const dir = await mkdtemp(join(tmpdir(),'gamesmith-mod-disabled-'));
+  for (const [source,name] of [['command-code/gamesmith.ts','gamesmith.ts'],['command-code/policy.mjs','policy.mjs'],['opencode/host-tools.mjs','host-tools.mjs'],['pi/workspace-paths.mjs','workspace-paths.mjs']])
+    await copyFile(new URL('../tools/'+source,import.meta.url),join(dir,name));
+  const old = process.env.GAMESMITH_BLENDER_ENABLED;
+  const oldPrompt = process.env.GAMESMITH_PROMPT_PATH;
+  process.env.GAMESMITH_BLENDER_ENABLED = '0';
+  process.env.GAMESMITH_PROMPT_PATH = join(dir,'prompt.md');
+  await writeFile(process.env.GAMESMITH_PROMPT_PATH,'Game instructions without optional assets');
+  try {
+    const tools=[];
+    let active;
+    const cmd={cwd:dir,addTool:tool=>tools.push(tool),hooks:()=>{},getAllTools:()=>['read_file',...tools.map(t=>t.schema.name)],setActiveTools:names=>{active=names;}};
+    const mod=await import(pathToFileURL(join(dir,'gamesmith.ts')));
+    await mod.default(cmd);
+    assert(!tools.some(t=>t.schema.name==='blender'));
+    assert(!active.includes('blender'));
+    assert(active.includes('reload_game'));
+    const policy=await import(pathToFileURL(join(dir,'policy.mjs')));
+    assert(!policy.TOOL_NAMES.includes('blender'));
+    assert(policy.validReady({nonce:'n',policy:'gamesmith',version:policy.POLICY_VERSION,phase:'session',tools:policy.TOOL_NAMES},'n','session'));
+  } finally {
+    if(old===undefined) delete process.env.GAMESMITH_BLENDER_ENABLED;
+    else process.env.GAMESMITH_BLENDER_ENABLED=old;
+    if(oldPrompt===undefined) delete process.env.GAMESMITH_PROMPT_PATH;
+    else process.env.GAMESMITH_PROMPT_PATH=oldPrompt;
+  }
+});

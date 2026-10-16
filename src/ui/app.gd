@@ -49,11 +49,14 @@ var delete_game_label: Label
 var settings_dialog: Control
 var name_edit: LineEdit
 var harness_option: OptionButton
+var new_game_blender_check: CheckBox
+var game_blender_check: CheckBox
 var game_edit_guard
 var game_harness_option: OptionButton
 var codex_new_session_button: Button
 var codex_session_dialog: Control
 var codex_session_game := ""
+var pending_blender_session_reset := false
 var native_session_title: Label
 var native_session_description: Label
 var rename_edit: LineEdit
@@ -280,6 +283,7 @@ func _build_new_game_overlay() -> void:
 
 func _open_new_game() -> void:
     name_edit.text = ""
+    new_game_blender_check.button_pressed = false
     new_game_dialog.visible = true
     name_edit.grab_focus()
 
@@ -311,7 +315,7 @@ func _show_library() -> void:
     _refresh_library()
 
 func _create_game() -> void:
-    var result = store.create_game(name_edit.text, str(harness_option.get_item_metadata(harness_option.selected)))
+    var result = store.create_game(name_edit.text, str(harness_option.get_item_metadata(harness_option.selected)), new_game_blender_check.button_pressed)
     if result.ok:
         new_game_dialog.visible = false
         _open_game(result.name)
@@ -376,6 +380,13 @@ func _finish_settings_save() -> void:
     if current_game != "":
         var selected = str(game_harness_option.get_item_metadata(game_harness_option.selected))
         var game_meta = metadata.read_game(current_game)
+        var blender_changed = game_blender_check.button_pressed != bool(game_meta.get("blender_enabled", true))
+        if blender_changed:
+            game_meta.blender_enabled = game_blender_check.button_pressed
+            if not metadata.write_game(current_game, game_meta):
+                _toast("Could not save Blender availability for this game.")
+                return
+            tools.blender_enabled = game_blender_check.button_pressed
         if selected != str(game_meta.get("harness", "pi")):
             game_meta.harness = selected
             if not metadata.write_game(current_game, game_meta):
@@ -391,6 +402,8 @@ func _finish_settings_save() -> void:
             status_label.text = "Ready"
             _set_chat_busy_controls(false)
             _append_chat("system", "Switched to %s. Game files and chat are shared; each harness keeps its own agent session." % game_harness_option.get_item_text(game_harness_option.selected))
+        elif blender_changed and is_instance_valid(agent):
+            agent.restart_runtime()
     settings_dialog.visible = false
     _toast("Settings saved.")
 
@@ -682,9 +695,24 @@ func _request_new_codex_session() -> void:
 
 func _cancel_new_codex_session() -> void:
     codex_session_game = ""
+    pending_blender_session_reset = false
     codex_session_dialog.visible = false
 
 func _confirm_new_codex_session() -> void:
+    if pending_blender_session_reset:
+        if codex_session_game != current_game or not is_instance_valid(agent) or agent.busy:
+            _cancel_new_codex_session()
+            return
+        var archived = preload("res://src/agent/codex_agent_controller.gd").archive_session(metadata, current_game)
+        _cancel_new_codex_session()
+        if not archived.get("ok", false):
+            _toast(str(archived.get("error", "Could not preserve the Codex session.")))
+            return
+        if str(metadata.read_game(current_game).get("harness", "pi")) == "codex":
+            agent.restart_runtime()
+        _append_chat("system", "Blender availability changed. The previous Codex session reference was archived; the next Codex message starts a fresh conversation. Chat and game files were kept.")
+        _save_settings()
+        return
     if codex_session_game == "" or codex_session_game != current_game or not is_instance_valid(agent) or agent.busy or not HarnessInventory.supports_reset(str(metadata.read_game(current_game).get("harness", "pi"))):
         _cancel_new_codex_session()
         return
@@ -721,6 +749,8 @@ func _open_settings() -> void:
     rendered_tests_check.button_pressed = bool(settings.get("allow_rendered_tests", false))
     auto_reload_check.button_pressed = bool(settings.get("auto_approve_reloads", false))
     auto_blender_check.button_pressed = bool(settings.get("auto_approve_blender_scripts", false))
+    game_blender_check.disabled = current_game == ""
+    game_blender_check.button_pressed = bool(metadata.read_game(current_game).get("blender_enabled", true)) if current_game != "" else false
     if current_game != "":
         var game_meta = metadata.read_game(current_game)
         _select_game_provider_id(str(game_meta.get("provider_override", "")))
@@ -835,8 +865,23 @@ func _save_settings() -> void:
         _toast(game_edit_guard.error)
         return
     if current_game != "" and is_instance_valid(agent) and agent.busy:
+        if game_blender_check.button_pressed != bool(metadata.read_game(current_game).get("blender_enabled", true)):
+            _toast("Wait for the agent to finish or stop it before changing Blender tools.")
+            return
         if str(game_harness_option.get_item_metadata(game_harness_option.selected)) != str(metadata.read_game(current_game).get("harness", "pi")):
             _toast("Wait for the agent to finish or stop it before switching harnesses.")
+            return
+    if current_game != "" and game_blender_check.button_pressed != bool(metadata.read_game(current_game).get("blender_enabled", true)):
+        if is_instance_valid(tools.blender_supervisor) and tools.blender_supervisor.has_running():
+            _toast("Stop Blender or wait for it to finish before changing Blender tools.")
+            return
+        if FileAccess.file_exists(metadata.game_meta_dir(current_game).path_join("codex/session.json")):
+            native_session_title.text = "Update Blender tools?"
+            native_session_description.text = "Codex cannot change an existing conversation's tool list. Applying this setting starts a fresh Codex conversation next time you use it. The previous session reference is archived; your chat and game files are kept. The old conversation will not be included in the new Codex context."
+            codex_session_game = current_game
+            pending_blender_session_reset = true
+            codex_session_dialog.move_to_front()
+            codex_session_dialog.visible = true
             return
     if _uses_native_agent_settings():
         var host_settings = metadata.global_settings()
