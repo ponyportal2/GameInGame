@@ -623,7 +623,7 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
         if command == "authorize_blender" and result.has("run_id") and result.get("state") != "cancelled":
             _grant_blender(request, directory, str(result.run_id))
             result = {"ok": true}
-    elif command == "read_runtime_log":
+    elif command in ["read_runtime_log", "inspect_runtime", "set_properties"]:
         result = tools.execute(command, request.get("args", {}))
     elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
         result = tools.execute(command, request.get("args", {}))

@@ -248,6 +248,8 @@ Games always open in chat without executing generated code, so after a game cras
 
 Run is available only when workspace `main.gd` or a last working snapshot exists. Chat and gameplay show persistent execution status: **Not running**, **Running workspace**, or **Running last working snapshot**. This identifies the loaded source, without claiming it includes later file edits.
 
+For parameter changes, agents can inspect the live generated game and batch-patch existing node properties without reloading. Source edits remain necessary for persistence; loaded code and future-spawn defaults remain unchanged until reload unless the game uses live configuration that can also be patched. See [live runtime tools](docs/runtime-properties.md) for supported values, identity checks, bounds and partial-failure semantics.
+
 **Allow Reload** gives GameSmith permission to attempt loading the game's current workspace, including any edits made while the request was waiting. A reload request does not freeze a revision. To cancel the waiting request, use **Stop**.
 
 Settings → **Agent & testing** → **Automatically approve agent reload requests** skips the approval wait for any harness. It defaults to off and is saved globally. Manual Run/Reload behavior is unchanged.

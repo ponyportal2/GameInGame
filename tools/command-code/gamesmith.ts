@@ -26,9 +26,11 @@ export async function callHost(command, args, signal) {
 export default async function (cmd) {
   const prompt = await readFile(process.env.GAMESMITH_PROMPT_PATH!, 'utf8');
   const tools = {
+    inspect_runtime: hostTools.inspect_runtime,
+    set_properties: hostTools.set_properties,
     generate_image: hostTools.generate_image,
     blender: hostTools.blender,
-    reload_game: {description:'After successful headless testing of the current edits, request loading the game before handoff. Waits for player approval unless auto-approval is enabled.',properties:{}},
+    reload_game: hostTools.reload_game,
     read_runtime_log: {description:'Read live game errors and runtime logs.',properties:{since_sequence:{type:'integer'},limit:{type:'integer'}}},
     start_test_game: {description:'Start a separate Godot game test.',properties:{mode:{type:'string',enum:['headless','rendered']}}},
     read_test_log: {description:'Read separate game test status and logs.',properties:{run_id:{type:'string'},limit:{type:'integer'},since_sequence:{type:'integer'}}},
@@ -43,8 +45,8 @@ export default async function (cmd) {
   };
   if (!hostTools.blender) delete tools.blender;
   for (const [name, tool] of Object.entries(tools)) cmd.addTool({
-    schema:{name,description:tool.description,input_schema:{type:'object',properties:tool.properties,required:[]}},
-    readOnly:['read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),
+    schema:{name,description:tool.description,input_schema:{type:'object',properties:tool.properties,required:('required' in tool ? tool.required : [])}},
+    readOnly:['inspect_runtime','read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),
     run:async ({input,signal}) => {
       const result = await callHost(name,input,signal);
       if (result.ok === false) return {ok:false,error:JSON.stringify(result)};

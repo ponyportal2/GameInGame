@@ -15,6 +15,10 @@
       },
       "modules": [
         [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
           "gamesmith-extension.ts",
           "pi/gamesmith-extension.ts"
         ],

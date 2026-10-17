@@ -47,6 +47,14 @@ The usual host tests also cover standalone process ownership, hung-action pollin
 
 The usual host tests include `cache_regression_runner.gd` and `cache_edge_regression_runner.gd`, covering changed dependencies, nested/shared preloads, repeated edits, first helper instantiation after rejected reloads, inheritance rollback, rejected-candidate cache cleanup, retained-resource cleanup and unused broken helpers. The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
 
+`runtime_properties_runner.gd` exercises live inspection and batch property
+mutation through GameTools and all fourteen controller bridges, including
+identity/generation rejection, host boundaries, untyped fields, tagged 2D/3D
+values, setter readback, invalidation, bounds and partial failures.
+`runtime-properties.test.mjs` registers the tools from every canonically assembled
+harness. Package contents acceptance also executes a live patch from the PCK.
+See [the API contract](../../docs/runtime-properties.md).
+
 ## Generated script loading policy
 
 The reliability suite also checks chat-first opening without executing crash-prone code, idle-only manual Run/Reload controls, and agent-triggered startup from chat.

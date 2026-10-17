@@ -171,6 +171,8 @@ func read_runtime_log(args: Dictionary = {}) -> Dictionary:
 
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
+        "inspect_runtime": return preload("res://src/core/runtime_properties.gd").new(runner).inspect(args)
+        "set_properties": return preload("res://src/core/runtime_properties.gd").new(runner).set_properties(args)
         "blender": return blender(args)
         "generate_image": return generate_image(args)
         "list_files": return list_files(str(args.get("path", "")))

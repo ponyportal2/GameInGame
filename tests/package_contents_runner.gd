@@ -71,5 +71,29 @@ func _run() -> void:
         push_error("FAIL: exported Pi extension is empty")
         quit(1)
         return
+    # Execute the new capability from the shipped PCK, not just a source check.
+    var runner = preload("res://src/core/game_runner.gd").new()
+    root.add_child(runner)
+    var tools = preload("res://src/core/game_tools.gd").new("user://package-live-properties", runner)
+    tools.write_file("main.gd", "extends Node2D\nvar speed = 80.0\nvar health = 43\n")
+    var loaded = tools.reload_game()
+    if not loaded.ok:
+        push_error("FAIL: packaged runtime fixture could not load: " + str(loaded))
+        quit(1)
+        return
+    var active = runner.active_game
+    var inspected = tools.execute("inspect_runtime", {"depth": 0, "properties": ["speed", "health"]})
+    if not inspected.ok or inspected.nodes.size() != 1:
+        push_error("FAIL: packaged runtime inspection")
+        quit(1)
+        return
+    var patched = tools.execute("set_properties", {"targets": [inspected.nodes[0].handle], "values": {"speed": 120.0}})
+    if not patched.ok or runner.active_game != active or active.speed != 120.0 or active.health != 43:
+        push_error("FAIL: packaged live patch failed or reset unrelated state")
+        quit(1)
+        return
+    runner.queue_free()
+    await process_frame
+    print("PASS: exported runtime inspects and patches live properties without reloading")
     print("PASS: exported GameSmith.pck contains all harness adapters and the bundled Pi extension")
     quit(0)

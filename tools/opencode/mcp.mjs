@@ -30,7 +30,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
     switch (request.method) {
       case 'initialize': result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'gamesmith',version:'1.0.0'}}; break;
       case 'ping': result={}; break;
-      case 'tools/list': result={tools:Object.entries(hostTools).map(([name,t])=>({name,description:t.description,inputSchema:{type:'object',properties:t.properties,required:[]}}))}; break;
+      case 'tools/list': result={tools:Object.entries(hostTools).map(([name,t])=>({name,description:t.description,inputSchema:{type:'object',properties:t.properties,required:t.required || []}}))}; break;
       case 'tools/call': {
         const name=request.params?.name;
         if (!Object.hasOwn(hostTools,name)) throw new Error('Unknown GameSmith tool: '+name);

@@ -8,6 +8,7 @@ import { workspacePath } from "./workspace-paths.mjs";
 import { resolveModelCapabilities, compactionReserveTokens } from "./model-capabilities.mjs";
 import { DiagnosticDelivery } from "./diagnostic-delivery.mjs";
 import { EmptyResponseRetry } from "./empty-response-retry.mjs";
+import { hostTools } from "./host-tools.mjs";
 
 const execFileAsync = promisify(execFile);
 const bridgeDir = process.env.GAMESMITH_HOST_BRIDGE_DIR || "";
@@ -284,6 +285,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   for (const tool of [
+    ...["inspect_runtime", "set_properties"].map(name => ({ name, description: hostTools[name].description, parameters: Type.Unsafe({type: "object", properties: hostTools[name].properties, required: hostTools[name].required || [], additionalProperties: false}) })),
     { name: "generate_image", description: "Generate an image using the native harness selected in Settings > Images. Only one image job can run at a time. Start returns job_id; poll status until completed/failed; stop cancels. No vendor fallback. Keep workspace unchanged until completion. target_path must be relative PNG (default assets/generated/image.png); references are workspace-relative. Only a validated image is published.", parameters: Type.Object({ action: Type.Optional(Type.Union([Type.Literal("start"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("capabilities")])), prompt: Type.Optional(Type.String()), target_path: Type.Optional(Type.String()), reference_paths: Type.Optional(Type.Array(Type.String(), {maxItems: 4})), purpose: Type.Optional(Type.String()), transparent: Type.Optional(Type.Boolean()), job_id: Type.Optional(Type.String()) }) },
     { name: "blender", description: "Blender CLI/bpy workflow. Read action=guide first. Start script/blend with optional PNG render, poll compact status (details=true for logs and paginated objects via offset/limit), stop, or inspect a PNG image. Python approval follows the separate Blender setting.", parameters: Type.Object({ action: Type.Union([Type.Literal("guide"), Type.Literal("start"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("inspect")]), script: Type.Optional(Type.String()), blend: Type.Optional(Type.String()), render: Type.Optional(Type.String()), run_id: Type.Optional(Type.String()), path: Type.Optional(Type.String()), details: Type.Optional(Type.Boolean()), offset: Type.Optional(Type.Integer()), limit: Type.Optional(Type.Integer()) }) },
     { name: "start_test_game", description: "Start a separate Godot test process for the current workspace. Headless is always available; rendered requires user Settings permission. Returns immediately with run_id; read_test_log reports startup progress. Does not interrupt the player or promote the working snapshot. One test at a time.", parameters: Type.Object({ mode: Type.Optional(Type.Union([Type.Literal("headless"), Type.Literal("rendered")])) }) },
@@ -309,8 +311,8 @@ export default async function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "reload_game",
     label: "reload_game",
-    description: "After successful headless testing of the current edits, request compiling/instantiating the workspace before handoff; replace the active game only if valid. Waits without timeout for Shift+F5 or Allow Reload in chat unless automatic approval is enabled. Stop cancels the wait. Loads the workspace as it exists when allowed, including edits made while waiting; the request does not freeze a revision.",
-    promptSnippet: "reload_game: Compile and hot-reload the generated Godot game",
+    description: "After successful headless testing, request compiling/instantiating the workspace when a full reload is needed; replace the active game only if valid. Successful live parameter patches need no reload. Waits without timeout for Shift+F5 or Allow Reload in chat unless automatic approval is enabled. Stop cancels the wait. Loads the workspace as it exists when allowed, including edits made while waiting; the request does not freeze a revision.",
+    promptSnippet: "reload_game: Compile and reload the generated Godot game when a full refresh is needed",
     parameters: Type.Object({}),
     annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
     executionMode: "sequential",

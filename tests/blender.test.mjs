@@ -9,13 +9,13 @@ import {pathToFileURL} from 'node:url';
 import {prepareJob,inspectImage,resolveBlender,reviewScript,approvedJob,blenderEnvironment,warningCapture} from '../tools/blender/jobs.mjs';
 import {hostTools,toolContent} from '../tools/opencode/host-tools.mjs';
 import {processIdentity,cleanupJob} from '../tools/blender/ownership.mjs';
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 
 const workspace=()=>mkdtempSync(join(tmpdir(),'gs-blender-'));
 
 test('Pi registers Blender only when the game enables it',async()=>{
   const root=workspace();
-  for(const file of ['gamesmith-extension.ts','workspace-paths.mjs','model-capabilities.mjs','diagnostic-delivery.mjs','empty-response-retry.mjs'])
-    copyFileSync(resolve('tools/pi',file),join(root,file));
+  assembleHarnessRuntime('pi',root);
   // The extension uses only the schema builder during registration; no model runs.
   const ai=join(root,'node_modules/@earendil-works/pi-ai');mkdirSync(ai,{recursive:true});
   writeFileSync(join(ai,'package.json'),JSON.stringify({type:'module',exports:'./index.mjs'}));
