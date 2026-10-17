@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline';
 import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { hostTools, toolContent } from './host-tools.mjs';
+import { hostTools, toolContent, executeHostTool } from './host-tools.mjs';
 
 const abort = new AbortController();
 async function callHost(command,args) {
@@ -40,7 +40,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
         let progress=0;
         const heartbeat=token === undefined ? undefined : setInterval(()=>emit({method:'notifications/progress',params:{progressToken:token,progress:++progress}}),1000);
         let response;
-        try { response=await callHost(name,request.params.arguments || {}); }
+        try { response=await executeHostTool(name,request.params.arguments || {},{workspace:process.cwd(),callHost,signal:abort.signal}); }
         finally { clearInterval(heartbeat); }
         result={content:toolContent(response),isError:response.ok === false};
         break;

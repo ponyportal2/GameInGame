@@ -33,7 +33,7 @@ For property discovery, inspect one representative node:
 {"root":"Enemy0","discover_properties":true}
 ```
 
-Discovery defaults to depth 0 and additionally returns `script`,
+Discovery defaults to depth 0 and limit 1 (at most 3 nodes per page), and additionally returns `script`,
 `scene_file_path`, up to 32 groups, and up to 64 `available_properties` descriptors
 with `properties_truncated`. Inspector category/group/subgroup headings are
 excluded. Untyped fields are listed as Variant; values are only read on request.
@@ -110,3 +110,47 @@ blindly repeat a mutation whose response was truncated.
 
 Script reload, scene replacement, state migration, expression evaluation, and
 automatic impact analysis are outside this implementation.
+
+For a later adjustment, inspect fresh values and handles first. Start with the
+relevant engine class and known properties. For brightness, for example, inspect
+`DirectionalLight3D` with `properties:["light_energy"]`. Shared mutation values
+apply identically to every target; use separate calls for different desired
+values. Immediate readback is sufficient to confirm the write, while visual
+verification is a separate check.
+
+`rg_search` uses installed system `rg` without a shell or arbitrary flags. A
+missing executable returns an explicit error. All harnesses expose it:
+
+```json
+{"target":"source","pattern":"light_energy|ambient_light","glob":"*.gd","limit":20}
+```
+
+Source results contain workspace-relative `path`, `line`, and matching `text`.
+Optional `path` narrows the search inside the workspace; escaping paths and
+external symlinks/junctions are rejected, and recursive search does not follow
+links. Git and Godot metadata are excluded from ordinary recursive search.
+Regular expressions follow rg syntax; `case_sensitive:false` ignores case.
+
+```json
+{"target":"runtime","pattern":"Fill|Sun","class":"DirectionalLight3D","properties":["light_energy"],"limit":20}
+```
+
+Runtime search obtains one fresh compact inspection page (100 nodes) and feeds
+its JSON records to rg through stdin. Matches return complete node records and
+their observed handles, not reconstructed IDs. `root`, `depth`, `class`, `script`,
+`group`, and `properties` narrow inspection. Default depth remains 3; a pattern
+alone cannot discover nodes beyond that depth or the inspection traversal bound.
+`offset`/`limit` paginate matching records in this page, using `next_offset` when
+`has_more`. Separately, `runtime_next_offset` continues inspection: pass it as
+`runtime_offset` and reset match offset to 0. `runtime_truncated_by` retains the
+inspection limitations. Pages can shift as the game changes.
+
+Textual GameSmith results across the harness adapters are bounded to 50 KiB of
+UTF-8 JSON or 2,000 logical lines, whichever comes first. Logical lines include
+JSON structure and newlines inside string values. Image blocks are separate.
+Oversized results become valid JSON with `output_truncated`, original sizes,
+truncation reasons, a short incomplete preview, and recovery guidance. Mutation
+success/failure counts and diagnostic delivery identity survive truncation.
+Preview text is not a complete record or usable handle. Narrow filters and
+paginate; do not blindly repeat a mutation that may already have applied.
+Native vendor tools retain their own output policies.

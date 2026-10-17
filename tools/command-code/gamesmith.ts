@@ -3,9 +3,9 @@ import { join, relative, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { workspacePath } from './workspace-paths.mjs';
 import { POLICY_VERSION, TOOL_NAMES } from './policy.mjs';
-import { hostTools, toolContent } from './host-tools.mjs';
+import { hostTools, toolContent, executeHostTool } from './host-tools.mjs';
 
-export async function callHost(command, args, signal) {
+async function rawCallHost(command, args, signal) {
   const directory = process.env.GAMESMITH_HOST_BRIDGE_DIR;
   const id = randomUUID();
   const request = join(directory!, `request-${id}.json`);
@@ -23,9 +23,14 @@ export async function callHost(command, args, signal) {
   throw new Error('GameSmith tool cancelled.');
 }
 
+export async function callHost(command, args, signal) {
+  return executeHostTool(command,args,{workspace:process.cwd(),signal,callHost:rawCallHost});
+}
+
 export default async function (cmd) {
   const prompt = await readFile(process.env.GAMESMITH_PROMPT_PATH!, 'utf8');
   const tools = {
+    rg_search: hostTools.rg_search,
     inspect_runtime: hostTools.inspect_runtime,
     set_properties: hostTools.set_properties,
     generate_image: hostTools.generate_image,
@@ -46,7 +51,7 @@ export default async function (cmd) {
   if (!hostTools.blender) delete tools.blender;
   for (const [name, tool] of Object.entries(tools)) cmd.addTool({
     schema:{name,description:tool.description,input_schema:{type:'object',properties:tool.properties,required:('required' in tool ? tool.required : [])}},
-    readOnly:['inspect_runtime','read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),
+    readOnly:['rg_search','inspect_runtime','read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),
     run:async ({input,signal}) => {
       const result = await callHost(name,input,signal);
       if (result.ok === false) return {ok:false,error:JSON.stringify(result)};

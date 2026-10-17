@@ -8,7 +8,7 @@ import { workspacePath } from "./workspace-paths.mjs";
 import { resolveModelCapabilities, compactionReserveTokens } from "./model-capabilities.mjs";
 import { DiagnosticDelivery } from "./diagnostic-delivery.mjs";
 import { EmptyResponseRetry } from "./empty-response-retry.mjs";
-import { hostTools } from "./host-tools.mjs";
+import { hostTools, executeHostTool, boundedToolResult } from "./host-tools.mjs";
 
 const execFileAsync = promisify(execFile);
 const bridgeDir = process.env.GAMESMITH_HOST_BRIDGE_DIR || "";
@@ -16,7 +16,8 @@ const legacyTranscriptPath = process.env.GAMESMITH_LEGACY_TRANSCRIPT || "";
 const delayMs = Math.max(0, Number(process.env.GAMESMITH_LLM_DELAY_MS || "0"));
 
 function textResult(text: string, details: unknown = undefined) {
-  return { content: [{ type: "text" as const, text }], details };
+  const bounded = boundedToolResult({ok:true,text});
+  return { content: [{ type: "text" as const, text: bounded.output_truncated ? JSON.stringify(bounded) : text }], details };
 }
 
 async function runGit(cwd: string, args: string[]) {
@@ -28,7 +29,7 @@ async function runGit(cwd: string, args: string[]) {
   }
 }
 
-async function callHost(toolCallId: string, command: string, args: unknown, signal?: AbortSignal) {
+async function rawCallHost(toolCallId: string, command: string, args: unknown, signal?: AbortSignal) {
   if (!bridgeDir) throw new Error("GameSmith host bridge is not configured.");
   await mkdir(bridgeDir, { recursive: true });
   const id = `${Date.now()}-${toolCallId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
@@ -52,6 +53,12 @@ async function callHost(toolCallId: string, command: string, args: unknown, sign
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   }
+}
+
+async function callHost(toolCallId: string, command: string, args: unknown, signal?: AbortSignal) {
+  if (!Object.hasOwn(hostTools, command)) return rawCallHost(toolCallId, command, args, signal);
+  return executeHostTool(command, args, {workspace: process.cwd(), signal,
+    callHost: (name, input) => rawCallHost(toolCallId, name, input, signal)});
 }
 
 export default async function (pi: ExtensionAPI) {
@@ -285,7 +292,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   for (const tool of [
-    ...["inspect_runtime", "set_properties"].map(name => ({ name, description: hostTools[name].description, parameters: Type.Unsafe({type: "object", properties: hostTools[name].properties, required: hostTools[name].required || [], additionalProperties: false}) })),
+    ...["inspect_runtime", "set_properties", "rg_search"].map(name => ({ name, description: hostTools[name].description, parameters: Type.Unsafe({type: "object", properties: hostTools[name].properties, required: hostTools[name].required || [], additionalProperties: false}) })),
     { name: "generate_image", description: "Generate an image using the native harness selected in Settings > Images. Only one image job can run at a time. Start returns job_id; poll status until completed/failed; stop cancels. No vendor fallback. Keep workspace unchanged until completion. target_path must be relative PNG (default assets/generated/image.png); references are workspace-relative. Only a validated image is published.", parameters: Type.Object({ action: Type.Optional(Type.Union([Type.Literal("start"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("capabilities")])), prompt: Type.Optional(Type.String()), target_path: Type.Optional(Type.String()), reference_paths: Type.Optional(Type.Array(Type.String(), {maxItems: 4})), purpose: Type.Optional(Type.String()), transparent: Type.Optional(Type.Boolean()), job_id: Type.Optional(Type.String()) }) },
     { name: "blender", description: "Blender CLI/bpy workflow. Read action=guide first. Start script/blend with optional PNG render, poll compact status (details=true for logs and paginated objects via offset/limit), stop, or inspect a PNG image. Python approval follows the separate Blender setting.", parameters: Type.Object({ action: Type.Union([Type.Literal("guide"), Type.Literal("start"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("inspect")]), script: Type.Optional(Type.String()), blend: Type.Optional(Type.String()), render: Type.Optional(Type.String()), run_id: Type.Optional(Type.String()), path: Type.Optional(Type.String()), details: Type.Optional(Type.Boolean()), offset: Type.Optional(Type.Integer()), limit: Type.Optional(Type.Integer()) }) },
     { name: "start_test_game", description: "Start a separate Godot test process for the current workspace. Headless is always available; rendered requires user Settings permission. Returns immediately with run_id; read_test_log reports startup progress. Does not interrupt the player or promote the working snapshot. One test at a time.", parameters: Type.Object({ mode: Type.Optional(Type.Union([Type.Literal("headless"), Type.Literal("rendered")])) }) },

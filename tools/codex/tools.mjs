@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, readdir, stat, rename, rm } from 'node:fs/p
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { workspacePath } from './workspace-paths.mjs';
-import { hostTools } from './host-tools.mjs';
+import { hostTools, executeHostTool } from './host-tools.mjs';
 
 const fileTools={
   read:{description:'Read a workspace text file in bounded pages (1-based line offset).',properties:{path:{type:'string'},offset:{type:'integer'},limit:{type:'integer'}},required:['path']},
@@ -35,7 +35,7 @@ async function callHost(config,command,args,signal) {
 export async function executeTool(config,tool,args={},signal) {
   signal?.throwIfAborted();
   const name=tool.startsWith('gamesmith_') ? tool.slice(10) : '';
-  if (Object.hasOwn(hostTools,name)) return callHost(config,name,args,signal);
+  if (Object.hasOwn(hostTools,name)) return executeHostTool(name,args,{workspace:config.workspace,signal,callHost:(command,input)=>callHost(config,command,input,signal)});
   if (!Object.hasOwn(fileTools,name)) throw new Error('Unknown GameSmith tool: '+tool);
   const path=await workspacePath(config.workspace,args.path || '.',{destructive:name==='write' || name==='edit'});
   signal?.throwIfAborted();

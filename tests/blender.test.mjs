@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,symlinkSync,copyFileSync,readdirSync,readFileSync,renameSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,symlinkSync,readdirSync,readFileSync,renameSync,rmSync} from 'node:fs';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {tmpdir} from 'node:os';
@@ -178,9 +178,7 @@ test('explicit Blender override is honored and invalid override fails clearly',a
 
 for(const enabled of [true,false])for(const harness of ['opencode','cline','grok-build','kimi','kiro','agy'])test(harness+' assembled MCP '+(enabled?'exposes Blender and delivers a native preview image':'omits disabled Blender and rejects direct calls'),{timeout:15000},async()=>{
   const root=workspace(),bridge=join(root,'bridge');mkdirSync(bridge);
-  // Assemble the same canonical support modules that the host installs.
-  for(const [target,source] of Object.entries({'mcp.mjs':harness+'/mcp.mjs','host-tools.mjs':'opencode/host-tools.mjs','workspace-tools.mjs':'codex/tools.mjs','workspace-paths.mjs':'pi/workspace-paths.mjs','approval.mjs':harness==='grok-build'?'grok-build/approval.mjs':'cline/approval.mjs'}))
-    copyFileSync(resolve('tools',source),join(root,target));
+  assembleHarnessRuntime(harness,root);
   writeFileSync(join(bridge,'operation.json'),JSON.stringify({active:true,session:'fixture'}));
   writeFileSync(join(root,'config.json'),JSON.stringify({workspace:root,bridge_dir:bridge}));
   const child=spawn(process.execPath,[join(root,'mcp.mjs'),join(root,'config.json')],{env:{...process.env,GAMESMITH_HOST_BRIDGE_DIR:bridge,GAMESMITH_BLENDER_ENABLED:enabled?'1':'0'},stdio:['pipe','pipe','pipe']});

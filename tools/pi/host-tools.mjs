@@ -1,1 +1,1 @@
-export {hostTools, toolContent} from '../opencode/host-tools.mjs';
+export {hostTools, toolContent, executeHostTool, boundedToolResult} from '../opencode/host-tools.mjs';

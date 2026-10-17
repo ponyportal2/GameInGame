@@ -37,6 +37,10 @@
         [
           "empty-response-retry.mjs",
           "pi/empty-response-retry.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -91,6 +95,10 @@
         [
           "process-tree.mjs",
           "agent/process-tree.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -146,6 +154,10 @@
         [
           "workspace-paths.mjs",
           "pi/workspace-paths.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -209,6 +221,10 @@
         [
           "image-job.mjs",
           "images/image-job.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -271,6 +287,10 @@
         [
           "session-state.mjs",
           "agent/session-state.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -349,6 +369,10 @@
         [
           "image-native-hook.mjs",
           "images/image-native-hook.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -427,6 +451,10 @@
         [
           "image-native-hook.mjs",
           "images/image-native-hook.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -501,6 +529,10 @@
         [
           "image-hook.mjs",
           "images/image-hook.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -559,6 +591,10 @@
         [
           "session-state.mjs",
           "agent/session-state.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -617,6 +653,10 @@
         [
           "session-state.mjs",
           "agent/session-state.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -671,6 +711,10 @@
         [
           "workspace-paths.mjs",
           "pi/workspace-paths.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -729,6 +773,10 @@
         [
           "session-state.mjs",
           "agent/session-state.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -783,6 +831,10 @@
         [
           "process-tree.mjs",
           "agent/process-tree.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [
@@ -833,6 +885,10 @@
         [
           "process-tree.mjs",
           "agent/process-tree.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
         ]
       ],
       "node_suites": [

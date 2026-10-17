@@ -1,7 +1,9 @@
+import {rgSearch} from './rg-search.mjs';
 const runtimeHandle={type:'object',properties:{path:{type:'string',maxLength:1024},instance_id:{type:'string'},game_generation:{type:'string'}},required:['path','instance_id','game_generation'],additionalProperties:false};
 export const hostTools = {
-    inspect_runtime: {description:'Inspect the player\'s live active_game subtree, not a separate test. Paths are relative to its root (.). Returns compact identity handles, class and requested values. discover_properties=true adds metadata/property descriptors (default depth 0). Filter by engine class, exact script path or group. Use offset/limit for matching-node pages while has_more; next_offset continues result_limit only. depth_limit needs greater depth; traversal_limit needs narrower root. Live-tree pages can shift: deduplicate identities and restart if game_generation changes. Never infer handles. No expression evaluation.',properties:{root:{type:'string',maxLength:1024},depth:{type:'integer',minimum:0,maximum:8},limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0,maximum:1000},discover_properties:{type:'boolean'},class:{type:'string'},script:{type:'string'},group:{type:'string'},properties:{type:'array',items:{type:'string'},maxItems:16}}},
-    set_properties: {description:'Temporarily patch 1..100 explicit live node handles from inspect_runtime; stale identities fail. Copy handles verbatim; never infer IDs. Edit persistent source for durable changes; explicit live-only experiments need no source edits. Supports bool, exact JSON integers, finite numbers, strings (1024 chars), and tagged {type:"Vector2",x,y}, {type:"Vector3",x,y,z}, {type:"Color",r,g,b,a}. No objects, arrays, expressions or node replacement. Validates each target before writing; setters can cause partial changes. Results include per-target applied names, immediate readback and errors; values may change on later frames. Successful parameter patches need no reload.',properties:{targets:{type:'array',items:runtimeHandle,minItems:1,maxItems:100},values:{type:'object',minProperties:1,maxProperties:16,additionalProperties:{}}},required:['targets','values']},
+    rg_search: {description:'Search with system rg, no shell. target=source returns workspace file/line matches; target=runtime searches one compact inspection page and returns complete observed node records/handles. Use class/root/properties to focus runtime search; follow runtime_next_offset for another inspection page, offset/limit for matches in this page. Missing rg is an explicit error. No arbitrary flags, files outside the workspace, or stored-output paths.',properties:{target:{type:'string',enum:['source','runtime']},pattern:{type:'string',maxLength:1024},path:{type:'string'},glob:{type:'string'},case_sensitive:{type:'boolean'},offset:{type:'integer',minimum:0,maximum:10000},limit:{type:'integer',minimum:1,maximum:100},root:{type:'string'},depth:{type:'integer',minimum:0,maximum:8},class:{type:'string'},script:{type:'string'},group:{type:'string'},properties:{type:'array',items:{type:'string'},maxItems:16},runtime_offset:{type:'integer',minimum:0,maximum:1000}},required:['target','pattern']},
+    inspect_runtime: {description:'Inspect the player\'s live active_game subtree, not a separate test. Paths are relative to its root (.). Returns compact identity handles, class and requested values. discover_properties=true adds metadata/property descriptors (default depth 0, limit 1; maximum 3 nodes per discovery page). Filter by engine class, exact script path or group. Use offset/limit for matching-node pages while has_more; next_offset continues result_limit only. depth_limit needs greater depth; traversal_limit needs narrower root. Live-tree pages can shift: deduplicate identities and restart if game_generation changes. Never infer handles. No expression evaluation.',properties:{root:{type:'string',maxLength:1024},depth:{type:'integer',minimum:0,maximum:8},limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0,maximum:1000},discover_properties:{type:'boolean'},class:{type:'string'},script:{type:'string'},group:{type:'string'},properties:{type:'array',items:{type:'string'},maxItems:16}}},
+    set_properties: {description:'Temporarily patch 1..100 explicit live node handles from inspect_runtime; stale identities fail. Inspect fresh values/handles at the start of a later adjustment. Shared values apply identically to every target; use separate calls for different desired values. Copy handles verbatim; never infer IDs. Edit persistent source for durable changes; explicit live-only experiments need no source edits. Supports bool, exact JSON integers, finite numbers, strings (1024 chars), and tagged {type:"Vector2",x,y}, {type:"Vector3",x,y,z}, {type:"Color",r,g,b,a}. No objects, arrays, expressions or node replacement. Validates each target before writing; setters can cause partial changes. Results include per-target applied names, immediate readback and errors; values may change on later frames. Successful parameter patches need no reload.',properties:{targets:{type:'array',items:runtimeHandle,minItems:1,maxItems:100},values:{type:'object',minProperties:1,maxProperties:16,additionalProperties:{}}},required:['targets','values']},
     generate_image: {description:'Generate a game image through the native image harness selected in Settings > Images. No vendor fallback. Only one image job can run at a time. Start returns job_id; poll status until completed or failed; stop cancels. Keep the workspace unchanged until completion. Only a decoded, validated PNG is published. Relative target_path defaults to assets/generated/image.png. Reference images must be workspace-relative (up to four). Transparent output is verified. capabilities reports installed/authenticated candidates, not guaranteed account quota.',properties:{action:{type:'string',enum:['start','status','stop','capabilities']},prompt:{type:'string'},target_path:{type:'string'},reference_paths:{type:'array',items:{type:'string'},maxItems:4},purpose:{type:'string'},transparent:{type:'boolean'},job_id:{type:'string'}}},
     blender: {description:'Blender CLI/bpy asset workflow. Read guide first. Python scripts require player approval unless the separate automatic Blender approval setting is enabled. Status is compact by default; details=true returns retained logs and paginated objects (offset, limit); stop cancels; inspect returns a PNG image for visual review.',properties:{action:{type:'string',enum:['guide','start','status','stop','inspect']},script:{type:'string'},blend:{type:'string'},render:{type:'string'},run_id:{type:'string'},path:{type:'string'},details:{type:'boolean'},offset:{type:'integer'},limit:{type:'integer'}}},
     reload_game: {description:'Load or fully reload the game after successful headless testing. Use when a live property patch is insufficient; successful parameter patches need no reload. Waits for player approval unless auto-approval is enabled.',properties:{}},
@@ -21,8 +23,40 @@ export const hostTools = {
 // Set by the host for each game runtime; inherited by native MCP children.
 if (process.env.GAMESMITH_BLENDER_ENABLED === '0') delete hostTools.blender;
 
-export function toolContent(result) {
+export const OUTPUT_BYTES = 50 * 1024;
+export const OUTPUT_LINES = 2000;
+function logicalLines(value) {
+    // Count JSON structure and decoded content lines, even though transport JSON escapes them.
+    let extra=0;
+    const visit=v=>{if(typeof v==='string')extra+=(v.match(/\n/g)||[]).length;
+      else if(v && typeof v==='object')for(const item of Object.values(v))visit(item);};
+    visit(value);
+    return JSON.stringify(value,null,2).split('\n').length+extra;
+}
+export function boundedToolResult(result) {
     const {image_base64,mime_type,...metadata}=result;
+    const text=JSON.stringify(metadata),bytes=Buffer.byteLength(text),lines=logicalLines(metadata);
+    if(bytes<=OUTPUT_BYTES && lines<=OUTPUT_LINES)return result;
+    const summary={};
+    for(const key of ['ok','matched','changed','failed','temporary','game_generation','delivery_id'])
+      if(['boolean','number'].includes(typeof metadata[key]) || typeof metadata[key]==='string' && metadata[key].length<=128)summary[key]=metadata[key];
+    let preview='',size=0,count=1;
+    for(const ch of JSON.stringify(metadata,null,2).replaceAll('\\n','\n')) {
+      const n=Buffer.byteLength(ch);
+      if(size+n>4096 || ch==='\n' && count>=100)break;
+      preview+=ch;size+=n;if(ch==='\n')count++;
+    }
+    return {...summary,output_truncated:true,original_bytes:bytes,original_lines:lines,
+      truncated_by:[...(bytes>OUTPUT_BYTES?['byte_limit']:[]),...(lines>OUTPUT_LINES?['line_limit']:[])],
+      preview,recovery:'Preview is incomplete text, not complete records or handles. Narrow filters/path/properties and use pagination, or rg_search on source/runtime. Do not blindly repeat a mutation: it may already have applied.',
+      ...(image_base64?{image_base64,mime_type}:{})};
+}
+export async function executeHostTool(name,args,{workspace,callHost,signal}={}) {
+    const result=name==='rg_search' ? await rgSearch(args,{workspace,callHost,signal}) : await callHost(name,args,signal);
+    return boundedToolResult(result);
+}
+export function toolContent(result) {
+    const {image_base64,mime_type,...metadata}=boundedToolResult(result);
     const content=[{type:'text',text:JSON.stringify(metadata)}];
     if(image_base64)content.push({type:'image',data:image_base64,mimeType:mime_type});
     return content;

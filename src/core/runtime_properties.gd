@@ -123,10 +123,11 @@ func inspect(args: Dictionary) -> Dictionary:
     var offset = args.get("offset", 0)
     if typeof(offset) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(offset)) or offset < 0 or offset > MAX_VISITED or offset != int(offset):
         return _error("Expected offset 0..1000.")
-    var limit = args.get("limit", MAX_NODES)
+    var limit = args.get("limit", 1 if discover else MAX_NODES)
     var requested = args.get("properties", [])
     if typeof(depth) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(depth)) or depth < 0 or depth > 8 or depth != int(depth) or typeof(limit) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(limit)) or limit < 1 or limit > MAX_NODES or limit != int(limit):
         return _error("Expected depth 0..8 and limit 1..100.")
+    if discover and limit > 3: return _error("Property discovery accepts at most 3 nodes; inspect one representative node or page with offset.")
     if not requested is Array or requested.size() > MAX_PROPERTIES:
         return _error("Request at most 16 properties.")
     for name in requested:

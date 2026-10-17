@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,copyFileSync,readdirSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import {TOOL_NAMES} from '../tools/command-code/policy.mjs';
 
 test('native ACP provider boundary, persistent history, compaction and guard failures', {skip:!process.env.GAMESMITH_TEST_COMMAND_CODE_BIN,timeout:180000}, async t=>{
@@ -27,8 +28,8 @@ test('native ACP provider boundary, persistent history, compaction and guard fai
  writeFileSync(join(home,'.commandcode','settings.json'),JSON.stringify({model:'fixture/policy',disableScratchpad:true,compactMode:'fast'}));
  writeFileSync(join(home,'.commandcode','auth.json'),JSON.stringify({apiKey:'fixture-only'}));
  writeFileSync(join(home,'.commandcode','providers.json'),JSON.stringify({provider:{fixture:{api:'openai-completions',baseURL:'http://127.0.0.1:'+http.address().port+'/v1',apiKey:false,models:{policy:{contextWindow:100000,maxOutput:4096}}}}}));
- copyFileSync('tools/opencode/host-tools.mjs',join(root,'host-tools.mjs'));
- const mod=join(root,'gamesmith.ts');copyFileSync('tools/command-code/gamesmith.ts',mod);copyFileSync('tools/pi/workspace-paths.mjs',join(root,'workspace-paths.mjs'));copyFileSync('tools/command-code/policy.mjs',join(root,'policy.mjs'));
+ assembleHarnessRuntime('command-code',root);
+ const mod=join(root,'gamesmith.ts');
  writeFileSync(join(root,'prompt.md'),'GAMESMITH_NATIVE_POLICY_MARKER');
  let child,records=[],pending=new Map(),serial=0,errors='';
  const start=()=>{

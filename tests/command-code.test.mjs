@@ -1,16 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, copyFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 
 test('mod exposes host tools and guards native absolute paths without taking over model policy', async () => {
   const dir = await mkdtemp(join(tmpdir(),'gamesmith-mod-test-'));
-  await copyFile(new URL('../tools/command-code/gamesmith.ts',import.meta.url),join(dir,'gamesmith.ts'));
-  await copyFile(new URL('../tools/command-code/policy.mjs',import.meta.url),join(dir,'policy.mjs'));
-  await copyFile(new URL('../tools/opencode/host-tools.mjs',import.meta.url),join(dir,'host-tools.mjs'));
-  await copyFile(new URL('../tools/pi/workspace-paths.mjs',import.meta.url),join(dir,'workspace-paths.mjs'));
+  assembleHarnessRuntime('command-code',dir);
   const workspace = join(dir,'workspace');
   await mkdir(workspace);
   const prompt = join(dir,'prompt.md');
@@ -71,8 +69,7 @@ test('mod exposes host tools and guards native absolute paths without taking ove
 
 test('disabled Blender is absent from Command-code registration and policy', async () => {
   const dir = await mkdtemp(join(tmpdir(),'gamesmith-mod-disabled-'));
-  for (const [source,name] of [['command-code/gamesmith.ts','gamesmith.ts'],['command-code/policy.mjs','policy.mjs'],['opencode/host-tools.mjs','host-tools.mjs'],['pi/workspace-paths.mjs','workspace-paths.mjs']])
-    await copyFile(new URL('../tools/'+source,import.meta.url),join(dir,name));
+  assembleHarnessRuntime('command-code',dir);
   const old = process.env.GAMESMITH_BLENDER_ENABLED;
   const oldPrompt = process.env.GAMESMITH_PROMPT_PATH;
   process.env.GAMESMITH_BLENDER_ENABLED = '0';
