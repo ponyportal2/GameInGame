@@ -21,7 +21,7 @@ func run() -> void:
     root.add_child(runner)
     var tools = Tools.new("user://runtime-properties", runner)
     check(not tools.execute("inspect_runtime", {}).get("ok", false), "no active game is rejected")
-    tools.write_file("enemy.gd", "extends Node2D\nvar speed: float = 80.0\nvar health: int = 43\nvar title: String = 'enemy'\nvar enabled: bool = true\nvar tint: Color = Color.WHITE\nvar limited: float = 0.0:\n    set(value): limited = minf(value, 10.0)\nvar vanish: bool = false:\n    set(value):\n        vanish = value\n        if value: queue_free()\n")
+    tools.write_file("enemy.gd", "extends Node2D\nvar speed: float = 80.0\nvar health: int = 43\nvar title: String = 'enemy'\nvar enabled: bool = true\nvar tint: Color = Color.WHITE\n@export_group('Behavior')\n@export_subgroup('Tuning')\n@export var aggression: float = 1.0\nvar limited: float = 0.0:\n    set(value): limited = minf(value, 10.0)\nvar vanish: bool = false:\n    set(value):\n        vanish = value\n        if value: queue_free()\n")
     tools.write_file("main.gd", "extends Node2D\nconst Enemy = preload('enemy.gd')\nfunc _ready():\n    for i in range(50):\n        var enemy = Enemy.new()\n        enemy.name = 'Enemy%d' % i\n        add_child(enemy)\n        enemy.add_to_group('enemies')\n")
     tools.patch_file("enemy.gd", "var speed: float = 80.0", "var speed = 80.0")
     tools.write_file("getter.gd", "extends Node\nvar dangerous: float:\n    get:\n        queue_free()\n        return 1.0\n")
@@ -33,6 +33,54 @@ func run() -> void:
         runner.queue_free()
         quit(1)
         return
+    check(not inspected.nodes[0].has("available_properties") and not inspected.nodes[0].has("script"), "normal inspection omits discovery metadata")
+    var discovery = tools.execute("inspect_runtime", {"root": "Enemy0", "discover_properties": true})
+    check(discovery.ok and discovery.nodes.size() == 1, "discovery defaults to root only")
+    var names = discovery.nodes[0].get("available_properties", []).map(func(prop): return prop.name)
+    check("speed" in names and "Transform" not in names and "Visibility" not in names and "Behavior" not in names and "Tuning" not in names and "aggression" in names, "discovery excludes category headings and retains untyped fields")
+    check(not tools.execute("inspect_runtime", {"root": "Enemy0", "properties": ["Transform"]}).nodes[0].values.has("Transform"), "headings cannot be read as properties")
+    var walls = Node2D.new()
+    walls.name = "Walls"
+    game.add_child(walls)
+    for i in range(200):
+        var body = StaticBody2D.new()
+        body.name = "Wall%d" % i
+        walls.add_child(body)
+        var polygon = Polygon2D.new()
+        polygon.color = Color(0.09, 0.11, 0.17)
+        body.add_child(polygon)
+    var wall_sample = tools.execute("inspect_runtime", {"root": "Walls", "class": "Polygon2D", "depth": 2, "limit": 64, "properties": ["color"]})
+    var public_response = {"content": [{"type": "text", "text": JSON.stringify(wall_sample)}], "isError": false}
+    check(JSON.stringify(public_response).to_utf8_buffer().size() < 24000, "64-wall serialized MCP response stays below 24KB")
+    var wall_handles: Array = []
+    var identities = {}
+    var offset = 0
+    for page_index in range(5):
+        var page = tools.execute("inspect_runtime", {"root": "Walls", "class": "Polygon2D", "depth": 2, "limit": 50, "offset": offset, "properties": ["color"]})
+        check(page.ok and page.nodes.size() == 50, "wall pagination returns fifty actual matches")
+        for entry in page.nodes:
+            identities[entry.handle.instance_id] = true
+            wall_handles.append(entry.handle)
+        if not page.get("has_more", false):
+            check(page.get("next_offset") == null and not page.truncated, "last exact-size page has no false continuation")
+            break
+        check(page.get("next_offset") == offset + 50 and "result_limit" in page.get("truncated_by", []), "page continuation counts matching nodes")
+        offset = page.next_offset
+    check(wall_handles.size() == 200 and identities.size() == 200, "pagination discovers all 200 identities without guessing")
+    var color_value = {"type": "Color", "r": 0.3, "g": 0.38, "b": 0.5, "a": 1.0}
+    for start in range(0, wall_handles.size(), 100):
+        var patch = tools.execute("set_properties", {"targets": wall_handles.slice(start, start + 100), "values": {"color": color_value}})
+        check(patch.ok and patch.changed == 100 and patch.failed == 0 and patch.temporary, "wall recolor patches real handles in hundred-node batches")
+    check(runner.active_game == game and game.get_node("Enemy0").health == 43, "wall recolor preserves game and unrelated state")
+    var recolored = tools.execute("inspect_runtime", {"root": "Walls", "class": "Polygon2D", "depth": 2, "limit": 100, "properties": ["color"]})
+    check(recolored.nodes.all(func(entry): return is_equal_approx(entry.values.color.r, 0.3)), "wall recolor verified by fresh readback")
+    var shallow = tools.execute("inspect_runtime", {"root": "Walls", "depth": 0})
+    check("depth_limit" in shallow.get("truncated_by", []) and not shallow.get("has_more", true) and shallow.get("next_offset") == null, "depth cutoff is not pageable")
+    var beyond = tools.execute("inspect_runtime", {"root": "Walls", "class": "Polygon2D", "depth": 2, "offset": 200})
+    check(beyond.nodes.is_empty() and not beyond.get("has_more", true), "offset beyond matches returns empty final page")
+    var combined = tools.execute("inspect_runtime", {"root": "Walls", "class": "StaticBody2D", "depth": 1, "limit": 1})
+    check("result_limit" in combined.get("truncated_by", []) and "depth_limit" in combined.get("truncated_by", []), "result and depth truncation reasons coexist")
+    walls.free()
     var handles: Array = inspected.nodes.map(func(node): return node.handle)
     var result = tools.execute("set_properties", {"targets": handles, "values": {"speed": 120.0}})
     check(result.get("ok", false) and result.get("changed", 0) == 50 and result.get("failed", -1) == 0, "batch changes fifty enemies")
@@ -109,6 +157,7 @@ func run() -> void:
     check(not tools.execute("inspect_runtime", {"root": "Dangerous", "properties": ["dangerous"]}).ok, "getter invalidation returns an honest failure")
     var prompt = preload("res://src/pi/pi_runtime_config.gd")._game_prompt()
     check("inspect_runtime" in prompt and "set_properties" in prompt and "parameter patch" in prompt, "shared prompt teaches live parameter iteration")
+    check("Never infer" in prompt and "live-only" in prompt and "do not reload" in prompt and "visual" in prompt, "prompt explains live-only precedence handles and evidence")
     var bridge = "user://runtime-properties/bridge"
     DirAccess.make_dir_recursive_absolute(bridge)
     for harness in preload("res://src/agent/harness_inventory.gd").all():
@@ -123,7 +172,7 @@ func run() -> void:
             var patched = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-set.json")))
             check(patched is Dictionary and patched.get("ok", false) and runner.active_game.get_node("Enemy2").speed == 140.0, harness.id + " host bridge mutates live game")
         controller.queue_free()
-    for invalid in [{"limit": 101}, {"limit": "many"}, {"depth": -1}, {"depth": 0.5}, {"properties": [1]}, {"group": []}]:
+    for invalid in [{"limit": 101}, {"limit": "many"}, {"depth": -1}, {"depth": 0.5}, {"properties": [1]}, {"group": []}, {"offset": -1}, {"offset": 0.5}, {"offset": "1"}, {"offset": 1001}, {"discover_properties": 1}]:
         check(not tools.execute("inspect_runtime", invalid).ok, "malformed inspection rejected")
     var current = tools.execute("inspect_runtime", {"root": "Enemy2"}).nodes[0].handle
     for values in [{"speed": INF}, {"speed": NAN}, {"health": 9007199254740992}, {"title": "a".repeat(1025)}, {"speed": []}, {"speed": null}]:
@@ -134,6 +183,7 @@ func run() -> void:
     for index in range(1100): wide.add_child(Node.new())
     result = tools.execute("inspect_runtime", {"root": "Wide", "group": "absent"})
     check(result.ok and result.visited <= 1000 and result.truncated and result.nodes.is_empty(), "filtered wide traversal still bounded")
+    check("traversal_limit" in result.get("truncated_by", []) and result.get("next_offset") == null, "traversal cutoff requires narrower root")
     var original_script = runner.active_game.get_node("Enemy2").get_script()
     tools.patch_file("enemy.gd", "var speed = 80.0", "var speed = 160.0")
     var future_enemy = original_script.new()

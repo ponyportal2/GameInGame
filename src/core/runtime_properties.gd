@@ -54,6 +54,8 @@ func _resolve(handle: Dictionary, game: Node) -> Node:
 func _properties(node: Node) -> Dictionary:
     var result = {}
     for info in node.get_property_list():
+        if int(info.get("usage", 0)) & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP):
+            continue
         result[str(info.name)] = info
     return result
 
@@ -115,7 +117,12 @@ func inspect(args: Dictionary) -> Dictionary:
     var generation = str(game.get_instance_id())
     var origin = _path(game, args.get("root", "."))
     if origin == null: return _error("Root must be a node path beneath active_game, without parent traversal or subnames.")
-    var depth = args.get("depth", 3)
+    var discover = args.get("discover_properties", false)
+    if not discover is bool: return _error("Expected discover_properties boolean.")
+    var depth = args.get("depth", 0 if discover else 3)
+    var offset = args.get("offset", 0)
+    if typeof(offset) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(offset)) or offset < 0 or offset > MAX_VISITED or offset != int(offset):
+        return _error("Expected offset 0..1000.")
     var limit = args.get("limit", MAX_NODES)
     var requested = args.get("properties", [])
     if typeof(depth) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(depth)) or depth < 0 or depth > 8 or depth != int(depth) or typeof(limit) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(limit)) or limit < 1 or limit > MAX_NODES or limit != int(limit):
@@ -129,8 +136,10 @@ func inspect(args: Dictionary) -> Dictionary:
     var pending = [{"id": origin.get_instance_id(), "depth": 0}]
     var nodes: Array = []
     var visited = 0
-    var truncated = false
-    while not pending.is_empty() and visited < MAX_VISITED and nodes.size() < limit:
+    var reasons: Array = []
+    var matched = 0
+    var has_more = false
+    while not pending.is_empty() and visited < MAX_VISITED:
         var item: Dictionary = pending.pop_back()
         var node = instance_from_id(item.id)
         if not node is Node or not _within(node, game): continue
@@ -138,38 +147,54 @@ func inspect(args: Dictionary) -> Dictionary:
         var script: Script = node.get_script()
         var script_path = script.resource_path if script != null else ""
         if (args.get("class", "") == "" or node.is_class(args["class"])) and (args.get("script", "") == "" or args.script == script_path) and (args.get("group", "") == "" or node.is_in_group(args.group)):
-            var entry = {"handle": _handle(node, game), "class": node.get_class(), "script": script_path, "scene_file_path": node.scene_file_path, "groups": [], "available_properties": [], "values": {}, "property_errors": {}}
-            for group in node.get_groups().slice(0, 32): entry.groups.append(str(group).left(MAX_STRING))
-            var props = _properties(node)
-            if not _within(node, game): return _error("Game or node invalidated during property discovery.")
-            entry.properties_truncated = false
-            for name in props:
-                if _supported(props[name]):
-                    if entry.available_properties.size() < 64:
-                        entry.available_properties.append({"name": name.left(MAX_STRING), "type": type_string(props[name].type)})
-                    else: entry.properties_truncated = true
-            for name in requested:
-                if not _within(node, game):
-                    entry.property_errors[name] = "Node invalidated during inspection."
-                    continue
-                if not props.has(name) or not _supported(props[name]):
-                    entry.property_errors[name] = "Missing or unsupported property."
-                    continue
-                var encoded = _encode(node.get(name))
-                if not _within(node, game): return _error("Game or node invalidated by a property getter.")
-                if encoded.ok: entry.values[name] = encoded.value
-                else: entry.property_errors[name] = encoded.error
-            nodes.append(entry)
+            matched += 1
+            if matched > offset and nodes.size() >= limit:
+                has_more = true
+                if "result_limit" not in reasons: reasons.append("result_limit")
+                break
+            # Skip matching nodes, not visited nodes; do not invoke skipped getters.
+            if matched > offset:
+                var entry = {"handle": _handle(node, game), "class": node.get_class(), "values": {}}
+                var props = _properties(node)
+                if not _within(node, game): return _error("Game or node invalidated during property discovery.")
+                if discover:
+                    entry.script = script_path
+                    entry.scene_file_path = node.scene_file_path
+                    entry.groups = []
+                    for group in node.get_groups().slice(0, 32): entry.groups.append(str(group).left(MAX_STRING))
+                    entry.available_properties = []
+                    entry.properties_truncated = false
+                    for name in props:
+                        if _supported(props[name]):
+                            if entry.available_properties.size() < 64:
+                                entry.available_properties.append({"name": name.left(MAX_STRING), "type": "Variant" if props[name].type == TYPE_NIL else type_string(props[name].type)})
+                            else: entry.properties_truncated = true
+                entry.property_errors = {}
+                for name in requested:
+                    if not _within(node, game):
+                        entry.property_errors[name] = "Node invalidated during inspection."
+                        continue
+                    if not props.has(name) or not _supported(props[name]):
+                        entry.property_errors[name] = "Missing or unsupported property."
+                        continue
+                    var encoded = _encode(node.get(name))
+                    if not _within(node, game): return _error("Game or node invalidated by a property getter.")
+                    if encoded.ok: entry.values[name] = encoded.value
+                    else: entry.property_errors[name] = encoded.error
+                if entry.property_errors.is_empty(): entry.erase("property_errors")
+                nodes.append(entry)
         if not _within(node, game): continue
         if item.depth >= depth:
-            if node.get_child_count() > 0: truncated = true
+            if node.get_child_count() > 0 and "depth_limit" not in reasons: reasons.append("depth_limit")
             continue
         # Bound traversal storage even for extremely wide trees.
         var count = mini(node.get_child_count(), MAX_VISITED - visited - pending.size())
-        if count < node.get_child_count(): truncated = true
+        if count < node.get_child_count() and "traversal_limit" not in reasons: reasons.append("traversal_limit")
         for index in range(count - 1, -1, -1):
             pending.append({"id": node.get_child(index).get_instance_id(), "depth": item.depth + 1})
-    return {"ok": true, "nodes": nodes, "visited": visited, "truncated": truncated or not pending.is_empty(), "game_generation": generation}
+    if not pending.is_empty() and visited >= MAX_VISITED and "traversal_limit" not in reasons:
+        reasons.append("traversal_limit")
+    return {"ok": true, "nodes": nodes, "visited": visited, "truncated": not reasons.is_empty(), "truncated_by": reasons, "has_more": has_more, "next_offset": int(offset) + nodes.size() if has_more else null, "game_generation": generation}
 
 func set_properties(args: Dictionary) -> Dictionary:
     var game = _game()

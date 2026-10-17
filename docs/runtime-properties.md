@@ -6,7 +6,10 @@ not the host UI or a separate test process. No game hooks are required.
 
 For a parameter edit: inspect, edit persistent source, headlessly test that
 source, patch existing instances, and check the results. Reload remains the
-fallback for changes that cannot be represented as supported property writes.
+fallback for changes that cannot be represented as supported property writes,
+unless the player says not to reload. That constraint remains binding when
+inspection or patching fails: report the blocker. An explicitly temporary
+live-only experiment needs no source edit or headless source test.
 Runtime patches do not save source or advance the last working snapshot.
 Loaded code/defaults also stay unchanged: newly spawned instances can retain
 their old defaults even after the source file is edited. Patch a live spawner's
@@ -16,21 +19,52 @@ configuration when the game uses one, or reload when future spawns must change.
 {"root":".","depth":3,"group":"enemies","properties":["speed","health"]}
 ```
 
-Inspection returns a flat `nodes` array. Each entry includes `handle`, engine
-`class`, `script`, `scene_file_path`, groups, bounded `available_properties`,
-requested `values`, and `property_errors`. `handle` contains a game-relative
-`path`, string `instance_id`, and string `game_generation`. Copy it verbatim.
+Inspection returns a flat `nodes` array containing only `handle`, engine `class`,
+requested `values`, and `property_errors` when a requested read fails. A handle
+contains a game-relative `path`, string `instance_id`, and string
+`game_generation`. Copy it verbatim; never infer IDs or omitted paths.
 Generation identifies the current game root; replacing or unloading the game
-invalidates its handles. Renaming/reparenting a node also invalidates its old
-path. A successful mutation returns the current handle.
+invalidates its handles. Renaming/reparenting also invalidates the old path.
+A successful mutation returns the current handle.
 
-Filters `class` (engine class, including inheritance), `script` (exact reported
-resource path), and `group` combine with AND. Defaults: root `.`, depth 3,
-limit 100. Depth is 0..8, limit 1..100, and traversal visits at most 1000 nodes.
-`truncated` means the depth, traversal, or result bound omitted nodes. Narrow
-the root/filter to inspect further. At most 16 requested properties, 64 available
-property descriptors, and 32 groups are returned per node. Discovery lists
-untyped properties as Variant; reading them requires explicitly requesting them.
+For property discovery, inspect one representative node:
+
+```json
+{"root":"Enemy0","discover_properties":true}
+```
+
+Discovery defaults to depth 0 and additionally returns `script`,
+`scene_file_path`, up to 32 groups, and up to 64 `available_properties` descriptors
+with `properties_truncated`. Inspector category/group/subgroup headings are
+excluded. Untyped fields are listed as Variant; values are only read on request.
+An explicit depth overrides the discovery default; ordinary inspection defaults
+to depth 3. Property discovery can still be large: use one node at a time.
+
+Filters `class` (engine class, including inheritance), `script` (exact resource
+path from discovery), and `group` combine with AND. Defaults: root `.`, offset 0,
+limit 100. Depth is 0..8, limit 1..100, offset 0..1000; each request visits at most
+1000 nodes. At most 16 properties can be requested per node.
+
+```json
+{"class":"Polygon2D","depth":3,"properties":["color"],"offset":0,"limit":50}
+```
+
+`truncated_by` distinguishes incomplete results:
+
+- `result_limit`: another matching node was found; `has_more=true` and
+  `next_offset` continues after this page. Offset counts matches, not visited nodes.
+- `depth_limit`: children were omitted; increase depth or narrow the root.
+- `traversal_limit`: the 1000-node traversal/storage bound omitted nodes; narrow
+  the root. Pagination does not bypass the traversal bound.
+
+`truncated` is true if any reason is present. `next_offset` is null and
+`has_more=false` unless another result was actually found within the traversal.
+Depth/traversal reasons may coexist with result pagination; exhausting pages
+then does not prove all nodes in the game were inspected.
+Pages are best effort over the live tree, not a snapshot. Keep the same query,
+deduplicate identities, and restart inspection if `game_generation` changes.
+Spawning/removal/reparenting between calls can cause skipped or repeated nodes.
+For stable trees, an exact-size final page has no false continuation.
 
 ```json
 {
@@ -66,6 +100,13 @@ there is no rollback. Readback occurs after all writes to that target, so setter
 clamping and changes to other written fields are visible. It proves the values
 at that instant only; gameplay may overwrite them next frame. Errors raised by
 game code remain available through `read_runtime_log`.
+
+Report runtime readback, visual verification, and persistence separately. A
+successful write does not prove rendered appearance, later frames, future
+instances, or source changed. For OpenCode overflow saved outside the workspace,
+do not follow native Task/read instructions: those routes are unavailable.
+Retry inspection with smaller pages/fewer properties/narrower filters. Never
+blindly repeat a mutation whose response was truncated.
 
 Script reload, scene replacement, state migration, expression evaluation, and
 automatic impact analysis are outside this implementation.

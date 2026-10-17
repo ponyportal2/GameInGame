@@ -92,6 +92,32 @@ func _run() -> void:
         push_error("FAIL: packaged live patch failed or reset unrelated state")
         quit(1)
         return
+    for i in range(200):
+        var wall = Polygon2D.new()
+        wall.name = "Wall%d" % i
+        wall.color = Color(0.09, 0.11, 0.17)
+        active.add_child(wall)
+    var handles: Array = []
+    for offset in [0, 64, 128, 192]:
+        var page = tools.execute("inspect_runtime", {"class": "Polygon2D", "properties": ["color"], "limit": 64, "offset": offset})
+        if not page.ok or JSON.stringify({"content": [{"type": "text", "text": JSON.stringify(page)}]}).to_utf8_buffer().size() >= 24000 or page.nodes[0].has("available_properties") or page.has_more != (offset < 192):
+            push_error("FAIL: packaged compact inspection/pagination")
+            quit(1)
+            return
+        for entry in page.nodes: handles.append(entry.handle)
+    if handles.size() != 200:
+        quit(1)
+        return
+    for offset in [0, 100]:
+        var patch = tools.execute("set_properties", {"targets": handles.slice(offset, offset + 100), "values": {"color": {"type": "Color", "r": 0.3, "g": 0.38, "b": 0.5, "a": 1}}})
+        if not patch.ok or patch.changed != 100 or not patch.temporary or runner.active_game != active or active.health != 43:
+            push_error("FAIL: packaged wall patch")
+            quit(1)
+            return
+    if not is_equal_approx(active.get_node("Wall199").color.r, 0.3):
+        quit(1)
+        return
+    print("PASS: packaged compact wall inspection pages and recolors 200 live nodes")
     runner.queue_free()
     await process_frame
     print("PASS: exported runtime inspects and patches live properties without reloading")

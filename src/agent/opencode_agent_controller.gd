@@ -72,7 +72,7 @@ func _start_command_runtime() -> Dictionary:
     var assembled = HarnessInventory.assemble_runtime(_harness_id(), directory)
     if not assembled.ok: return assembled
     var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", _harness_name() + "'s read/edit/write/grep/glob/list").replace("Pi's", _harness_name() + "'s").replace("Pi process", _harness_name() + " process")
-    prompt += "\nGameSmith tools are exposed by native MCP with the gamesmith_ prefix (for example gamesmith_start_test_game and gamesmith_reload_game). Use those tools for game testing, reload, and Git. Shell and delegation are unavailable; use native read/write/edit/apply_patch tools for files.\n"
+    prompt += "\nGameSmith tools are exposed by native MCP with the gamesmith_ prefix (for example gamesmith_start_test_game and gamesmith_reload_game). Use those tools for game testing, reload, and Git. Shell and delegation are unavailable; use native read/write/edit/apply_patch tools for files. If native OpenCode says a GameSmith result was saved outside the workspace, do not use Task or attempt to read that path. Retry the GameSmith operation with narrower filters, fewer requested properties, a smaller limit and its pagination; do not repeat an already-applied mutation blindly.\n"
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write " + _harness_name() + " game instructions."}
     var session_file = absolute.path_join("session.json")
