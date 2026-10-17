@@ -27,6 +27,32 @@ func run() -> void:
     tools.write_file("getter.gd", "extends Node\nvar dangerous: float:\n    get:\n        queue_free()\n        return 1.0\n")
     check(tools.reload_game().ok, "fixture loaded through production loader")
     var game = runner.active_game
+    var wrong_path = tools.execute("inspect_runtime", {"path": "Enemy0", "discover_properties": true})
+    check(not wrong_path.ok and "root" in wrong_path.get("error", "") and "path" in wrong_path.get("error", ""), "unknown path argument rejected with root guidance instead of inspecting game root")
+    check(not tools.execute("inspect_runtime", {"root": "Enemy0", "typo": true}).ok, "unknown inspection arguments rejected even with valid root")
+    var empty_discovery = tools.execute("inspect_runtime", {"class": "Node2D", "group": "enemies", "discover_properties": true})
+    check(empty_discovery.ok and empty_discovery.nodes.is_empty() and "depth_limit" in empty_discovery.truncated_by and "depth" in empty_discovery.get("recovery", "") and "root" in empty_discovery.get("recovery", ""), "zero-match discovery explains incomplete depth-limited search")
+    var absent = tools.execute("inspect_runtime", {"group": "nonexistent"})
+    check(absent.ok and absent.nodes.is_empty() and not absent.has("recovery"), "complete zero-match inspection does not suggest depth recovery")
+    var garden = Node3D.new()
+    garden.name = "Garden"
+    game.add_child(garden)
+    var model_root = Node3D.new()
+    model_root.name = "GardenModel"
+    garden.add_child(model_root)
+    var model = Node3D.new()
+    model.name = "model"
+    model_root.add_child(model)
+    var cliff = MeshInstance3D.new()
+    cliff.name = "Cliff"
+    model.add_child(cliff)
+    var deep_search = tools.execute("inspect_runtime", {"class": "MeshInstance3D"})
+    check(deep_search.nodes.is_empty() and "depth_limit" in deep_search.truncated_by and deep_search.has("recovery"), "Tetriscat imported mesh beyond default depth reports incomplete search")
+    var exact_mesh = tools.execute("inspect_runtime", {"root": "Garden/GardenModel/model/Cliff", "discover_properties": true, "properties": ["visible"]})
+    check(exact_mesh.ok and exact_mesh.nodes.size() == 1 and exact_mesh.nodes[0].class == "MeshInstance3D" and exact_mesh.nodes[0].handle.path == "Garden/GardenModel/model/Cliff", "root targets actual imported mesh for discovery")
+    var hide_mesh = tools.execute("set_properties", {"targets": [exact_mesh.nodes[0].handle], "values": {"visible": false}})
+    check(hide_mesh.ok and hide_mesh.changed == 1 and not cliff.visible and runner.active_game == game, "focused discovery handle hides mesh without reload")
+    garden.free()
     var inspected = tools.execute("inspect_runtime", {"group": "enemies", "properties": ["speed", "health"], "limit": 100})
     check(inspected.get("ok", false) and inspected.get("nodes", []).size() == 50, "inspect selects fifty live enemies")
     if not inspected.get("ok", false) or inspected.get("nodes", []).size() != 50:
@@ -168,6 +194,9 @@ func run() -> void:
         var controller = load("res://" + harness.controller).new()
         root.add_child(controller)
         controller.tools = tools
+        controller._dispatch_host_request({"id": "bad-inspect", "command": "inspect_runtime", "args": {"path": "Enemy2"}}, bridge)
+        var rejected = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-bad-inspect.json")))
+        check(rejected is Dictionary and not rejected.get("ok", true) and "root" in rejected.get("error", ""), harness.id + " host bridge rejects ignored path argument")
         controller._dispatch_host_request({"id": "inspect", "command": "inspect_runtime", "args": {"root": "Enemy2", "properties": ["speed"]}}, bridge)
         var response = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-inspect.json")))
         check(response is Dictionary and response.get("ok", false), harness.id + " host bridge inspects live game")

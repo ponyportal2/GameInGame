@@ -145,6 +145,29 @@ alone cannot discover nodes beyond that depth or the inspection traversal bound.
 `runtime_offset` and reset match offset to 0. `runtime_truncated_by` retains the
 inspection limitations. Pages can shift as the game changes.
 
+Use `root` to select a runtime subtree; `path` and `glob` belong only to source
+search. Unknown inspection/search arguments are rejected, rather than silently
+inspecting the game root. Empty incomplete searches include recovery guidance;
+zero matches with `depth_limit` does not mean the node is absent. Discovery's
+depth defaults to 0 even when a class filter is present: select a known `root`
+or set an explicit depth.
+
+For example, once inspection has located an imported model, find a specific mesh:
+
+```json
+{"target":"runtime","root":"Garden/GardenModel/model","depth":2,"pattern":"/Cliff\"","properties":["position","scale","visible"],"limit":5}
+```
+
+Patch the returned handle directly. For a large horde, narrow by root/group/class
+and requested properties, then continue inspection pages even if an earlier page
+has no regex matches. A traversal limit requires a narrower root. Reset both
+offsets to 0 when changing root, filters, depth, pattern or requested properties;
+offsets continue the same query only. No unbounded whole-tree scan is performed.
+
+Mesh material colors are resource properties and remain outside node-only
+mutation. Once this is established, report the limitation instead of repeatedly
+discovering base-node properties or trying equivalent unsupported writes.
+
 Textual GameSmith results across the harness adapters are bounded to 50 KiB of
 UTF-8 JSON or 2,000 logical lines, whichever comes first. Logical lines include
 JSON structure and newlines inside string values. Image blocks are separate.

@@ -5,6 +5,9 @@ import {workspacePath} from './workspace-paths.mjs';
 export async function rgSearch(args,{workspace,callHost,signal}) {
     signal?.throwIfAborted();
     const {target,pattern}=args;
+    const allowed=['target','pattern','case_sensitive','offset','limit',...(target==='runtime'?['root','depth','class','script','group','properties','runtime_offset']:['path','glob'])];
+    for(const key of Object.keys(args))if(!allowed.includes(key))
+      return {ok:false,error:`Unknown argument '${key.slice(0,64)}' for ${target} search. Use root for runtime inspection; path/glob are source-only.`};
     if(!['source','runtime'].includes(target) || typeof pattern!=='string' || !pattern || pattern.length>1024)
       return {ok:false,error:'Expected source/runtime target and a regex pattern of 1..1024 characters.'};
     const offset=args.offset??0,limit=args.limit??100;
@@ -58,7 +61,14 @@ export async function rgSearch(args,{workspace,callHost,signal}) {
         if(signal?.aborted){finish(signal.reason||new Error('Search aborted.'));return;}
         if(parseError){finish(null,{ok:false,error:parseError});return;}
         if(code!==0&&code!==1&&!hasMore){finish(null,{ok:false,error:stderr||'rg search failed.'});return;}
+        const hints=[];
+        if(inspection && rows.length===0) {
+          if(inspection.truncated_by?.includes('depth_limit'))hints.push('Depth limit reached: increase depth (default 3) or choose a narrower root.');
+          if(inspection.truncated_by?.includes('traversal_limit'))hints.push('Traversal limit reached: choose a narrower root.');
+          if(inspection.next_offset!=null)hints.push('Continue with runtime_next_offset as runtime_offset; reset match offset to 0 for that inspection page.');
+        }
         finish(null,{ok:true,[target==='runtime'?'nodes':'matches']:rows,has_more:hasMore,next_offset:hasMore?offset+rows.length:null,
+          ...(hints.length?{recovery:'Search incomplete; zero returned nodes does not prove there are no matches. '+hints.join(' ')}:{}),
           ...(inspection?{game_generation:inspection.game_generation,runtime_next_offset:inspection.next_offset,runtime_truncated_by:inspection.truncated_by}:{}),engine:'system_rg'});
       });
       child.stdin.end(input);

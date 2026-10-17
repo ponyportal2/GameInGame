@@ -14,6 +14,11 @@ const inventory=JSON.parse(readFileSync('tools/agent/harnesses.json','utf8')).ha
 for(const harness of inventory) test(`${harness.id}: assembled runtime exposes live inspection and mutation`,async()=>{
   const directory=mkdtempSync(join(tmpdir(),'gs-runtime-tools-'));
   assembleHarnessRuntime(harness.id,directory);
+  const shared=await import(pathToFileURL(join(directory,'host-tools.mjs')));
+  const rejected=await shared.executeHostTool('rg_search',{target:'runtime',pattern:'Cliff',path:'GardenModel'},{workspace:directory,callHost:async()=>assert.fail('invalid arguments must not inspect')});
+  assert.equal(rejected.ok,false);assert.match(rejected.error,/root/);
+  const incomplete=await shared.executeHostTool('rg_search',{target:'runtime',pattern:'Cliff'},{workspace:directory,callHost:async()=>({ok:true,nodes:[],next_offset:null,truncated_by:['depth_limit'],game_generation:'9'})});
+  assert.match(incomplete.recovery,/depth/);assert.match(incomplete.recovery,/root/);
   if(harness.id==='pi'){
     process.env.GAMESMITH_MODEL_PROVIDER='openai_subscription';
     const ai=join(directory,'node_modules/@earendil-works/pi-ai');mkdirSync(ai,{recursive:true});

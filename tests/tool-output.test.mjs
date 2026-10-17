@@ -8,6 +8,37 @@ import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 const dir=mkdtempSync(join(tmpdir(),'gs-output-'));
 assembleHarnessRuntime('opencode',dir);
 const mod=await import(pathToFileURL(join(dir,'host-tools.mjs')));
+test('runtime rg explains empty depth-limited searches without hiding continuation',async()=>{
+ const result=await mod.executeHostTool('rg_search',{target:'runtime',pattern:'Bloom'},{workspace:dir,callHost:async()=>({ok:true,nodes:[],next_offset:100,truncated_by:['depth_limit','result_limit'],game_generation:'9'})});
+ assert(result.ok);assert.deepEqual(result.nodes,[]);assert.equal(result.runtime_next_offset,100);
+ assert.match(result.recovery,/depth/);assert.match(result.recovery,/root/);assert.match(result.recovery,/runtime_next_offset/);
+ const complete=await mod.executeHostTool('rg_search',{target:'runtime',pattern:'Bloom'},{workspace:dir,callHost:async()=>({ok:true,nodes:[],next_offset:null,truncated_by:[],game_generation:'9'})});
+ assert(!complete.recovery);
+});
+test('runtime rg rejects source-only and unknown arguments before inspecting',async()=>{
+ let calls=0;const callHost=async()=>{calls++;return {ok:true,nodes:[]};};
+ for(const extra of [{path:'GardenModel'},{typo:1},{glob:'*.gd'}]) {
+  const result=await mod.executeHostTool('rg_search',{target:'runtime',pattern:'Cliff',...extra},{workspace:dir,callHost});
+  assert.equal(result.ok,false);assert.match(result.error,/Unknown argument/);
+  if(extra.path)assert.match(result.error,/root/);
+ }
+ assert.equal(calls,0);
+});
+test('runtime rg finds sparse horde targets across inspection pages with real handles',async()=>{
+ const nodes=Array.from({length:900},(_,i)=>({handle:{path:`Horde/Enemy${i}`,instance_id:String(50000+i),game_generation:'9'},class:'CharacterBody3D',values:{speed:i===887?0.5:5}}));
+ const found=[];let offset=0,calls=0;
+ do {
+  const result=await mod.executeHostTool('rg_search',{target:'runtime',pattern:'"speed":0\\.5',class:'CharacterBody3D',properties:['speed'],runtime_offset:offset,root:'Horde',depth:1},{workspace:dir,callHost:async(name,args)=>{
+   calls++;assert.equal(name,'inspect_runtime');assert.equal(args.root,'Horde');assert.equal(args.depth,1);assert.equal(args.offset,offset);
+   // Each narrow inspection is bounded to the existing host traversal budget.
+   const page=nodes.slice(args.offset,args.offset+100);
+   return {ok:true,nodes:page,next_offset:args.offset+100<nodes.length?args.offset+100:null,truncated_by:args.offset+100<nodes.length?['result_limit']:[],game_generation:'9'};
+  }});
+  assert(result.ok);found.push(...result.nodes);offset=result.runtime_next_offset;
+ }while(offset!==null);
+ assert.equal(calls,9);assert.deepEqual(found,[nodes[887]]);
+
+});
 for(const [label,result] of [
  ['bytes',{ok:true,text:'\u{1f4a1}'.repeat(30000)}],
  ['lines',{ok:true,text:'x\n'.repeat(2500)}],

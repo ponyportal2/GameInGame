@@ -112,6 +112,9 @@ func _decode(value: Variant, type: int) -> Dictionary:
     return {"ok": true, "value": decoded} if encoded.ok else encoded
 
 func inspect(args: Dictionary) -> Dictionary:
+    for key in args:
+        if key not in ["root", "depth", "limit", "offset", "discover_properties", "class", "script", "group", "properties"]:
+            return _error("Unknown argument '%s'. Use 'root' to select the inspection root; 'path' is not an inspection argument." % str(key).left(64))
     var game = _game()
     if game == null: return _error("No active game.")
     var generation = str(game.get_instance_id())
@@ -195,7 +198,15 @@ func inspect(args: Dictionary) -> Dictionary:
             pending.append({"id": node.get_child(index).get_instance_id(), "depth": item.depth + 1})
     if not pending.is_empty() and visited >= MAX_VISITED and "traversal_limit" not in reasons:
         reasons.append("traversal_limit")
-    return {"ok": true, "nodes": nodes, "visited": visited, "truncated": not reasons.is_empty(), "truncated_by": reasons, "has_more": has_more, "next_offset": int(offset) + nodes.size() if has_more else null, "game_generation": generation}
+    var result = {"ok": true, "nodes": nodes, "visited": visited, "truncated": not reasons.is_empty(), "truncated_by": reasons, "has_more": has_more, "next_offset": int(offset) + nodes.size() if has_more else null, "game_generation": generation}
+    if nodes.is_empty() and not reasons.is_empty():
+        var hints: Array[String] = ["Search incomplete; zero returned nodes does not prove there are no matches."]
+        if "depth_limit" in reasons:
+            hints.append("Depth limit reached: increase depth or choose a narrower root. Property discovery defaults to depth 0 at root, even with a class filter.")
+        if "traversal_limit" in reasons:
+            hints.append("Traversal limit reached: choose a narrower root.")
+        result.recovery = " ".join(hints)
+    return result
 
 func set_properties(args: Dictionary) -> Dictionary:
     var game = _game()
