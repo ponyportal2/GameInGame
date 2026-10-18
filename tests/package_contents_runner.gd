@@ -85,6 +85,12 @@ func _run() -> void:
         push_error("FAIL: packaged reload did not complete isolated smoke execution and cleanup")
         quit(1)
         return
+    var startup_smoke: Dictionary = loaded.preflight.cleanup.get("startup_smoke", {})
+    if not startup_smoke.get("ok", false) or startup_smoke.get("process_ticks_completed", 0) < 4 or startup_smoke.get("physics_ticks_completed", 0) < 3:
+        push_error("FAIL: packaged detached startup skipped automatic smoke execution")
+        quit(1)
+        return
+    print("PASS: packaged detached startup completes smoke ticks before running")
     var active = runner.active_game
     tools.write_file("main.gd", "extends Node2D\nfunc _physics_process(_d):\n    get_node(\"MissingPackagedPhysics\")\n")
     var preflight_rejected = await tools.wait_reload(tools.reload_game())

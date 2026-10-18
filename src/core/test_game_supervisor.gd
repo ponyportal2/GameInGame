@@ -136,7 +136,7 @@ func poll() -> void:
                         if bytes.size() > available:
                             run[channel + "_dropped_bytes"] = int(run.get(channel + "_dropped_bytes", 0)) + bytes.size() - available
         var child = _read_data(run.path.path_join("status.json"))
-        for key in ["session_id", "session_path", "user_data", "load_result"]:
+        for key in ["session_id", "session_path", "user_data", "load_result", "startup_smoke"]:
             if child.has(key):
                 run[key] = child[key]
         if run.state == "starting" and child.get("state") == "running":

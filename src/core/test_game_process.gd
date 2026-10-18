@@ -37,8 +37,15 @@ func start() -> void:
     # Persist the diagnostic session before generated startup can hang or crash.
     _status("starting")
     var result = runner.load_game(config.workspace)
-    _status("running" if result.ok else "failed", {"load_result": result})
     if not result.ok:
+        _status("failed", {"load_result": result})
+        finish(1)
+        return
+    _status("starting", {"load_result": result})
+    var smoke = await _measure_smoke_window()
+    if finishing: return
+    _status("running" if smoke.ok else "failed", {"load_result": result, "startup_smoke": smoke})
+    if not smoke.ok:
         finish(1)
 
 func _process(_delta: float) -> bool:
@@ -141,6 +148,14 @@ func _describe_node(node: Node, game: Node, depth: int, budget: Array) -> Dictio
     return {"name": str(node.name), "path": str(game.get_path_to(node)), "class": node.get_class(), "children": children, "child_count": node.get_child_count(), "children_truncated": children.size() < node.get_child_count()}
 
 func _smoke_window(args: Dictionary) -> void:
+    var result = await _measure_smoke_window()
+    if finishing: return
+    result.action_id = args.action_id
+    result.pending = false
+    JsonStore.write_dict(config.control_dir.path_join("action-result.json"), result)
+    smoke_pending = false
+
+func _measure_smoke_window() -> Dictionary:
     var process_start = Engine.get_process_frames()
     var physics_start = Engine.get_physics_frames()
     var process_completed := 0
@@ -149,14 +164,13 @@ func _smoke_window(args: Dictionary) -> void:
     # result only counts execution that has already returned to the next frame.
     while process_completed < 4 or physics_completed < 3:
         await process_frame
-        if finishing: return
+        if finishing: return {"ok": false, "reason": "cancelled"}
         process_completed = maxi(0, Engine.get_process_frames() - process_start - 1)
         physics_completed = maxi(0, Engine.get_physics_frames() - physics_start - 1)
     runner.runtime_log.mutex.lock()
     var errors = int(runner.runtime_log.notification_counts.error)
     runner.runtime_log.mutex.unlock()
-    var result = {"ok": errors == 0, "reason": "passed" if errors == 0 else "execution_errors", "process_ticks_completed": process_completed, "physics_ticks_completed": physics_completed, "errors": errors, "action_id": args.action_id, "pending": false}
+    var result = {"ok": errors == 0, "reason": "passed" if errors == 0 else "execution_errors", "process_ticks_completed": process_completed, "physics_ticks_completed": physics_completed, "errors": errors}
     if errors > 0:
         result.error = "Test emitted errors during startup or smoke execution."
-    JsonStore.write_dict(config.control_dir.path_join("action-result.json"), result)
-    smoke_pending = false
+    return result

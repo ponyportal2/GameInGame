@@ -52,6 +52,8 @@ func run() -> void:
     var id: String = started.run_id
     var running = await wait_for(supervisor, id, func(s): return s.get("state") == "running")
     check(running.state == "running", "Child uses production loader and reaches running state")
+    var smoke: Dictionary = running.get("startup_smoke", {})
+    check(smoke.get("ok", false) and smoke.get("process_ticks_completed", 0) >= 4 and smoke.get("physics_ticks_completed", 0) >= 3, "Headless running state requires automatic completed smoke ticks")
     check(running.pid != OS.get_process_id(), "Game executes in a separate process")
     check(not supervisor.start(workspace, "headless").ok, "Concurrent test processes are bounded")
     check(not FileAccess.file_exists("user://test-save.txt"), "Test saves do not write into player user data")
@@ -122,6 +124,8 @@ func run() -> void:
     check(started.ok, "Rendered testing starts after explicit permission")
     running = await wait_for(supervisor, started.run_id, func(s): return s.state == "running")
     check(running.state == "running" and running.mode == "rendered", "Rendered child reaches running state")
+    smoke = running.get("startup_smoke", {})
+    check(smoke.get("ok", false) and smoke.get("process_ticks_completed", 0) >= 4 and smoke.get("physics_ticks_completed", 0) >= 3, "Windowed running state requires automatic completed smoke ticks")
     supervisor.request_action(started.run_id, {"action": "call", "method": "window_state"})
     inspected = await wait_for(supervisor, started.run_id, func(s): return s.has("action_result"))
     check(inspected.get("action_result", {}).get("value") == "true:true", "Rendered test window is unfocusable and minimized")
@@ -137,6 +141,26 @@ func run() -> void:
     check(inspected.get("action_result", {}).get("value") == "true:true", "Screenshot does not restore or focus the test window: " + str(inspected.get("action_result", {}).get("value")))
     supervisor.request_stop(started.run_id)
     await wait_for(supervisor, started.run_id, func(s): return s.state == "exited")
+    for mode in ["headless", "rendered"]:
+        for failure in ["process", "physics", "deferred"]:
+            var source = {
+                "process": "func _process(_d):\n\tset_process(false)\n\tpush_error('DetachedProcessFailure')\n",
+                "physics": "func _physics_process(_d):\n\tset_physics_process(false)\n\tpush_error('DetachedPhysicsFailure')\n",
+                "deferred": "func _ready():\n\tcall_deferred('broken')\nfunc broken():\n\tpush_error('DetachedDeferredFailure')\n",
+            }[failure]
+            var broken_workspace = fixture("DetachedSmoke-" + mode + "-" + failure, "extends Node\n" + source)
+            var broken = supervisor.start(broken_workspace, mode)
+            check(broken.ok, mode + " " + failure + " fixture launches")
+            var reached_running := [false]
+            var rejected = await wait_for(supervisor, broken.run_id, func(s):
+                if s.state == "running": reached_running[0] = true
+                return s.state in ["running", "exited"])
+            check(rejected.state == "exited" and rejected.get("exit_code", 0) != 0 and not reached_running[0], mode + " " + failure + " error prevents running acceptance")
+            check(not rejected.get("startup_smoke", {}).get("ok", true) and rejected.get("startup_smoke", {}).get("errors", 0) > 0, mode + " " + failure + " failure retains smoke evidence")
+            check(str(supervisor.read_log(broken.run_id, {})).contains("Detached"), mode + " " + failure + " diagnostics survive rejection")
+            if rejected.state != "exited":
+                supervisor.request_stop(broken.run_id)
+                await wait_for(supervisor, broken.run_id, func(s): return s.state == "exited")
     settings.save_global_settings({"allow_rendered_tests": false})
     workspace = fixture("ProcessBroken", "extends Node\nfunc _ready():\n\tvar missing = null\n\tmissing.nope()\n")
     started = supervisor.start(workspace, "headless")
