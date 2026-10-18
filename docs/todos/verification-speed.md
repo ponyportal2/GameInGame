@@ -58,3 +58,35 @@ still select full coverage.
   validate bounded concurrency and serial barriers, not suite-wide timing.
 - No real-provider acceptance or CI dispatch was performed. No product waits,
   global harness settings or running player games were changed.
+
+## Completed parallel comparison
+
+At the player's request, the full suite was subsequently run to completion on
+`b539a38c53b2720192354801b124891ff0cbbaf7` with
+`node tools/testing/verify.mjs --suite full --jobs 4 --output summary`.
+
+| Result | Serial, jobs=1 | Parallel, jobs=4 |
+| --- | --- | --- |
+| Elapsed | 1,370.417 seconds (22m50s) | 1,102.673 seconds (18m23s) |
+| Selected test IDs | 84 | Same 84, exact set comparison passed |
+| Passing entries | 86, including package build | 85, using the rebuilt package |
+| Passing assertions | 3,317 | 3,317 |
+| Failed assertions | 0 | 0 |
+| Opt-in skipped subtests | 1 | Same 1: Command-code native CLI not configured |
+
+Observed saving: 267.744 seconds (4m28s), or 19.54%. The serial run included a
+4.169-second package build. This is one comparison, not a stable performance
+guarantee. Jobs=4 also parallelizes Node files, so the saving must not be credited
+entirely to the four newly allowlisted hosts; summed host durations also differed
+between runs. Full coverage intentionally bypasses affected-selection savings.
+
+Parallel evidence: `%TEMP%/gamesmith-verify-0xbeOY/results.json`; comparison:
+`%TEMP%/gamesmith-verify-0xbeOY/comparison.json`. Exit status was zero; all entries
+passed, with no blocked, interrupted, reused or skipped entries and no input
+invalidation. Source host checks, package contents/structure and launcher checks
+all passed. No real-provider invocation was performed.
+
+The earlier interrupted parallel attempt had completed tests through
+`host:reload_settings` by 530.513 seconds without recorded failures. This later
+completed run provides evidence that the parallel full-suite execution finishes;
+the earlier interruption alone was not evidence of a stall.
