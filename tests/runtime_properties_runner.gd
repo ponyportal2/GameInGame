@@ -209,6 +209,7 @@ func run() -> void:
     var prompt = preload("res://src/pi/pi_runtime_config.gd")._game_prompt()
     check("inspect_runtime" in prompt and "set_properties" in prompt and "parameter patch" in prompt, "shared prompt teaches live parameter iteration")
     check("Never infer" in prompt and "live-only" in prompt and "do not reload" in prompt and "visual" in prompt, "prompt explains live-only precedence handles and evidence")
+    check("Godot late-child lifecycle" in prompt and "request_ready()" in prompt and "process_physics_priority" in prompt and "ordinary startup alone" in prompt, "shared prompt explains measured late insertion lifecycle and integration checks")
     var bridge = "user://runtime-properties/bridge"
     DirAccess.make_dir_recursive_absolute(bridge)
     for harness in preload("res://src/agent/harness_inventory.gd").all():

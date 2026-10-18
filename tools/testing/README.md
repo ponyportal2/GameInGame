@@ -55,6 +55,14 @@ values, setter readback, invalidation, bounds and partial failures.
 harness. Package contents acceptance also executes a live patch from the PCK.
 See [the API contract](../../docs/runtime-properties.md).
 
+`runtime_node_lifecycle_runner.gd` checks actual engine callbacks for initially
+constructed and late-added subtrees: synchronous enter/ready ordering, unchanged
+parent initialization and cached children, deferred work, process/physics ticks
+and priority, reinsertion/request_ready, and inherited disabled processing.
+It exercises Godot composition directly; structural runtime mutation tools are
+not implied by this fixture. The measured integration caveats are included in
+the shared generated-game prompt.
+
 ## Generated script loading policy
 
 The reliability suite also checks chat-first opening without executing crash-prone code, idle-only manual Run/Reload controls, and agent-triggered startup from chat.
