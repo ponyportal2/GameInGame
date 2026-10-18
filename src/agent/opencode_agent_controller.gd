@@ -5,6 +5,7 @@ var cancel_deadline := 0
 var cancelling = false
 
 func cancel() -> void:
+    if tools != null: tools.cancel_reload()
     if tools != null and is_instance_valid(tools.image_supervisor):
         tools.image_supervisor.stop_all()
     if tools != null and is_instance_valid(tools.blender_supervisor):

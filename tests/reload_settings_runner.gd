@@ -107,6 +107,9 @@ func run() -> void:
         request.store_string(JSON.stringify({"id":"auto", "command":"reload_game", "args":{}}))
         request.close()
         app.agent._service_host_bridge()
+        var reload_deadline = Time.get_ticks_msec() + 20000
+        while not FileAccess.file_exists(bridge.path_join("response-auto.json")) and Time.get_ticks_msec() < reload_deadline:
+            await process_frame
         check(app.runner.has_active_game() and app.agent.pending_reload.is_empty(), "automatic approval loads without waiting for harness %d" % harness)
         check(FileAccess.file_exists(bridge.path_join("response-auto.json")), "automatic approval returns tool response for harness %d" % harness)
         app._open_settings()

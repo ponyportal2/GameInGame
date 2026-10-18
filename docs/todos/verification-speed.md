@@ -19,7 +19,7 @@ Godot import/build happens before them and package tests never overlap them.
 | Runner | Writes and effects reviewed |
 | --- | --- |
 | runtime_node_lifecycle | In-memory SceneTree only; no files, CLI, ports or external processes. |
-| runtime_properties | Fixtures/bridge files and generated-game Git state beneath isolated user://runtime-properties; engine state stays in its own process. Controllers dispatch fixture bridge requests without launching native agents. |
+| runtime_properties | Fixtures/bridge files and generated-game Git state beneath isolated user://runtime-properties; engine state stays in its own process. Controllers dispatch fixture bridge requests without launching native agents. Reload coverage now starts isolated Godot preflight children; they read the project and write only beneath the runner's isolated user data, without fixed ports or shared artifacts. |
 | harness_assembly | Reads catalog/module resources and writes only user://assembled. |
 | prompt_contract | Reads production controllers; writes isolated game metadata and Pi module/prompt/config files under user://. No provider/native process is started. |
 

@@ -25,7 +25,7 @@ func run() -> void:
     tools.write_file("main.gd", "extends Node2D\nconst Enemy = preload('enemy.gd')\nfunc _ready():\n    for i in range(50):\n        var enemy = Enemy.new()\n        enemy.name = 'Enemy%d' % i\n        add_child(enemy)\n        enemy.add_to_group('enemies')\n")
     tools.patch_file("enemy.gd", "var speed: float = 80.0", "var speed = 80.0")
     tools.write_file("getter.gd", "extends Node\nvar dangerous: float:\n    get:\n        queue_free()\n        return 1.0\n")
-    check(tools.reload_game().ok, "fixture loaded through production loader")
+    check((await tools.wait_reload(tools.reload_game())).ok, "fixture loaded through production loader")
     var game = runner.active_game
     var budget_handles = tools.execute("inspect_runtime", {"group": "enemies", "properties": ["title"]}).nodes.map(func(entry): return entry.handle)
     var rejected_batch = tools.execute("set_properties", {"targets": budget_handles, "values": {"title": "new"}})
@@ -199,7 +199,7 @@ func run() -> void:
     result = tools.execute("set_properties", {"targets": [handle], "values": {"vanish": true, "speed": 999.0}})
     check(not result.ok and result.failed == 1, "setter queuing node for deletion stops subsequent writes")
     await process_frame
-    check(tools.reload_game().ok, "reload fallback still works")
+    check((await tools.wait_reload(tools.reload_game())).ok, "reload fallback still works")
     check(not tools.execute("set_properties", {"targets": [handles[2]], "values": {"speed": 1}}).ok, "reload invalidates handles")
     check(runner.active_game.get_node("Enemy2").speed == 80.0, "live patch does not modify source")
     var dangerous = load(tools.workspace.path_join("getter.gd")).new()
@@ -230,6 +230,9 @@ func run() -> void:
             var control = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-control.json")))
             check(control is Dictionary and control.get("ok", false) and control.results[0].values.title == String.chr(1).repeat(1024), harness.id + " bridge preserves escaped control-character mutation outcome")
         controller.queue_free()
+    # Controller teardown invalidates its pending tool operations. Finish that
+    # teardown before a new reload using the fixture's shared tool instance.
+    await process_frame
     for invalid in [{"limit": 101}, {"limit": "many"}, {"depth": -1}, {"depth": 0.5}, {"properties": [1]}, {"group": []}, {"offset": -1}, {"offset": 0.5}, {"offset": "1"}, {"offset": 1001}, {"discover_properties": 1}]:
         check(not tools.execute("inspect_runtime", invalid).ok, "malformed inspection rejected")
     var current = tools.execute("inspect_runtime", {"root": "Enemy2"}).nodes[0].handle
@@ -247,7 +250,7 @@ func run() -> void:
     var future_enemy = original_script.new()
     check(future_enemy.speed == 80.0, "source edits do not hot-reload future instances of loaded scripts")
     future_enemy.free()
-    check(tools.reload_game().ok and runner.active_game.get_node("Enemy2").speed == 160.0, "reload applies persistent source edits")
+    check((await tools.wait_reload(tools.reload_game())).ok and runner.active_game.get_node("Enemy2").speed == 160.0, "reload applies persistent source edits")
     runner.unload_game()
     check(not tools.execute("set_properties", {"targets": [handles[2]], "values": {"speed": 1}}).ok, "unload invalidates handles")
     runner.queue_free()

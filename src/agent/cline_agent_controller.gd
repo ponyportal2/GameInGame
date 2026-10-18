@@ -25,7 +25,9 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
         if busy and not cancelling and token != "" and token == reload_grant and reload_grant_operation == operation_id:
             reload_grant = ""
             status_changed.emit("Reloading game...")
-            result = tools.execute("reload_game", {})
+            var reload_operation = operation_id
+            result = await tools.wait_reload(tools.reload_game(func(): return reload_operation != operation_id or directory != bridge_dir or cancelling))
+            if reload_operation != operation_id or directory != bridge_dir or cancelling: return
         _write_host_response(directory, request, result)
         return
     super._dispatch_host_request(request, directory)

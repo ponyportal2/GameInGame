@@ -13,6 +13,7 @@ var test_supervisor: Node
 var blender_supervisor: Node
 var blender_enabled := true
 var image_supervisor: Node
+var reload_token := 0
 
 func generate_image(args: Dictionary) -> Dictionary:
     if not is_instance_valid(image_supervisor):
@@ -157,13 +158,33 @@ func git_diff() -> Dictionary: return git.diff(workspace)
 func git_log(limit: int = 12) -> Dictionary: return git.log(workspace, limit)
 func git_commit(message: String) -> Dictionary: return git.commit(workspace, message)
 
-func reload_game() -> Dictionary:
-    if runner == null: return {"ok": false, "error": "Runner unavailable."}
-    var result: Dictionary = runner.load_game(workspace)
-    result.diagnostics = runner.runtime_log.read({"attempt": result.attempt_id, "limit": 20}, true)
-    result.delivery_id = result.diagnostics.get("delivery_id", "")
-    result.diagnostics.erase("delivery_id")
+func reload_game(cancelled: Callable = Callable()) -> Dictionary:
+    if not is_instance_valid(runner): return {"ok": false, "error": "Runner unavailable."}
+    var result := {"ok": true, "pending": true}
+    _perform_reload(result, reload_token, cancelled)
     return result
+
+func cancel_reload() -> void:
+    reload_token += 1
+
+func wait_reload(result: Dictionary) -> Dictionary:
+    while result.get("pending", false):
+        if not is_instance_valid(runner) or not runner.is_inside_tree():
+            return {"ok": false, "reason": "runner_unavailable", "error": "Runner unavailable."}
+        await runner.get_tree().process_frame
+    return result
+
+func _perform_reload(pending: Dictionary, token: int, cancelled: Callable) -> void:
+    var result: Dictionary = await runner.checked_reload(workspace, func(): return token != reload_token or (cancelled.is_valid() and cancelled.call()))
+    if result.has("attempt_id"):
+        result.diagnostics = runner.runtime_log.read({"attempt": result.attempt_id, "limit": 20}, true)
+        result.delivery_id = result.diagnostics.get("delivery_id", "")
+        result.diagnostics.erase("delivery_id")
+    elif result.has("preflight"):
+        # Preserve the existing tool-level diagnostics contract on rejection.
+        result.diagnostics = result.preflight.get("diagnostics", {}).duplicate(true)
+    pending.merge(result, true)
+    pending.pending = false
 
 func read_runtime_log(args: Dictionary = {}) -> Dictionary:
     if runner == null: return {"ok": false, "error": "Runner unavailable."}

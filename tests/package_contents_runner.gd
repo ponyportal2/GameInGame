@@ -44,7 +44,7 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)
             return
-    for script in ["test_game_supervisor.gd", "test_game_process.gd", "test_game_watchdog.gd", "test_evidence.gd"]:
+    for script in ["test_game_supervisor.gd", "test_game_process.gd", "test_game_watchdog.gd", "test_evidence.gd", "reload_preflight.gd"]:
         if not ResourceLoader.exists("res://src/core/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)
@@ -76,12 +76,23 @@ func _run() -> void:
     root.add_child(runner)
     var tools = preload("res://src/core/game_tools.gd").new("user://package-live-properties", runner)
     tools.write_file("main.gd", "extends Node2D\nvar speed = 80.0\nvar health = 43\n")
-    var loaded = tools.reload_game()
+    var loaded = await tools.wait_reload(tools.reload_game())
     if not loaded.ok:
         push_error("FAIL: packaged runtime fixture could not load: " + str(loaded))
         quit(1)
         return
+    if loaded.preflight.process_ticks_completed < 4 or loaded.preflight.physics_ticks_completed < 3 or loaded.preflight.cleanup.state != "exited":
+        push_error("FAIL: packaged reload did not complete isolated smoke execution and cleanup")
+        quit(1)
+        return
     var active = runner.active_game
+    tools.write_file("main.gd", "extends Node2D\nfunc _physics_process(_d):\n    get_node(\"MissingPackagedPhysics\")\n")
+    var preflight_rejected = await tools.wait_reload(tools.reload_game())
+    if preflight_rejected.ok or not preflight_rejected.has("diagnostics") or preflight_rejected.live_attempted or runner.active_game != active:
+        push_error("FAIL: packaged reload admitted a physics error or lost diagnostics")
+        quit(1)
+        return
+    print("PASS: packaged reload runs process/physics ticks and rejects runtime errors without replacing live game")
     var inspected = tools.execute("inspect_runtime", {"depth": 0, "properties": ["speed", "health"]})
     if not inspected.ok or inspected.nodes.size() != 1:
         push_error("FAIL: packaged runtime inspection")

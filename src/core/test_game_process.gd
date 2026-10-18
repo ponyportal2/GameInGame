@@ -4,6 +4,7 @@ const Runner = preload("res://src/core/game_runner.gd")
 var config: Dictionary
 var runner: Node
 var finishing := false
+var smoke_pending := false
 var watchdog = preload("res://src/core/test_game_watchdog.gd").new()
 
 func _init() -> void:
@@ -75,6 +76,11 @@ func _finalize() -> void:
     watchdog.close()
 
 func perform_action(args: Dictionary) -> void:
+    if args.get("action") == "smoke":
+        if not smoke_pending:
+            smoke_pending = true
+            _smoke_window(args)
+        return
     var result: Dictionary = {"ok": false, "error": "Unknown test action."}
     var game: Node = runner.active_game
     var node: Node = game if str(args.get("path", "")) == "" else game.get_node_or_null(str(args.path))
@@ -133,3 +139,24 @@ func _describe_node(node: Node, game: Node, depth: int, budget: Array) -> Dictio
             if budget[0] <= 0: break
             children.append(_describe_node(child, game, depth - 1, budget))
     return {"name": str(node.name), "path": str(game.get_path_to(node)), "class": node.get_class(), "children": children, "child_count": node.get_child_count(), "children_truncated": children.size() < node.get_child_count()}
+
+func _smoke_window(args: Dictionary) -> void:
+    var process_start = Engine.get_process_frames()
+    var physics_start = Engine.get_physics_frames()
+    var process_completed := 0
+    var physics_completed := 0
+    # Frame signals precede callbacks. Exclude the current frame/tick so the
+    # result only counts execution that has already returned to the next frame.
+    while process_completed < 4 or physics_completed < 3:
+        await process_frame
+        if finishing: return
+        process_completed = maxi(0, Engine.get_process_frames() - process_start - 1)
+        physics_completed = maxi(0, Engine.get_physics_frames() - physics_start - 1)
+    runner.runtime_log.mutex.lock()
+    var errors = int(runner.runtime_log.notification_counts.error)
+    runner.runtime_log.mutex.unlock()
+    var result = {"ok": errors == 0, "reason": "passed" if errors == 0 else "execution_errors", "process_ticks_completed": process_completed, "physics_ticks_completed": physics_completed, "errors": errors, "action_id": args.action_id, "pending": false}
+    if errors > 0:
+        result.error = "Test emitted errors during startup or smoke execution."
+    JsonStore.write_dict(config.control_dir.path_join("action-result.json"), result)
+    smoke_pending = false

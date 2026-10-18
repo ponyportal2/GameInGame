@@ -100,10 +100,10 @@ func test_empty_run_state() -> void:
     app._run_game()
     check(app.runner.has_active_game() and app.execution_status_labels.all(func(label): return label.text == "Running last working snapshot"), "snapshot-only Run succeeds and persistently identifies fallback source")
     put(main, "extends Node\nvar answer = 2\n")
-    app._reload_game()
+    await app._reload_game()
     check(app.runner.active_game.answer == 2 and app.execution_status_labels.all(func(label): return label.text == "Running workspace"), "workspace reload replaces fallback source status")
     put(main, "extends Node\nfunc broken(:\n")
-    app._reload_game()
+    await app._reload_game()
     check(app.runner.active_game.answer == 2 and app.execution_status_labels.all(func(label): return label.text == "Running workspace"), "failed reload retains the actual running source status")
     app._show_library()
     await process_frame
@@ -142,15 +142,17 @@ func test_manual_execution() -> void:
     put(created.path.path_join("main.gd"), "extends Node\nvar answer = 2\n")
     app.agent.busy = true
     app._set_chat_busy_controls(true)
-    app._reload_game()
+    await app._reload_game()
     check(app.runner.active_game == old and app.reload_game_buttons.all(func(button): return button.disabled), "busy agent blocks manual Reload handler and buttons")
     app.agent.busy = false
     app._set_chat_busy_controls(false)
     app.reload_game_buttons[0].pressed.emit()
+    await wait_manual_reload(app)
     check(app.runner.active_game.answer == 2, "gameplay Reload button uses current workspace")
     app._set_chat_visible(true)
     put(created.path.path_join("main.gd"), "extends Node\nvar answer = 3\n")
     app.reload_game_buttons[1].pressed.emit()
+    await wait_manual_reload(app)
     check(app.runner.active_game.answer == 3 and app.chat_overlay.visible, "chat Reload button replaces game and keeps chat open")
     app._show_library()
     await process_frame
@@ -158,7 +160,7 @@ func test_manual_execution() -> void:
     check(not app.runner.has_active_game(), "reopening returns to chat without restoring execution")
     app.agent.busy = true
     app._set_chat_busy_controls(true)
-    var result: Dictionary = app.tools.reload_game()
+    var result: Dictionary = await app.tools.wait_reload(app.tools.reload_game())
     check(result.ok and app.runner.active_game.answer == 3 and app.chat_overlay.visible, "agent reload remains available before manual Run and during its turn")
     check(app.reload_game_buttons.all(func(button): return button.disabled), "agent-triggered startup keeps manual Reload disabled during its turn")
     app.agent.busy = false
@@ -183,7 +185,7 @@ func test_reload_keyboard_focus() -> void:
         # A mouse click gives a normal Button keyboard focus before emitting pressed.
         button.grab_focus()
         button.pressed.emit()
-        await process_frame
+        await wait_manual_reload(app)
         var game = app.runner.active_game
         var version = app.runner.runtime_log.load_version
         var key = InputEventKey.new()
@@ -200,6 +202,7 @@ func test_reload_keyboard_focus() -> void:
     app._set_chat_visible(true)
     app.reload_game_buttons[1].grab_focus()
     app.reload_game_buttons[1].pressed.emit()
+    await wait_manual_reload(app)
     check(app.chat_overlay.visible and app.chat_input.has_focus(), "chat Reload restores keyboard focus to chat input")
     app._set_chat_visible(false)
     check(root.gui_get_focus_owner() == null or not app.host_ui_root.is_ancestor_of(root.gui_get_focus_owner()), "resuming gameplay releases host keyboard focus")
@@ -499,3 +502,8 @@ func test_capabilities() -> void:
     agent.queue_free()
     await process_frame
     store.delete_game(created.name)
+
+func wait_manual_reload(app) -> void:
+    var deadline = Time.get_ticks_msec() + 20000
+    while app.runner.reload_in_progress and Time.get_ticks_msec() < deadline:
+        await process_frame

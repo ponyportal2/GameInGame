@@ -283,6 +283,7 @@ func cancel() -> void:
     finished.emit(false)
 
 func restart_runtime() -> void:
+    if tools != null: tools.cancel_reload()
     if tools != null and is_instance_valid(tools.image_supervisor):
         tools.image_supervisor.stop_all()
     if tools != null and is_instance_valid(tools.blender_supervisor):
@@ -691,7 +692,8 @@ func approve_reload() -> void:
     if pending.operation_id != operation_id or pending.bridge_dir != bridge_dir or bridge_dir == "":
         return
     status_changed.emit("Reloading game...")
-    var result: Dictionary = tools.execute("reload_game", pending.request.get("args", {}))
+    var result: Dictionary = await tools.wait_reload(tools.reload_game(func(): return pending.operation_id != operation_id or pending.bridge_dir != bridge_dir))
+    if pending.operation_id != operation_id or pending.bridge_dir != bridge_dir: return
     _write_host_response(bridge_dir, pending.request, result)
     status_changed.emit("Pi is working...")
 
@@ -710,6 +712,7 @@ func _write_host_response(directory: String, request: Dictionary, result: Dictio
         DirAccess.rename_absolute(tmp, response_path)
 
 func _fail(message: String) -> void:
+    if tools != null: tools.cancel_reload()
     if recovery_active and not limit_abort_sent:
         recovery_error = message
         last_error = message

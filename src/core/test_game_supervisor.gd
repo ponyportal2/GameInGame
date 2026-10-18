@@ -14,6 +14,8 @@ var last_retention_ms := 0
 var retention: Dictionary = {}
 var runs: Dictionary = {}
 var workspace_path := ""
+# Private preflights retain separate evidence and never claim an agent test.
+var storage_scope := "tests"
 
 func rebind(workspace: String) -> void:
     var old_root = _test_root()
@@ -26,7 +28,7 @@ func rebind(workspace: String) -> void:
                 run[key] = new_root + str(run[key]).trim_prefix(old_root)
 
 func _test_root() -> String:
-    return ProjectSettings.globalize_path("user://host/games".path_join(workspace_path.get_file()).path_join("tests"))
+    return ProjectSettings.globalize_path("user://host/games".path_join(workspace_path.get_file()).path_join(storage_scope))
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -57,7 +59,7 @@ func start(workspace: String, mode: String = "headless") -> Dictionary:
     if not FileAccess.file_exists(source.path_join("main.gd")):
         return {"ok": false, "error": "No main.gd exists yet."}
     var id = Time.get_datetime_string_from_system(true).replace(":", "").replace("-", "") + "-" + Crypto.new().generate_random_bytes(6).hex_encode()
-    var path = ProjectSettings.globalize_path("user://host/games".path_join(workspace.get_file()).path_join("tests").path_join(id))
+    var path = _test_root().path_join(id)
     var token = Crypto.new().generate_random_bytes(16).hex_encode()
     var config = {"run_id": id, "workspace": source, "game": workspace.get_file(), "mode": mode, "control_dir": path, "diagnostics_root": path.get_base_dir().path_join("runtime"), "parent_pid": OS.get_process_id(), "parent_token": token, "parent_grace_ms": parent_grace_ms, "run_budget_bytes": run_budget_bytes}
     if not JsonStore.write_dict(path.path_join("config.json"), config):
@@ -326,3 +328,29 @@ func _prune_runs(keep: String = "") -> void:
             break
         if id != keep and runs[id].state in ["exited", "interrupted"]:
             runs.erase(id)
+
+# Reusable execution check for an already-started test; ownership/cleanup stays
+# with its caller. Startup state alone is never smoke-test acceptance.
+func run_smoke_window(id: String, cancelled: Callable = Callable(), timeout_ms: int = 15000) -> Dictionary:
+    var deadline = Time.get_ticks_msec() + timeout_ms
+    var action_id := ""
+    while true:
+        var state = status(id)
+        if cancelled.is_valid() and cancelled.call():
+            return {"ok": false, "reason": "cancelled", "error": "Reload preflight cancelled."}
+        if Time.get_ticks_msec() >= deadline:
+            return {"ok": false, "reason": "timeout", "error": "Reload preflight exceeded its execution deadline."}
+        if not state.get("ok", false) or state.get("state") in ["exited", "interrupted"]:
+            return {"ok": false, "reason": "process_exited", "error": "Test exited before completing smoke execution."}
+        if state.has("load_result") and not state.load_result.get("ok", false):
+            return {"ok": false, "reason": "startup_failed", "error": "Test startup failed."}
+        if state.get("state") == "running":
+            if action_id == "":
+                var action = request_action(id, {"action": "smoke"})
+                if not action.get("ok", false): return action
+                action_id = action.action_id
+            var result = request_action(id, {"action": "poll", "action_id": action_id})
+            if not result.get("pending", false):
+                return result
+        await get_tree().process_frame
+    return {"ok": false, "reason": "execution_failed"}

@@ -2,6 +2,7 @@ class_name GameRunner
 extends Node
 
 const ScriptLoadPolicy = preload("res://src/core/script_load_policy.gd")
+const ReloadPreflight = preload("res://src/core/reload_preflight.gd")
 
 signal load_succeeded(version: int)
 signal load_failed(message: String)
@@ -11,6 +12,42 @@ var active_source_path = ""
 var runtime_log = RuntimeLog.new()
 var dependency_paths: Array[String] = []
 var restored_dependencies: Dictionary = {}
+var reload_in_progress := false
+var preflight_timeout_ms := 15000
+
+func checked_reload(workspace: String, cancelled: Callable = Callable()) -> Dictionary:
+    if reload_in_progress:
+        return {"ok": false, "reason": "reload_in_progress", "error": "A reload is already in progress.", "live_game_modified": false}
+    reload_in_progress = true
+    var previous = active_game
+    var before = ReloadPreflight.fingerprint(workspace)
+    if not before.ok:
+        reload_in_progress = false
+        var rejected = {"ok": false, "reason": "fingerprint_failed", "error": "Cannot fingerprint game code/resources (10,000 files / 64 MiB limit; no symlinks or unreadable code).", "live_game_modified": false, "live_attempted": false}
+        load_failed.emit(rejected.error)
+        return rejected
+    var preflight: Dictionary = await ReloadPreflight.run(self, workspace, cancelled, preflight_timeout_ms)
+    var reason = ""
+    if not preflight.ok: reason = str(preflight.get("reason", "preflight_failed"))
+    elif cancelled.is_valid() and cancelled.call(): reason = "cancelled"
+    elif active_game != previous: reason = "live_game_changed"
+    else:
+        var after = ReloadPreflight.fingerprint(workspace)
+        if not after.ok or after.files != before.files: reason = "code_changed"
+    var result: Dictionary
+    if reason != "":
+        result = {"ok": false, "reason": reason, "error": "Reload preflight rejected: " + reason, "live_game_modified": false}
+        result.live_attempted = false
+        if reason != "cancelled": load_failed.emit(result.error)
+    else:
+        # This is a second execution, retaining the host's startup checks.
+        result = load_game(workspace)
+        result.live_attempted = true
+        # Failed host initialization can have side effects; it is not rollback.
+        result.live_game_modified = true if result.ok else null
+    result.preflight = preflight
+    reload_in_progress = false
+    return result
 
 func _exit_tree() -> void:
     restored_dependencies.clear()

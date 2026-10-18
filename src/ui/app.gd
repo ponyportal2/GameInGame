@@ -241,10 +241,14 @@ func _run_game() -> void:
         _set_chat_visible(false)
 
 func _reload_game() -> void:
-    if not is_instance_valid(runner) or not runner.has_active_game() or (is_instance_valid(agent) and agent.busy):
+    if not is_instance_valid(runner) or runner.reload_in_progress or not runner.has_active_game() or (is_instance_valid(agent) and agent.busy):
         return
-    runner.load_game(store.game_path(current_game))
-    _set_chat_busy_controls(false)
+    var reloading_runner = runner
+    for button in reload_game_buttons: button.disabled = true
+    _toast("Checking game before reload...")
+    await runner.checked_reload(store.game_path(current_game), func(): return is_instance_valid(agent) and agent.busy)
+    if not is_instance_valid(reloading_runner) or runner != reloading_runner: return
+    _set_chat_busy_controls(is_instance_valid(agent) and agent.busy)
     if not chat_overlay.visible:
         _release_host_keyboard_focus()
 
