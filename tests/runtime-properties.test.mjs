@@ -70,6 +70,30 @@ test('assembled OpenCode MCP delivers real 64-wall inspection below 24KB without
   assert.equal(fixture.status,0,fixture.stdout+fixture.stderr);
   const response=JSON.parse(readFileSync(responsePath,'utf8'));
   assert.equal(response.nodes.length,64);
+  const outcomes=JSON.parse(readFileSync(responsePath+'.mutations.json','utf8'));
+  assert.equal(outcomes[0].changed,49);assert.equal(outcomes[0].failed,1);
+  assert.equal(outcomes[0].results[7].ok,false);
+  for(const [index,message] of [[1,/Readback exceeds/],[2,/Refreshed path exceeds/],[3,/Setter invalidated/]]){
+    const failed=outcomes[index].results[0];
+    assert.equal(failed.ok,false);assert.deepEqual(failed.applied,['first', ['giant','rename','vanish'][index-1]]);
+    assert.match(failed.error,message);
+  }
+  assert.equal(outcomes[4].results[0].values.text,'\n'.repeat(1024));
+  assert.equal(outcomes[5].results[0].values.escaped,'\u0001'.repeat(1024));
+  assert.equal(outcomes[6].results[0].values.unicode,'💡'.repeat(1024));
+  // Execute every production-assembled consumer, including the second cap in
+  // toolContent. Complete outcomes must survive, not merely aggregate counts.
+  for(const harness of inventory){
+    const assembled=mkdtempSync(join(tmpdir(),'gs-mutation-cap-'));
+    assembleHarnessRuntime(harness.id,assembled);
+    const shared=await import(pathToFileURL(join(assembled,'host-tools.mjs')));
+    for(const outcome of outcomes){
+      const delivered=await shared.executeHostTool('set_properties',{}, {workspace:assembled,callHost:async()=>outcome});
+      assert.deepEqual(delivered,outcome,harness.id+' preserves complete mutation outcome');
+      assert.deepEqual(JSON.parse(shared.toolContent(delivered)[0].text),outcome);
+      assert(Buffer.byteLength(JSON.stringify(delivered))<=51200);
+    }
+  }
   const child=spawn(process.execPath,[join(directory,'mcp.mjs')],{env:{...process.env,GAMESMITH_HOST_BRIDGE_DIR:directory},stdio:['pipe','pipe','pipe'],windowsHide:true});
   const lines=createInterface({input:child.stdout});
   const records=[];lines.on('line',line=>records.push(JSON.parse(line)));

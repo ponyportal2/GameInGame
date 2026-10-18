@@ -705,7 +705,7 @@ func _write_host_response(directory: String, request: Dictionary, result: Dictio
     var tmp = response_path + ".tmp"
     var out = FileAccess.open(tmp, FileAccess.WRITE)
     if out != null:
-        out.store_string(JSON.stringify(result))
+        out.store_string(preload("res://src/core/json_output.gd").stringify(result))
         out.close()
         DirAccess.rename_absolute(tmp, response_path)
 

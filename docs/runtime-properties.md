@@ -172,8 +172,26 @@ Textual GameSmith results across the harness adapters are bounded to 50 KiB of
 UTF-8 JSON or 2,000 logical lines, whichever comes first. Logical lines include
 JSON structure and newlines inside string values. Image blocks are separate.
 Oversized results become valid JSON with `output_truncated`, original sizes,
-truncation reasons, a short incomplete preview, and recovery guidance. Mutation
-success/failure counts and diagnostic delivery identity survive truncation.
+truncation reasons, a short incomplete preview, and recovery guidance. Diagnostic
+delivery identity survives truncation.
 Preview text is not a complete record or usable handle. Narrow filters and
 paginate; do not blindly repeat a mutation that may already have applied.
 Native vendor tools retain their own output policies.
+
+
+`set_properties` reserves its complete worst-case result before the first write.
+A batch that cannot fit is rejected with `writes_started: false`; split targets,
+or split properties if even one target is too large. The maximum of 100 targets
+is an input ceiling, not a promise that every 100-target batch fits. Fifty simple
+numeric/color edits fit; string edits need smaller batches because setters may
+return any supported 1,024-character string, including embedded newlines.
+
+Accepted batches return every attempted identity, applied property name, available
+readback and error, including partial failures. No rollback is promised. For a
+non-string request, a setter's unexpectedly changed readback must fit 256 JSON
+bytes and 16 embedded newlines; otherwise the target reports an explicit
+post-write readback error. Refreshed paths must fit the larger of 128 JSON bytes
+and the original encoded path size, without introducing additional newlines.
+An oversized refreshed path returns an explicit post-write error with the
+original handle. In either case, inspect again; the applied writes are recorded
+and must not be blindly repeated. Existing string limits still apply.

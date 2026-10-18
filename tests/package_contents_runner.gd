@@ -108,9 +108,14 @@ func _run() -> void:
     if handles.size() != 200:
         quit(1)
         return
-    for offset in [0, 100]:
-        var patch = tools.execute("set_properties", {"targets": handles.slice(offset, offset + 100), "values": {"color": {"type": "Color", "r": 0.3, "g": 0.38, "b": 0.5, "a": 1}}})
-        if not patch.ok or patch.changed != 100 or not patch.temporary or runner.active_game != active or active.health != 43:
+    var rejected = tools.execute("set_properties", {"targets": handles.slice(0, 100), "values": {"name": "wall"}})
+    if rejected.ok or rejected.get("writes_started", true) or active.get_node("Wall0").name != &"Wall0":
+        push_error("Packaged mutation budget did not reject before writing")
+        quit(1)
+        return
+    for offset in [0, 50, 100, 150]:
+        var patch = tools.execute("set_properties", {"targets": handles.slice(offset, offset + 50), "values": {"color": {"type": "Color", "r": 0.3, "g": 0.38, "b": 0.5, "a": 1}}})
+        if not patch.ok or patch.changed != 50 or not patch.temporary or runner.active_game != active or active.health != 43:
             push_error("FAIL: packaged wall patch")
             quit(1)
             return

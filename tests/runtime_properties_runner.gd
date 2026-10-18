@@ -27,6 +27,27 @@ func run() -> void:
     tools.write_file("getter.gd", "extends Node\nvar dangerous: float:\n    get:\n        queue_free()\n        return 1.0\n")
     check(tools.reload_game().ok, "fixture loaded through production loader")
     var game = runner.active_game
+    var budget_handles = tools.execute("inspect_runtime", {"group": "enemies", "properties": ["title"]}).nodes.map(func(entry): return entry.handle)
+    var rejected_batch = tools.execute("set_properties", {"targets": budget_handles, "values": {"title": "new"}})
+    check(not rejected_batch.ok and rejected_batch.get("writes_started", true) == false and "Split" in rejected_batch.get("error", ""), "oversized possible string readback rejected before writes")
+    check(game.get_node("Enemy0").title == "enemy" and game.get_node("Enemy49").title == "enemy", "budget rejection leaves every target untouched")
+    var line_rejected = tools.execute("set_properties", {"targets": budget_handles.slice(0, 3), "values": {"title": "small"}})
+    check(not line_rejected.ok and not line_rejected.get("writes_started", true) and game.get_node("Enemy0").title == "enemy", "logical-line reservation rejects even a small requested string before writes")
+    var extra_handle = budget_handles[0].duplicate()
+    extra_handle.extra = "x".repeat(100000)
+    check(not tools.execute("set_properties", {"targets": [extra_handle], "values": {"title": "ignored"}}).ok and game.get_node("Enemy0").title == "enemy", "handle metadata cannot amplify mutation results")
+    var long_handles = []
+    var long_nodes = []
+    for index in range(30):
+        var node = Node2D.new()
+        node.name = "界".repeat(600) + str(index)
+        game.add_child(node)
+        long_nodes.append(node)
+        long_handles.append(tools.execute("inspect_runtime", {"root": str(node.name)}).nodes[0].handle)
+    var byte_rejected = tools.execute("set_properties", {"targets": long_handles, "values": {"visible": false}})
+    check(not byte_rejected.ok and not byte_rejected.get("writes_started", true), "UTF-8 handle bytes reject a batch independently of line count")
+    check(long_nodes.all(func(node): return node.visible), "byte-budget rejection leaves all targets untouched")
+    for node in long_nodes: node.free()
     var wrong_path = tools.execute("inspect_runtime", {"path": "Enemy0", "discover_properties": true})
     check(not wrong_path.ok and "root" in wrong_path.get("error", "") and "path" in wrong_path.get("error", ""), "unknown path argument rejected with root guidance instead of inspecting game root")
     check(not tools.execute("inspect_runtime", {"root": "Enemy0", "typo": true}).ok, "unknown inspection arguments rejected even with valid root")
@@ -98,9 +119,9 @@ func run() -> void:
         offset = page.next_offset
     check(wall_handles.size() == 200 and identities.size() == 200, "pagination discovers all 200 identities without guessing")
     var color_value = {"type": "Color", "r": 0.3, "g": 0.38, "b": 0.5, "a": 1.0}
-    for start in range(0, wall_handles.size(), 100):
-        var patch = tools.execute("set_properties", {"targets": wall_handles.slice(start, start + 100), "values": {"color": color_value}})
-        check(patch.ok and patch.changed == 100 and patch.failed == 0 and patch.temporary, "wall recolor patches real handles in hundred-node batches")
+    for start in range(0, wall_handles.size(), 50):
+        var patch = tools.execute("set_properties", {"targets": wall_handles.slice(start, start + 50), "values": {"color": color_value}})
+        check(patch.ok and patch.changed == 50 and patch.failed == 0 and patch.temporary, "wall recolor patches real handles in output-safe batches")
     check(runner.active_game == game and game.get_node("Enemy0").health == 43, "wall recolor preserves game and unrelated state")
     var recolored = tools.execute("inspect_runtime", {"root": "Walls", "class": "Polygon2D", "depth": 2, "limit": 100, "properties": ["color"]})
     check(recolored.nodes.all(func(entry): return is_equal_approx(entry.values.color.r, 0.3)), "wall recolor verified by fresh readback")
@@ -204,6 +225,9 @@ func run() -> void:
             controller._dispatch_host_request({"id": "set", "command": "set_properties", "args": {"targets": [response.nodes[0].handle], "values": {"speed": 140.0}}}, bridge)
             var patched = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-set.json")))
             check(patched is Dictionary and patched.get("ok", false) and runner.active_game.get_node("Enemy2").speed == 140.0, harness.id + " host bridge mutates live game")
+            controller._dispatch_host_request({"id": "control", "command": "set_properties", "args": {"targets": [response.nodes[0].handle], "values": {"title": String.chr(1).repeat(1024)}}}, bridge)
+            var control = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-control.json")))
+            check(control is Dictionary and control.get("ok", false) and control.results[0].values.title == String.chr(1).repeat(1024), harness.id + " bridge preserves escaped control-character mutation outcome")
         controller.queue_free()
     for invalid in [{"limit": 101}, {"limit": "many"}, {"depth": -1}, {"depth": 0.5}, {"properties": [1]}, {"group": []}, {"offset": -1}, {"offset": 0.5}, {"offset": "1"}, {"offset": 1001}, {"discover_properties": 1}]:
         check(not tools.execute("inspect_runtime", invalid).ok, "malformed inspection rejected")

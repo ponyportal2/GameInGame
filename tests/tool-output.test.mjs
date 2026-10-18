@@ -43,7 +43,6 @@ for(const [label,result] of [
  ['bytes',{ok:true,text:'\u{1f4a1}'.repeat(30000)}],
  ['lines',{ok:true,text:'x\n'.repeat(2500)}],
  ['error',{ok:false,error:'bad '.repeat(30000)}],
- ['mutation',{ok:true,changed:100,failed:0,temporary:true,results:[{text:'x'.repeat(100000)}]}],
 ]) test('bounded '+label,()=>{
  assert.equal(typeof mod.boundedToolResult,'function');
  const bounded=mod.boundedToolResult(result);
@@ -52,7 +51,6 @@ for(const [label,result] of [
  assert(text.split('\n').length<=2000);
  assert(bounded.output_truncated);
  assert.equal(bounded.ok,result.ok);
- if(label==='mutation') {assert.equal(bounded.changed,100);assert.equal(bounded.temporary,true);}
  assert.deepEqual(JSON.parse(text),bounded);
 });
 test('small results and image payloads survive',()=>{

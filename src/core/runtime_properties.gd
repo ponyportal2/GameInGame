@@ -217,11 +217,17 @@ func set_properties(args: Dictionary) -> Dictionary:
         return _error("Expected 1..100 explicit target handles and 1..16 property values.")
     var seen = {}
     for handle in targets:
-        if not handle is Dictionary or not handle.get("instance_id") is String or not handle.get("game_generation") is String or not handle.get("path") is String or seen.has(handle.instance_id):
+        if not handle is Dictionary or handle.size() != 3 or not handle.get("instance_id") is String or not handle.get("game_generation") is String or not handle.get("path") is String or seen.has(handle.instance_id):
             return _error("Expected unique inspection handles with string path, instance_id and game_generation.")
+        if handle.path.length() > MAX_STRING or handle.instance_id.length() > 20 or handle.game_generation.length() > 20:
+            return _error("Expected bounded inspection handles.")
         seen[handle.instance_id] = true
     for name in values:
         if not name is String or name.length() > MAX_STRING: return _error("Expected bounded property names.")
+    # Reserve a complete outcome before the first setter, including failure after
+    # any prefix of writes. Never rely on the generic host truncation fallback.
+    if not _mutation_fits(targets, values):
+        return {"ok": false, "writes_started": false, "error": "Mutation result may exceed 50 KiB or 2,000 lines. Split targets into smaller batches; for one target, split properties. No writes started."}
     var results: Array = []
     var changed = 0
     var failures = 0
@@ -231,6 +237,48 @@ func set_properties(args: Dictionary) -> Dictionary:
         if result.ok: changed += 1
         else: failures += 1
     return {"ok": failures == 0, "matched": targets.size(), "changed": changed, "failed": failures, "results": results, "temporary": true}
+
+func _json_bytes(value: Variant) -> int:
+    return preload("res://src/core/json_output.gd").stringify(value).to_utf8_buffer().size()
+
+func _value_budget(value: Variant) -> Dictionary:
+    # String setters may return any supported 1,024-character string. Other
+    # setters have a bounded readback envelope, independent of requested values.
+    return {"bytes": MAX_STRING * 6 + 2, "lines": MAX_STRING} if value is String else {"bytes": 256, "lines": 16}
+
+func _logical_lines(value: Variant) -> int:
+    if value is String: return value.count("\n")
+    var total = 0
+    if value is Dictionary:
+        for child in value.values(): total += _logical_lines(child)
+    elif value is Array:
+        for child in value: total += _logical_lines(child)
+    return total
+
+func _mutation_fits(targets: Array, values: Dictionary) -> bool:
+    var outcomes = []
+    var extra_lines = 0
+    var longest_name = ""
+    var error_name_lines = 0
+    for name in values:
+        if _json_bytes(name) > _json_bytes(longest_name): longest_name = name
+        error_name_lines = maxi(error_name_lines, name.count("\n"))
+    for handle in targets:
+        var reserved_handle = handle.duplicate()
+        # Refreshed paths must fit this reservation or return an explicit
+        # post-write error with the original identity instead.
+        reserved_handle.path = "x".repeat(maxi(_json_bytes(handle.path), 128))
+        extra_lines += handle.path.count("\n")
+        extra_lines += error_name_lines
+        var readback = {}
+        for name in values:
+            var budget = _value_budget(values[name])
+            readback[name] = "x".repeat(budget.bytes)
+            extra_lines += budget.lines
+        outcomes.append({"ok": false, "handle": reserved_handle, "values": readback, "applied": values.keys(), "error": longest_name + "x".repeat(128)})
+    var reserved = {"ok": false, "matched": targets.size(), "changed": targets.size(), "failed": targets.size(), "results": outcomes, "temporary": true}
+    # Slack covers numeric formatting differences between Godot and JS.
+    return _json_bytes(reserved) + 1024 <= 50 * 1024 and JSON.stringify(reserved, "  ").count("\n") + 1 + _logical_lines(reserved) + extra_lines + 20 <= 2000
 
 func _set_target(handle: Dictionary, values: Dictionary, game: Variant) -> Dictionary:
     var result = {"ok": false, "handle": handle, "values": {}, "applied": [], "error": ""}
@@ -282,7 +330,15 @@ func _set_target(handle: Dictionary, values: Dictionary, game: Variant) -> Dicti
         if not encoded.ok:
             result.error = name + ": " + encoded.error + " Writes already applied."
             return result
+        var budget = _value_budget(values[name])
+        if _json_bytes(encoded.value) > budget.bytes or _logical_lines(encoded.value) > budget.lines:
+            result.error = name + ": Readback exceeds reserved result budget; writes already applied. Inspect this property separately."
+            return result
         result.values[name] = encoded.value
+    var refreshed = _handle(node, game)
+    if _json_bytes(refreshed.path) > maxi(_json_bytes(handle.path), 128) or refreshed.path.count("\n") > handle.path.count("\n"):
+        result.error = "Refreshed path exceeds reserved result budget; writes already applied. Inspect again."
+        return result
     result.ok = true
-    result.handle = _handle(node, game)
+    result.handle = refreshed
     return result
