@@ -9,7 +9,44 @@ import {fingerprint,reusedTests} from '../tools/testing/verification-evidence.mj
 import {selectTests,inventory,resolveTest} from '../tools/testing/verification-plan.mjs';
 import {generatedLauncher,exportFilter} from '../tools/testing/generate-harness-inventory.mjs';
 import {atomicSaveSession,failureRecord} from '../tools/agent/session-state.mjs';
+test('host scheduling bounds audited concurrency and keeps serial barriers',async()=>{
+ const {runHostTests}=await import('../tools/testing/verification-plan.mjs');
+ assert.equal(typeof runHostTests,'function');
+ for(const jobs of [1,2,4]){
+  let active=0,peak=0;const completed=[];
+  const tests=['host:runtime_properties','host:runtime_node_lifecycle','host:prompt_contract','host:unreviewed','package:contents','live:codex'].map(id=>({id}));
+  await runHostTests(tests,jobs,async entry=>{
+   const safe=['host:runtime_properties','host:runtime_node_lifecycle','host:prompt_contract'].includes(entry.id);
+   if(!safe){assert.equal(active,0);assert.equal(completed.filter(id=>tests.slice(0,3).some(t=>t.id===id)).length,3);}
+   active++;peak=Math.max(peak,active);
+   await new Promise(resolve=>setTimeout(resolve,5));
+   active--;completed.push(entry.id);
+  });
+  assert.equal(peak,Math.min(jobs,3));assert.deepEqual(completed.slice(-3),['host:unreviewed','package:contents','live:codex']);
+  assert.equal(new Set(completed).size,tests.length);
+ }
+ let stopped=false;const executed=[];
+ await runHostTests([{id:'host:runtime_properties'},{id:'host:runtime_node_lifecycle'},{id:'host:unreviewed'}],1,async entry=>{executed.push(entry.id);stopped=true;},()=>stopped);
+ assert.deepEqual(executed,['host:runtime_properties']);
+ // A failed test result is evidence, not an exception that drops other tests.
+ const outcomes=[];
+ await runHostTests([{id:'host:runtime_properties'},{id:'host:unreviewed'}],2,async entry=>{outcomes.push(entry.id);return {status:'failed'};});
+ assert.equal(outcomes.length,2);
+});
 const root=resolve('.');
+test('affected selection enumerates known consumers and isolates test edits',()=>{
+ const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();
+ const check=(paths,expected)=>assert.deepEqual(ids(paths),expected.sort(),paths.join(', '));
+ check(['tests/runtime_properties_runner.gd'],['host:runtime_properties','node:verification']);
+ check(['tests/runtime_node_lifecycle_runner.gd.uid'],['host:runtime_node_lifecycle','node:verification']);
+ check(['tests/tool-output.test.mjs'],['node:tool-output','node:verification']);
+ check(['tests/package_contents_runner.gd'],['package:contents','node:verification']);
+ check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly']);
+ check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification']);
+ check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
+ for(const path of ['src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','src/pi/pi_runtime_config.gd'])
+  assert.deepEqual(ids([path]),selectTests(root,'full').map(t=>t.id).sort(),path);
+});
 function repository(t){
  const dir=mkdtempSync(join(tmpdir(),'gs-verify-spec-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  mkdirSync(join(dir,'tools/agent'),{recursive:true});mkdirSync(join(dir,'tests'));

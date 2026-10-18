@@ -4,7 +4,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync } f
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { selectTests, resolveTest } from './verification-plan.mjs';
+import { selectTests, resolveTest, runHostTests } from './verification-plan.mjs';
 import { atomicJson, assertionCounts, digest, failureExcerpt, fingerprint, git, reusedTests } from './verification-evidence.mjs';
 import { killProcessTree } from '../agent/process-tree.mjs';
 
@@ -32,7 +32,8 @@ export async function runVerification(options,root=ROOT){
   if(existsSync(resultsPath))throw new Error('Artifact directory already contains results.json; use a new directory');
   const godot=resolve(options.godot||process.env.GODOT_BIN||join(root,'GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe'));
   const changed=options.changed.length?options.changed:[...new Set([...git(root,['diff','--name-only','HEAD']).split('\n'),...git(root,['ls-files','--others','--exclude-standard']).split('\n')].filter(Boolean))];
-  let tests=selectTests(root,options.suite,changed);
+  // Explicit selections and failed-only reruns do not consult unrelated changes.
+  let tests=options.test||options['rerun-failed']||options.live?[]:selectTests(root,options.suite,changed);
   if(options['rerun-failed']){
     const prior=JSON.parse(readFileSync(resolve(options['rerun-failed']),'utf8'));
     // Invalidated evidence proves none of the original selection against the
@@ -48,6 +49,9 @@ export async function runVerification(options,root=ROOT){
     if(options.live==='codex'&&!process.env.GAMESMITH_CODEX_BIN?.includes('codex-luna-launcher'))throw new Error('Codex live tests require GAMESMITH_CODEX_BIN pointing at tools/testing/codex-luna-launcher.mjs (explicit gpt-6-luna flag).');
     tests=[{id:'live:'+options.live,phase:'host',file:'tests/'+id+'_integration_runner.gd'}];
   }
+  // This runner is loaded from the PCK. Editing its assertions must not run an
+  // older packaged copy and count that as evidence for the edited test.
+  if(tests.some(t=>t.id==='package:contents')&&changed.some(p=>p==='tests/package_contents_runner.gd'||p==='tests/package_contents_runner.gd.uid'))options.build=true;
   const needsGodot=tests.some(t=>t.phase==='host'||t.phase==='acceptance'||t.id==='package:contents'||(t.phase==='node'&&readFileSync(join(root,t.file),'utf8').includes('assembled-runtime.mjs')))||options.build;
   const version=(bin,args)=>{const r=spawnSync(bin,args,{encoding:'utf8',windowsHide:true,timeout:10000});if(r.status!==0)return {unavailable:bin,error:r.error?.message||r.stderr?.trim()||'version probe failed'};return r.stdout.trim();};
   const runtimes={node:process.version,platform:process.platform,arch:process.arch};
@@ -60,7 +64,7 @@ export async function runVerification(options,root=ROOT){
   // Test artifacts and live global state must never be reused as fresh evidence.
   const selectedTests=[...tests];
   const evidence=fingerprint(root,tests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]);
-  const result={...evidence,results_path:resultsPath,started_at:new Date(started).toISOString(),suite:options.suite,status:'running',duration_ms:0,tests:[],selection:tests.map(t=>t.id),changed};
+  const result={...evidence,results_path:resultsPath,started_at:new Date(started).toISOString(),suite:options.suite,jobs:options.jobs,status:'running',duration_ms:0,tests:[],selection:tests.map(t=>t.id),changed};
   const progress={phase:'starting',completed:0,total:tests.length,running:[],last_progress_at:new Date().toISOString()};
   const persist=()=>{result.duration_ms=Date.now()-started;atomicJson(resultsPath,result);atomicJson(join(directory,'progress.json'),progress);};
   let interrupted=false;
@@ -107,14 +111,14 @@ export async function runVerification(options,root=ROOT){
     if(host.length){
       if(imported.status==='passed'){
         phase('godot-host');
-        for(const test of host){
+        await runHostTests(host,options.jobs,async test=>{
           const data=join(directory,test.id.replaceAll(':','-')+'-data');mkdirSync(data,{recursive:true});
           const env={APPDATA:data,HOME:data,XDG_DATA_HOME:join(data,'data')};
           // Real CLI login remains native-owned; fixture suites stay isolated.
           if(options.live){const {liveEnvironment}=await import('./verification-live.mjs');Object.assign(env,liveEnvironment(options.live,process.env));}
           const args=test.id==='package:contents'?['--main-pack',join(root,'GameSmith-Windows/GameSmith.pck')]:['--path',root];
           await run(test,godot,['--headless',...args,'--log-file',join(data,'engine.log'),'--script','res://'+test.file],env,test.id==='package:contents'?data:root);
-        }
+        },()=>interrupted);
       }else for(const test of host){result.tests.push({id:test.id,status:'blocked',reason:'Godot import failed'});progress.completed++;}
     }
     for(const test of tests.filter(t=>t.id==='package:structure'||t.phase==='launcher')){

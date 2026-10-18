@@ -42,8 +42,7 @@ func _start_command_runtime() -> Dictionary:
     DirAccess.make_dir_recursive_absolute(bridge)
     var assembled = HarnessInventory.assemble_runtime("codex", directory)
     if not assembled.ok: return assembled
-    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "gamesmith_read/edit/write/search/list").replace("Pi's", "Codex's").replace("Pi process", "Codex process")
-    prompt += "\nAll GameSmith tools are native dynamic tools named gamesmith_<command>, including gamesmith_start_test_game, gamesmith_reload_game, and gamesmith_git_commit. Use gamesmith_read with 1-based offset/limit, gamesmith_edit with path/old_text/new_text, gamesmith_write with path/content, gamesmith_search with a literal pattern, and gamesmith_list for files. Native shell, delegation and native file-write approvals are unavailable; use the GameSmith tools. Model, reasoning and automatic compaction are managed by your Codex configuration.\n"
+    var prompt = _native_prompt()
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write Codex game instructions."}
     var session_file = absolute.path_join("session.json")
@@ -67,3 +66,8 @@ func _start_command_runtime() -> Dictionary:
 
 func compact_now() -> Dictionary:
     return {"ok": false, "error": "Codex manages its own compaction."}
+
+func _native_prompt() -> String:
+    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "gamesmith_read/edit/write/search/list").replace("Pi's", "Codex's").replace("Pi process", "Codex process")
+    prompt += "\nAll GameSmith tools are native dynamic tools named gamesmith_<command>, including gamesmith_start_test_game, gamesmith_reload_game, and gamesmith_git_commit. Use gamesmith_read with 1-based offset/limit, gamesmith_edit with path/old_text/new_text, gamesmith_write with path/content, gamesmith_search with a literal pattern, and gamesmith_list for files. Native shell, delegation and native file-write approvals are unavailable; use the GameSmith tools. Model, reasoning and automatic compaction are managed by your Codex configuration.\n"
+    return prompt

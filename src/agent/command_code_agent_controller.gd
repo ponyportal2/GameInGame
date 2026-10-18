@@ -85,7 +85,7 @@ func _start_command_runtime() -> Dictionary:
     DirAccess.make_dir_recursive_absolute(bridge)
     var assembled = HarnessInventory.assemble_runtime("command-code", directory)
     if not assembled.ok: return assembled
-    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
+    var prompt = _native_prompt()
     if not JsonStore.write_bytes_atomic(directory.path_join("prompt.md"), prompt.to_utf8_buffer()):
         return {"ok": false, "error": "Could not write Command-code game instructions."}
     var session_file = absolute.path_join("session.json")
@@ -207,3 +207,7 @@ func start_new_session() -> Dictionary:
     last_context_tokens = 0
     backend_pid = -1
     return {"ok": true, "archive": archive}
+
+func _native_prompt() -> String:
+    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
+    return prompt
