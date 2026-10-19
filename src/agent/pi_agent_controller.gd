@@ -624,6 +624,9 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
         if command == "authorize_blender" and result.has("run_id") and result.get("state") != "cancelled":
             _grant_blender(request, directory, str(result.run_id))
             result = {"ok": true}
+    elif command in ["add_runtime_child", "remove_runtime_child"]:
+        _runtime_child_request(request, directory, operation_id)
+        return
     elif command in ["read_runtime_log", "inspect_runtime", "set_properties"]:
         result = tools.execute(command, request.get("args", {}))
     elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
@@ -648,6 +651,11 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
     else:
         result = {"ok": false, "error": "Unknown GameSmith host bridge command: " + command}
     _write_host_response(directory, request, result)
+
+func _runtime_child_request(request: Dictionary, directory: String, operation: int) -> void:
+    var result: Dictionary = await tools.wait_reload(tools.execute(str(request.command), request.get("args", {})))
+    if operation == operation_id and directory == bridge_dir:
+        _write_host_response(directory, request, result)
 
 func _grant_blender(request: Dictionary, directory: String, run_id: String) -> void:
     var auth: Dictionary = request.args

@@ -33,6 +33,8 @@ export default async function (cmd) {
     rg_search: hostTools.rg_search,
     inspect_runtime: hostTools.inspect_runtime,
     set_properties: hostTools.set_properties,
+    add_runtime_child: hostTools.add_runtime_child,
+    remove_runtime_child: hostTools.remove_runtime_child,
     generate_image: hostTools.generate_image,
     blender: hostTools.blender,
     reload_game: hostTools.reload_game,

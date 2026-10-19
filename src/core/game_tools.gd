@@ -190,10 +190,99 @@ func read_runtime_log(args: Dictionary = {}) -> Dictionary:
     if runner == null: return {"ok": false, "error": "Runner unavailable."}
     return runner.runtime_log.read(args, true)
 
+func runtime_child(command: String, args: Dictionary) -> Dictionary:
+    var pending := {"ok": true, "pending": true}
+    _perform_runtime_child(pending, command, args.duplicate(true), reload_token)
+    return pending
+
+func _perform_runtime_child(pending: Dictionary, command: String, args: Dictionary, token: int) -> void:
+    # Always leave the current callback/physics stack before structural mutation.
+    if not is_instance_valid(runner) or not runner.is_inside_tree():
+        pending.merge({"ok": false, "pending": false, "error": "Runner unavailable.", "live_attempted": false})
+        return
+    await runner.get_tree().process_frame
+    var result: Dictionary = await _checked_runtime_child(command, args, token)
+    pending.merge(result, true)
+    pending.pending = false
+
+func _checked_runtime_child(command: String, args: Dictionary, token: int) -> Dictionary:
+    var Children = preload("res://src/core/runtime_children.gd")
+    var helper = preload("res://src/core/runtime_properties.gd").new(runner)
+    var rejected = {"ok": false, "live_attempted": false, "live_game_modified": false, "temporary": true}
+    if token != reload_token:
+        rejected.merge(Children.error("cancelled", "Runtime operation cancelled."), true)
+        return rejected
+    var game = helper._game()
+    var target = args.get("parent" if command == "add_runtime_child" else "target", {})
+    if game == null or not target is Dictionary or target.size() != 3 or not target.get("path") is String or target.path.length() > 1024 or not target.get("instance_id") is String or not target.get("game_generation") is String:
+        rejected.merge(Children.error("invalid_handle", "Copy an exact current handle from inspect_runtime."), true)
+        return rejected
+    var node = helper._resolve(target, game)
+    if node == null:
+        rejected.merge(Children.error("stale_handle", "Stale target or target outside active_game. Inspect again."), true)
+        return rejected
+    if runner.reload_in_progress:
+        rejected.merge(Children.error("operation_in_progress", "A reload or structural operation is already in progress."), true)
+        return rejected
+    if command == "remove_runtime_child":
+        var owned = runner.runtime_children.get(node.get_instance_id())
+        if args.size() != 1 or owned == null or owned.get_ref() != node:
+            rejected.merge(Children.error("not_injected", "Removal is limited to nodes added by add_runtime_child."), true)
+            return rejected
+        var before = Children.errors(runner)
+        var id = node.get_instance_id()
+        node.get_parent().remove_child(node)
+        if is_instance_valid(node): node.queue_free()
+        runner.runtime_children.erase(id)
+        var clean = Children.errors(runner) == before
+        return {"ok": clean, "live_attempted": true, "live_game_modified": true if clean else null, "temporary": true, "removed": target, "note": "Removal does not undo the component's earlier side effects.", "error": "" if clean else "Errors occurred during removal; side effects may remain."}
+    var valid = Children.validate(workspace, args)
+    if not valid.ok:
+        rejected.merge(valid, true)
+        return rejected
+    if node.get_node_or_null(NodePath(args.name)) != null:
+        rejected.merge(Children.error("child_already_present", "Child name is already occupied in the live game."), true)
+        return rejected
+    var before = preload("res://src/core/reload_preflight.gd").fingerprint(workspace)
+    if not before.ok:
+        rejected.merge(Children.error("fingerprint_failed", "Cannot fingerprint workspace code/resources."), true)
+        return rejected
+    args.expected = {"class": node.get_class(), "script": Children.script_path(node)}
+    var operation = args.duplicate(true)
+    operation.action = "inject_child"
+    runner.reload_in_progress = true
+    var preflight: Dictionary = await preload("res://src/core/reload_preflight.gd").run(runner, workspace, func(): return token != reload_token, runner.preflight_timeout_ms, operation)
+    var reason = ""
+    if not preflight.ok: reason = str(preflight.get("reason", "preflight_failed"))
+    elif token != reload_token: reason = "cancelled"
+    elif helper._game() != game or helper._resolve(target, game) != node: reason = "stale_handle"
+    elif not node.is_node_ready(): reason = "parent_not_ready"
+    elif node.get_class() != args.expected.class or Children.script_path(node) != args.expected.script: reason = "parent_mismatch"
+    elif node.get_node_or_null(NodePath(args.name)) != null: reason = "child_already_present"
+    else:
+        var after = preload("res://src/core/reload_preflight.gd").fingerprint(workspace)
+        if not after.ok or after.files != before.files: reason = "code_changed"
+    var result = rejected
+    if reason != "":
+        result.merge(Children.error(reason, "Late-insertion preflight rejected: " + reason), true)
+    else:
+        result = Children.insert(runner, workspace, node, args)
+        result.live_attempted = true
+        result.live_game_modified = true if result.ok else null
+        result.temporary = true
+    # Keep complete outcome identity even with large candidate diagnostics.
+    # Full private preflight evidence remains on disk alongside reload evidence.
+    var diagnostics: Dictionary = preflight.get("diagnostics", {})
+    var cleanup: Dictionary = preflight.get("cleanup", {})
+    result.preflight = {"ok": preflight.ok, "reason": preflight.get("reason", ""), "run_id": preflight.get("run_id", ""), "process_ticks_completed": preflight.get("process_ticks_completed", 0), "physics_ticks_completed": preflight.get("physics_ticks_completed", 0), "errors": preflight.get("errors", 0), "error": str(preflight.get("error", "")).left(1500), "cleanup": {"state": cleanup.get("state", "unknown"), "stop_method": cleanup.get("stop_method", ""), "exit_code": cleanup.get("exit_code", -1)}, "diagnostics": "\n".join(str(diagnostics.get("log", "")).split("\n").slice(0, 60)).left(6000)}
+    runner.reload_in_progress = false
+    return result
+
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
         "inspect_runtime": return preload("res://src/core/runtime_properties.gd").new(runner).inspect(args)
         "set_properties": return preload("res://src/core/runtime_properties.gd").new(runner).set_properties(args)
+        "add_runtime_child", "remove_runtime_child": return runtime_child(name, args)
         "blender": return blender(args)
         "generate_image": return generate_image(args)
         "list_files": return list_files(str(args.get("path", "")))

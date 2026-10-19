@@ -83,7 +83,7 @@ func _finalize() -> void:
     watchdog.close()
 
 func perform_action(args: Dictionary) -> void:
-    if args.get("action") == "smoke":
+    if args.get("action") in ["smoke", "inject_child"]:
         if not smoke_pending:
             smoke_pending = true
             _smoke_window(args)
@@ -148,6 +148,16 @@ func _describe_node(node: Node, game: Node, depth: int, budget: Array) -> Dictio
     return {"name": str(node.name), "path": str(game.get_path_to(node)), "class": node.get_class(), "children": children, "child_count": node.get_child_count(), "children_truncated": children.size() < node.get_child_count()}
 
 func _smoke_window(args: Dictionary) -> void:
+    if args.get("action") == "inject_child":
+        var helper = preload("res://src/core/runtime_properties.gd").new(runner)
+        var parent = helper._path(runner.active_game, args.get("candidate_path"))
+        var injection = preload("res://src/core/runtime_children.gd").insert(runner, config.workspace, parent, args)
+        if not injection.ok:
+            injection.action_id = args.action_id
+            injection.pending = false
+            JsonStore.write_dict(config.control_dir.path_join("action-result.json"), injection)
+            smoke_pending = false
+            return
     var result = await _measure_smoke_window()
     if finishing: return
     result.action_id = args.action_id

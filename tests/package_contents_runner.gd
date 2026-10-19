@@ -44,7 +44,7 @@ func _run() -> void:
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)
             return
-    for script in ["test_game_supervisor.gd", "test_game_process.gd", "test_game_watchdog.gd", "test_evidence.gd", "reload_preflight.gd"]:
+    for script in ["test_game_supervisor.gd", "test_game_process.gd", "test_game_watchdog.gd", "test_evidence.gd", "reload_preflight.gd", "runtime_children.gd"]:
         if not ResourceLoader.exists("res://src/core/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)
@@ -140,6 +140,21 @@ func _run() -> void:
         quit(1)
         return
     print("PASS: packaged compact wall inspection pages and recolors 200 live nodes")
+    # The deliberately broken disk candidate above must not seed injection tests.
+    tools.write_file("main.gd", "extends Node2D\n")
+    tools.write_file("ability.gd", "extends Node\nvar power = 0.0\nvar ready_power = 0.0\nfunc _ready():\n\tready_power = power\n")
+    var parent = tools.execute("inspect_runtime", {"depth": 0}).nodes[0].handle
+    var added = await tools.wait_reload(tools.execute("add_runtime_child", {"parent": parent, "candidate_path": ".", "name": "PackagedAbility", "script_path": "ability.gd", "properties": {"power": 9.0}}))
+    if not added.ok or runner.active_game.get_node("PackagedAbility").ready_power != 9.0 or not added.preflight.ok:
+        push_error("FAIL: packaged late-child preflight/insertion " + str(added))
+        quit(1)
+        return
+    var removed = await tools.wait_reload(tools.execute("remove_runtime_child", {"target": added.handle}))
+    if not removed.ok or runner.active_game.has_node("PackagedAbility"):
+        push_error("FAIL: packaged injected child removal")
+        quit(1)
+        return
+    print("PASS: packaged runtime preflights late insertion and removes only its injected child")
     runner.queue_free()
     await process_frame
     print("PASS: exported runtime inspects and patches live properties without reloading")

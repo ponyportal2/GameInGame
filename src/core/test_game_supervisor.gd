@@ -331,7 +331,7 @@ func _prune_runs(keep: String = "") -> void:
 
 # Reusable execution check for an already-started test; ownership/cleanup stays
 # with its caller. Startup state alone is never smoke-test acceptance.
-func run_smoke_window(id: String, cancelled: Callable = Callable(), timeout_ms: int = 15000) -> Dictionary:
+func run_smoke_window(id: String, cancelled: Callable = Callable(), timeout_ms: int = 15000, operation: Dictionary = {}) -> Dictionary:
     var deadline = Time.get_ticks_msec() + timeout_ms
     var action_id := ""
     while true:
@@ -346,7 +346,7 @@ func run_smoke_window(id: String, cancelled: Callable = Callable(), timeout_ms: 
             return {"ok": false, "reason": "startup_failed", "error": "Test startup failed."}
         if state.get("state") == "running":
             if action_id == "":
-                var action = request_action(id, {"action": "smoke"})
+                var action = request_action(id, {"action": "smoke"} if operation.is_empty() else operation)
                 if not action.get("ok", false): return action
                 action_id = action.action_id
             var result = request_action(id, {"action": "poll", "action_id": action_id})

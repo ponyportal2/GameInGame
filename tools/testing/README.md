@@ -58,6 +58,12 @@ values, setter readback, invalidation, bounds and partial failures.
 harness. Package contents acceptance also executes a live patch from the PCK.
 See [the API contract](../../docs/runtime-properties.md).
 
+`runtime_children_runner.gd` exercises mandatory isolated late-insertion smoke,
+property initialization, parent identity/lifecycle, dependency cache freshness,
+errors, cancellation, timeout, source/name races and the inherited OpenCode
+bridge. Package contents acceptance executes addition and removal from the PCK.
+See [the additive child API](../../docs/runtime-children.md).
+
 `runtime_node_lifecycle_runner.gd` checks actual engine callbacks for initially
 constructed and late-added subtrees: synchronous enter/ready ordering, unchanged
 parent initialization and cached children, deferred work, process/physics ticks

@@ -36,7 +36,7 @@ static func _collect(path: String, root: String, result: Dictionary) -> void:
         _collect(path.path_join(child), root, result)
         if not result.ok: return
 
-static func run(owner: Node, workspace: String, cancelled: Callable, timeout_ms: int) -> Dictionary:
+static func run(owner: Node, workspace: String, cancelled: Callable, timeout_ms: int, operation: Dictionary = {}) -> Dictionary:
     var supervisor = Supervisor.new()
     supervisor.storage_scope = "preflights"
     owner.add_child(supervisor)
@@ -46,7 +46,7 @@ static func run(owner: Node, workspace: String, cancelled: Callable, timeout_ms:
         return {"ok": false, "reason": "launch_failed", "error": started.get("error", "Could not start preflight.")}
     # Poll results are owned by the supervisor; do not enrich that same object
     # with a status containing action_result (which would create a JSON cycle).
-    var result: Dictionary = (await supervisor.run_smoke_window(started.run_id, cancelled, timeout_ms)).duplicate(true)
+    var result: Dictionary = (await supervisor.run_smoke_window(started.run_id, cancelled, timeout_ms, operation)).duplicate(true)
     supervisor.request_stop(started.run_id)
     var cleanup_deadline = Time.get_ticks_msec() + supervisor.grace_ms + 3000
     while supervisor.status(started.run_id).get("state") != "exited" and Time.get_ticks_msec() < cleanup_deadline:

@@ -14,6 +14,7 @@ var dependency_paths: Array[String] = []
 var restored_dependencies: Dictionary = {}
 var reload_in_progress := false
 var preflight_timeout_ms := 15000
+var runtime_children: Dictionary = {}
 
 func checked_reload(workspace: String, cancelled: Callable = Callable()) -> Dictionary:
     if reload_in_progress:
@@ -117,6 +118,7 @@ func load_game(workspace: String) -> Dictionary:
         active_game.get_parent().remove_child(active_game)
         active_game.queue_free()
     active_game = candidate
+    runtime_children.clear()
     active_source_path = main_path
     dependency_paths = paths
     restored_dependencies.clear()
@@ -163,6 +165,7 @@ func unload_game() -> void:
     if is_instance_valid(active_game):
         active_game.queue_free()
     active_game = null
+    runtime_children.clear()
     active_source_path = ""
     restored_dependencies.clear()
 
