@@ -44,6 +44,7 @@ func run() -> void:
         quit(1)
         return
     check(not app.metadata.global_settings().get("auto_approve_reloads", false), "automatic approval defaults off")
+    check(app.get("auto_runtime_children_check") != null and not app.metadata.global_settings().get("auto_approve_runtime_children", true), "child auto-approval has an independent off-by-default setting")
     check(app.metadata.global_settings().get("image_backend", "") == "", "Image generation has no default vendor")
     app._open_settings()
     check(not is_instance_valid(app.image_probe), "Opening ordinary settings does not start native image processes")
@@ -88,11 +89,14 @@ func run() -> void:
         app._open_settings()
         check(not app.auto_reload_check.disabled, "host approval setting is available for harness %d" % harness)
         app.auto_reload_check.button_pressed = true
+        app.auto_runtime_children_check.button_pressed = true
         app.auto_blender_check.button_pressed = true
         app._save_settings()
         check(app.metadata.global_settings().get("auto_approve_blender_scripts", false), "Blender approval persists for harness %d" % harness)
         app._open_settings()
         check(app.auto_blender_check.button_pressed, "Blender approval restores in settings")
+        check(app.auto_runtime_children_check.button_pressed and app.metadata.global_settings().get("auto_approve_runtime_children", false), "child auto-approval persists and restores for harness %d" % harness)
+        app.auto_runtime_children_check.button_pressed = false
         app.auto_blender_check.button_pressed = false
         app._save_settings()
         check(not app.metadata.global_settings().get("auto_approve_blender_scripts", true) and app.metadata.global_settings().get("auto_approve_reloads", false), "disabling Blender approval leaves reload approval enabled")
@@ -121,6 +125,9 @@ func run() -> void:
         request.close()
         app.agent._service_host_bridge()
         check(not app.agent.pending_reload.is_empty() and not FileAccess.file_exists(bridge.path_join("response-manual.json")), "turning automatic approval off restores the wait for harness %d" % harness)
+        app.agent._clear_pending_reload()
+        app.agent._dispatch_host_request({"id": "child-consent", "command": "add_runtime_child", "args": {}}, app.agent.bridge_dir)
+        check(app.approve_reload_button.visible and "Child Code" in app.approve_reload_button.text and "child" in app.reload_notice.text, "child consent uses truthful visible UI wording")
         app.agent._clear_pending_reload()
         app._show_library()
     for harness_id in ["pi", "codex"]:

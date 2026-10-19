@@ -97,6 +97,7 @@ func global_settings() -> Dictionary:
         "compaction_keep_recent_tokens": 20000,
         "allow_rendered_tests": false,
         "auto_approve_reloads": false,
+        "auto_approve_runtime_children": false,
         "auto_approve_blender_scripts": false,
         "image_backend": "",
     })

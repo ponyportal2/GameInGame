@@ -78,6 +78,7 @@ var compaction_auto_spin: SpinBox
 var compaction_keep_spin: SpinBox
 var rendered_tests_check: CheckBox
 var auto_reload_check: CheckBox
+var auto_runtime_children_check: CheckBox
 var auto_blender_check: CheckBox
 var image_backend_option: OptionButton
 var image_backend_labels: Dictionary = {}
@@ -260,6 +261,10 @@ func _release_host_keyboard_focus() -> void:
         focused.release_focus()
 
 func _reload_approval_changed(pending: bool) -> void:
+    var child_request = pending and is_instance_valid(agent) and agent.pending_reload.get("request", {}).get("command") == "add_runtime_child"
+    approve_reload_button.text = "Allow Child Code  Shift+F5" if child_request else "Allow Reload  Shift+F5"
+    approve_reload_button.tooltip_text = "Allow new scripted child code in the live game; code runs inside GameSmith. Current workspace files are used after approval." if child_request else "Allow a reload of the current workspace, including changes made while waiting."
+    reload_notice.text = "Live child code requested · Shift+F5 to allow · F1 to view chat" if child_request else "Reload requested · Shift+F5 to allow · F1 to view chat"
     reload_notice.visible = pending
     approve_reload_button.visible = pending
     approve_reload_button.disabled = not pending
@@ -848,6 +853,7 @@ func _open_settings() -> void:
     compaction_keep_spin.value = clampi(int(settings.get("compaction_keep_recent_tokens", 20000)), 1000, 500000)
     rendered_tests_check.button_pressed = bool(settings.get("allow_rendered_tests", false))
     auto_reload_check.button_pressed = bool(settings.get("auto_approve_reloads", false))
+    auto_runtime_children_check.button_pressed = bool(settings.get("auto_approve_runtime_children", false))
     auto_blender_check.button_pressed = bool(settings.get("auto_approve_blender_scripts", false))
     _select_image_backend(str(settings.get("image_backend", "")))
     game_blender_check.disabled = current_game == ""
@@ -990,6 +996,7 @@ func _save_settings(confirm_blender_reset: bool = false) -> void:
             host_settings.compaction_auto_tokens = int(compaction_auto_spin.value)
         host_settings.allow_rendered_tests = rendered_tests_check.button_pressed
         host_settings.auto_approve_reloads = auto_reload_check.button_pressed
+        host_settings.auto_approve_runtime_children = auto_runtime_children_check.button_pressed
         host_settings.auto_approve_blender_scripts = auto_blender_check.button_pressed
         host_settings.image_backend = str(image_backend_option.get_item_metadata(image_backend_option.selected))
         if not metadata.save_global_settings(host_settings):
@@ -1009,6 +1016,7 @@ func _save_settings(confirm_blender_reset: bool = false) -> void:
     settings.compaction_keep_recent_tokens = int(compaction_keep_spin.value)
     settings.allow_rendered_tests = rendered_tests_check.button_pressed
     settings.auto_approve_reloads = auto_reload_check.button_pressed
+    settings.auto_approve_runtime_children = auto_runtime_children_check.button_pressed
     settings.auto_approve_blender_scripts = auto_blender_check.button_pressed
     settings.image_backend = str(image_backend_option.get_item_metadata(image_backend_option.selected))
     var failures: Array[String] = []

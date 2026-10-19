@@ -144,7 +144,23 @@ func _run() -> void:
     tools.write_file("main.gd", "extends Node2D\n")
     tools.write_file("ability.gd", "extends Node\nvar power = 0.0\nvar ready_power = 0.0\nfunc _ready():\n\tready_power = power\n")
     var parent = tools.execute("inspect_runtime", {"depth": 0}).nodes[0].handle
-    var added = await tools.wait_reload(tools.execute("add_runtime_child", {"parent": parent, "candidate_path": ".", "name": "PackagedAbility", "script_path": "ability.gd", "properties": {"power": 9.0}}))
+    var controller = preload("res://src/agent/opencode_agent_controller.gd").new()
+    root.add_child(controller)
+    controller.set_process(false)
+    controller.tools = tools
+    controller.bridge_dir = ProjectSettings.globalize_path("user://packaged-child-approval")
+    DirAccess.make_dir_recursive_absolute(controller.bridge_dir)
+    controller._dispatch_host_request({"id": "child", "command": "add_runtime_child", "args": {"parent": parent, "candidate_path": ".", "name": "PackagedAbility", "script_path": "ability.gd", "properties": {"power": 9.0}}}, controller.bridge_dir)
+    if controller.pending_reload.is_empty() or runner.active_game.has_node("PackagedAbility"):
+        push_error("FAIL: packaged child code bypassed player consent")
+        quit(1)
+        return
+    controller.approve_reload()
+    var response_path = controller.bridge_dir.path_join("response-child.json")
+    var deadline = Time.get_ticks_msec() + 25000
+    while not FileAccess.file_exists(response_path) and Time.get_ticks_msec() < deadline:
+        await process_frame
+    var added = JsonStore.read_dict(response_path, {"ok": false})
     if not added.ok or runner.active_game.get_node("PackagedAbility").ready_power != 9.0 or not added.preflight.ok:
         push_error("FAIL: packaged late-child preflight/insertion " + str(added))
         quit(1)
@@ -155,6 +171,8 @@ func _run() -> void:
         quit(1)
         return
     print("PASS: packaged runtime preflights late insertion and removes only its injected child")
+    print("PASS: packaged child code requires player approval before preflight and live application")
+    controller.free()
     runner.queue_free()
     await process_frame
     print("PASS: exported runtime inspects and patches live properties without reloading")

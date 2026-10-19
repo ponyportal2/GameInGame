@@ -78,6 +78,12 @@ func run() -> void:
     await settle()
     check(inside(app.approve_reload_button), "reload approval fits without displacing the composer")
     await capture("reload-request")
+    app.agent.pending_reload = {"request": {"command": "add_runtime_child"}}
+    app._reload_approval_changed(true)
+    await settle()
+    check(inside(app.approve_reload_button) and "Child Code" in app.approve_reload_button.text, "live child approval fits and identifies new code consent")
+    await capture("child-code-request")
+    app.agent.pending_reload = {}
     app._reload_approval_changed(false)
     app._open_settings()
     await settle()

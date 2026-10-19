@@ -44,19 +44,17 @@ static func insert(runner: Node, workspace: String, parent: Node, args: Dictiona
     if parent.get_class() != expected.get("class") or script_path(parent) != expected.get("script"):
         return error("parent_mismatch", "Candidate/live parent class or script differs from the inspected live parent.")
     var before = errors(runner)
-    # Detach cached workspace scripts while compiling the new component. This
+    # Detach cached workspace resources while compiling the new component. This
     # gives preload dependencies fresh implementations without reloading scripts
     # attached to existing live objects. Restore their original cache afterwards.
     var paths: Array[String] = []
-    runner._collect_scripts(workspace, paths)
-    var previous: Dictionary = {}
+    runner._collect_resources(workspace, paths)
     for path in paths:
+        if path.get_extension().to_lower() != "gd": continue
         var violation = preload("res://src/core/script_load_policy.gd").first_violation(FileAccess.get_file_as_string(path))
         if not violation.is_empty():
             return error("script_load_policy", "%s:%d: %s" % [path.get_file(), violation.line, violation.message])
-    for path in paths:
-        previous[path] = ResourceLoader.get_cached_ref(path)
-        if previous[path] != null: previous[path].resource_path = ""
+    var previous = runner._detach_cache(paths)
     var script = GDScript.new()
     script.resource_path = workspace.path_join(args.script_path) + "#injection-%d" % Time.get_ticks_usec()
     script.source_code = FileAccess.get_file_as_string(workspace.path_join(args.script_path))

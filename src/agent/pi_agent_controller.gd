@@ -581,16 +581,17 @@ func _claim_host_request(path: String) -> Dictionary:
 func _dispatch_host_request(request: Dictionary, directory: String) -> void:
     var command = str(request.get("command", ""))
     var result: Dictionary
-    if command == "reload_game":
+    if command in ["reload_game", "add_runtime_child"]:
         if pending_reload.is_empty():
             pending_reload = {"request": request, "bridge_dir": directory, "operation_id": operation_id}
-            if bool(metadata.global_settings().get("auto_approve_reloads", false)):
+            var setting = "auto_approve_runtime_children" if command == "add_runtime_child" else "auto_approve_reloads"
+            if bool(metadata.global_settings().get(setting, false)):
                 approve_reload()
                 return
-            status_changed.emit("Waiting for reload approval")
+            status_changed.emit("Waiting for live child code approval" if command == "add_runtime_child" else "Waiting for reload approval")
             reload_approval_changed.emit(true)
             return
-        result = {"ok": false, "error": "Another reload is already waiting for player approval."}
+        result = {"ok": false, "error": "Another live code request is already waiting for player approval."}
     elif command == "generate_image":
         result = tools.execute("generate_image", request.get("args", {}))
     elif command in ["blender", "authorize_blender"]:
@@ -624,7 +625,7 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
         if command == "authorize_blender" and result.has("run_id") and result.get("state") != "cancelled":
             _grant_blender(request, directory, str(result.run_id))
             result = {"ok": true}
-    elif command in ["add_runtime_child", "remove_runtime_child"]:
+    elif command == "remove_runtime_child":
         _runtime_child_request(request, directory, operation_id)
         return
     elif command in ["read_runtime_log", "inspect_runtime", "set_properties"]:
@@ -698,6 +699,10 @@ func approve_reload() -> void:
     var pending = pending_reload
     _clear_pending_reload()
     if pending.operation_id != operation_id or pending.bridge_dir != bridge_dir or bridge_dir == "":
+        return
+    if pending.request.command == "add_runtime_child":
+        status_changed.emit("Testing and adding live child code...")
+        await _runtime_child_request(pending.request, pending.bridge_dir, pending.operation_id)
         return
     status_changed.emit("Reloading game...")
     var result: Dictionary = await tools.wait_reload(tools.reload_game(func(): return pending.operation_id != operation_id or pending.bridge_dir != bridge_dir))

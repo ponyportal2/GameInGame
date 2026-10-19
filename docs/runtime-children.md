@@ -8,19 +8,29 @@ and obey the existing loading policy. Initial properties use the scalar/tagged
 value types supported by `set_properties`: no object references or expressions.
 Properties are set before insertion; the child can find its parent in `_ready()`.
 
+Adding new code requires player consent through **Allow Child Code** (Shift+F5).
+Settings > Agent & testing offers **Automatically approve live child additions**,
+off by default and independent of reload and Blender approval. Approval uses the
+current workspace files; cancellation discards the pending request. Approval is
+consent to execute code inside GameSmith, not a sandbox or a safety guarantee.
+
 The host starts its own isolated headless process, boots the current workspace,
 waits for startup smoke, and inserts the child at the explicit game-relative
 `candidate_path`. Parent engine class and script path must match the inspected
 live target. Missing targets and duplicate child names reject, including when
 persistent startup already creates the requested child. The injected copy must
-survive at least four completed process and three physics ticks and clean
+survive at least four completed process and three physics ticks with the same
+identity, parent and name, without being queued for deletion, and clean
 shutdown. Cancellation, errors, hangs and changed code reject before live
 application; the private preflight does not consume the agent's detached test.
 
 After preflight, the host checks code/resource fingerprints and the live handle,
 class/script and name collision again. Tree changes run outside the initiating
 callback. A fresh component and its preload dependencies are compiled without
-replacing scripts attached to existing objects. Existing parent/sibling `_ready`
+replacing scripts attached to existing objects. Workspace script, serialized
+scene/resource and shader cache entries are temporarily detached so preloads
+read current files; existing resource objects remain unchanged and injection
+restores their cache entries afterward. Existing parent/sibling `_ready`
 callbacks do not repeat. Late components do not automatically enter cached
 parent registries or inherit new parent methods/signals from edited source.
 

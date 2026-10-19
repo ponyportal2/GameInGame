@@ -66,19 +66,15 @@ func load_game(workspace: String) -> Dictionary:
     # Install fresh dependency resources without mutating scripts used by the
     # active game. On rejection, restore the old resource cache as well as the game.
     var paths: Array[String] = []
-    _collect_scripts(workspace, paths)
+    _collect_resources(workspace, paths)
     for path in paths:
+        if path.get_extension().to_lower() != "gd": continue
         var violation = ScriptLoadPolicy.first_violation(FileAccess.get_file_as_string(path))
         if not violation.is_empty():
             runtime_log.capture("error", "script_load_policy", violation.message, path, int(violation.line), [], "", false, "host_event", runtime_log.attempt_id)
             return _reject("policy", "%s:%d: %s Previous game kept running." % [path, int(violation.line), violation.message])
     paths.erase(main_path)
-    var previous: Dictionary = {}
-    for path in dependency_paths + paths:
-        if not previous.has(path):
-            previous[path] = ResourceLoader.get_cached_ref(path)
-            if previous[path] != null:
-                previous[path].resource_path = ""
+    var previous = _detach_cache(dependency_paths + paths)
     # Leave these paths uncached. Godot loads/compiles only dependencies the
     # candidate actually requests through preload or script inheritance.
     var source = FileAccess.get_file_as_string(main_path)
@@ -150,16 +146,53 @@ func _restore_cache(previous: Dictionary) -> void:
             if previous[path] != null:
                 restored_dependencies[path] = previous[path]
 
-func _collect_scripts(directory: String, paths: Array[String]) -> void:
+func _detach_cache(paths: Array[String]) -> Dictionary:
+    var previous: Dictionary = {}
+    for path in paths:
+        previous[path] = ResourceLoader.get_cached_ref(path)
+        var resource = previous[path]
+        if resource == null or resource is Script: continue
+        # Embedded serialized resources have their own cache entries (path::id).
+        # Detaching only the file root still lets fresh loads reuse old children.
+        var prefix = str(resource.resource_path) + "::"
+        var pending: Array = [resource]
+        var seen: Array = []
+        while not pending.is_empty():
+            var value = pending.pop_back()
+            if not (value is Resource or value is Array or value is Dictionary): continue
+            var visited = false
+            for item in seen:
+                if is_same(item, value):
+                    visited = true
+                    break
+            if visited: continue
+            seen.append(value)
+            if value is Resource:
+                if value != resource and not str(value.resource_path).is_empty():
+                    if not str(value.resource_path).begins_with(prefix): continue
+                    previous[value.resource_path] = value
+                for property in value.get_property_list():
+                    if int(property.usage) & PROPERTY_USAGE_STORAGE:
+                        pending.append(value.get(property.name))
+            elif value is Array:
+                pending.append_array(value)
+            else:
+                pending.append_array(value.keys())
+                pending.append_array(value.values())
+    for path in previous:
+        if previous[path] != null: previous[path].resource_path = ""
+    return previous
+
+func _collect_resources(directory: String, paths: Array[String], extensions: Array = ["gd", "tres", "res", "tscn", "scn", "gdshader", "shader", "gdshaderinc"]) -> void:
     var dir = DirAccess.open(directory)
     if dir == null:
         return
     for file in dir.get_files():
-        if file.get_extension().to_lower() == "gd":
+        if file.get_extension().to_lower() in extensions:
             paths.append(directory.path_join(file))
     for child in dir.get_directories():
         if child not in [".git", ".godot"] and not dir.is_link(child):
-            _collect_scripts(directory.path_join(child), paths)
+            _collect_resources(directory.path_join(child), paths, extensions)
 
 func unload_game() -> void:
     if is_instance_valid(active_game):
