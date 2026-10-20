@@ -32,6 +32,7 @@ func run() -> void:
     test_sanitize_matrix()
     test_reserved_and_hidden_names()
     test_create_collisions()
+    test_stale_metadata_collision()
     test_delete_keeps_metadata_on_failure()
     test_jsonl_partial_tail()
     print("RESULT: %d passed, %d failed" % [passed, failed])
@@ -80,6 +81,22 @@ func test_create_collisions() -> void:
     check(store.delete_game("Duplicate fixture 2"), "deleting the suffixed workspace succeeds")
     check(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(store.game_path("Duplicate fixture 2"))), "deleted workspace directory is gone")
     check(store.delete_game("Duplicate fixture"), "deleting the original workspace succeeds")
+
+func test_stale_metadata_collision() -> void:
+    var store = Store.new()
+    var created: Dictionary = store.create_game("Stale metadata fixture")
+    var name: String = created.get("name", "")
+    check(name == "Stale metadata fixture", "the stale-metadata fixture is created")
+    # Simulate a deletion that removed the workspace but could not remove metadata.
+    store.metadata._remove_tree_abs(ProjectSettings.globalize_path(store.game_path(name)))
+    check(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(store.game_path(name))), "the fixture workspace is gone while its metadata stays")
+    check(store.metadata.read_game(name).get("harness", "") == "pi", "the leftover metadata is still present")
+    var again: Dictionary = store.create_game("Stale metadata fixture")
+    check(again.get("name", "") == "Stale metadata fixture 2", "a new game never reuses leftover metadata")
+    check(store.metadata.read_game(again.get("name", "")).get("created_at", "") != "", "the new game has its own metadata")
+    check(store.metadata.read_game(name).get("name", "") == "Stale metadata fixture", "the leftover metadata is left untouched for recovery")
+    store.delete_game(again.get("name", ""))
+    store.metadata.delete_game(name)
 
 func test_delete_keeps_metadata_on_failure() -> void:
     var store = Store.new()

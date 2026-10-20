@@ -34,7 +34,7 @@ func create_game(raw_name: String, harness: String = "pi", blender_enabled: bool
     var base = PathUtils.sanitize_game_name(raw_name)
     var name = base
     var n = 2
-    while DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(game_path(name))):
+    while _name_taken(name):
         name = "%s %d" % [base, n]
         n += 1
     var path = game_path(name)
@@ -78,6 +78,14 @@ func delete_game(name: String) -> bool:
 
 func game_path(name: String) -> String:
     return GAMES_ROOT.path_join(name)
+
+# A workspace or a leftover metadata directory both mean the name is in use.
+# Reusing stale metadata would hand a brand-new game the previous conversation,
+# snapshots and harness sessions.
+func _name_taken(name: String) -> bool:
+    if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(game_path(name))):
+        return true
+    return DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(metadata.game_meta_dir(name)))
 
 func ensure_game_repo(name: String) -> Dictionary:
     return git.ensure_repo(game_path(name))
