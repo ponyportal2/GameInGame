@@ -68,6 +68,24 @@ func run() -> void:
     check(app.delete_dialog.visible and app.pending_delete == created.name, "Delete asks for confirmation for the selected game")
     app._delete_game_confirmed()
     check(not DirAccess.dir_exists_absolute(app.store.game_path(created.name)), "confirmed deletion removes the selected game")
+    # Deleting the game that is currently open must retire the adapter first:
+    # Windows will not remove a directory a live process holds as its cwd.
+    OS.set_environment("GAMESMITH_OPENCODE_BIN", ProjectSettings.globalize_path("res://tools/testing/fake-opencode.mjs"))
+    app.name_edit.text = "Open game deletion fixture"
+    app.harness_option.select(2)
+    app._create_game()
+    var open_name: String = app.current_game
+    check(open_name == "Open game deletion fixture", "the open deletion fixture is created and opened")
+    app.agent.send_player_request("hello")
+    var idle_deadline = Time.get_ticks_msec() + 20000
+    while app.agent.busy and Time.get_ticks_msec() < idle_deadline:
+        await process_frame
+    check(is_instance_valid(app.agent.rpc) and app.agent.rpc.running, "the open game keeps a live adapter before deletion")
+    app.pending_delete = open_name
+    app._delete_game_confirmed()
+    check(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(app.store.game_path(open_name))), "deleting the open game removes its workspace")
+    check(not app.store.list_games().has(open_name), "deleting the open game removes it from the library")
+    check(app.current_game == "", "deleting the open game returns to the library")
     app.queue_free()
     await process_frame
     quit(1 if failures else 0)

@@ -788,13 +788,25 @@ func _delete_game_confirmed() -> void:
         return
     pending_delete = ""
     delete_dialog.visible = false
-    if current_game == target:
+    var deleting_current = current_game == target
+    if deleting_current:
+        # Windows refuses to remove a directory that a live process still holds
+        # as its working directory, and the adapter keeps the game workspace as
+        # its cwd. Retire it (and the log writer) before touching the files, or
+        # deleting the open game fails with a sharing violation the player
+        # cannot resolve.
+        if is_instance_valid(agent):
+            agent.restart_runtime()
         if is_instance_valid(runner):
             runner.runtime_log.close()
-        current_game = ""
-    if not store.delete_game(target):
+        _show_library()
+    var deleted = store.delete_game(target)
+    if not deleted:
         _toast("Could not delete the game. Close programs using its files and try again.")
-    _show_library()
+    if deleting_current:
+        _refresh_library()
+    else:
+        _show_library()
 
 func _request_new_codex_session() -> void:
     if current_game == "" or not is_instance_valid(agent) or agent.busy or not HarnessInventory.supports_reset(str(metadata.read_game(current_game).get("harness", "pi"))):
