@@ -26,7 +26,13 @@ static func redact(message: String) -> String:
     out = _regex_sub(out, '(?i)(api[_-]?key\\s*[:=]\\s*)[^\\s",;]+', '$1[REDACTED]')
     out = _regex_sub(out, '(?i)("authorization"\\s*:\\s*")[^"]+(")', '$1[REDACTED]$2')
     out = _regex_sub(out, '(?i)("(?:api_key|apiKey)"\\s*:\\s*")[^"]+(")', '$1[REDACTED]$2')
+    # Provider errors and token refreshes can echo credential fields without an
+    # Authorization header, in JSON or key=value form.
+    out = _regex_sub(out, '(?i)("(?:access_token|refresh_token|id_token|auth_token|client_secret|private_key|password|secret)"\\s*:\\s*")[^"]+(")', '$1[REDACTED]$2')
+    out = _regex_sub(out, '(?i)((?:access_token|refresh_token|id_token|auth_token|client_secret|private_key|password)\\s*[:=]\\s*)[^\\s",;]+', '$1[REDACTED]')
+    out = _regex_sub(out, '(?i)\\b(bearer\\s+)[A-Za-z0-9._~+/=-]{8,}', '$1[REDACTED]')
     out = _regex_sub(out, '(?i)\\bsk-[A-Za-z0-9_-]{8,}\\b', '[REDACTED-KEY]')
+    out = _regex_sub(out, '(?i)\\bgh[pousr]_[A-Za-z0-9]{20,}\\b', '[REDACTED-KEY]')
     return out
 
 static func _append(path: String, kind: String, message: String, level: String) -> bool:

@@ -304,7 +304,7 @@ Important paths:
 - `user://host/credentials.json` — provider credentials outside game workspaces;
 - `user://logs/gamesmith-app.log` — global GameSmith log.
 
-Logs are bounded and redact Authorization/API-key-like values.
+Logs are bounded and redact Authorization, bearer, API-key, token and secret values, including JSON credential fields in provider errors. Ordinary counts such as `tokens=7000` stay readable.
 
 ### Legacy transcript migration
 
