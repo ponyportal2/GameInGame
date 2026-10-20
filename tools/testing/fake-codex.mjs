@@ -53,7 +53,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
   if(r.method==='initialized'){ready=true;return;}
   const reply=result=>emit({id:r.id,result});
   if(r.method===process.env.GAMESMITH_CODEX_FAIL_METHOD){emit({id:r.id,error:{code:-32000,message:'Fixture readiness failure: '+r.method}});return;}
-  if(r.method==='initialize'){if(process.env.GAMESMITH_CODEX_STUCK_START==='1')return;initialized=true;reply({userAgent:'fixture'});return;}
+  if(r.method==='initialize'){if(process.env.GAMESMITH_CODEX_STUCK_START==='1'){await writeFile('.codex-fixture-busy.json',JSON.stringify({phase:'initialize'}));return;}initialized=true;reply({userAgent:'fixture'});return;}
   if(!initialized || !ready){emit({id:r.id,error:{code:-32000,message:'Initialize handshake missing'}});return;}
   switch(r.method) {
     case 'config/read': reply({config:{mcp_servers:{unrelated:{enabled:true}}}});break;
@@ -66,6 +66,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
       reply({thread:{id:session}});break;
     case 'turn/start':
       turn='turn-'+ ++serial;interrupted=false;
+      await writeFile('.codex-fixture-busy.json',JSON.stringify({phase:'turn',turn}));
       if(process.env.GAMESMITH_CODEX_EARLY_TOOLS==='1') {
         const attempts=['old-turn',undefined,turn].map(turnId=>nativeRequest('item/tool/call',{threadId:session,turnId,tool:'gamesmith_write',arguments:{path:turnId===turn ? 'current.txt' : 'stale.txt',content:'early'}}));
         if(process.env.GAMESMITH_CODEX_STUCK_TURN==='1')return;

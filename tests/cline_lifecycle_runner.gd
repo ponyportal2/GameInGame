@@ -11,6 +11,12 @@ func idle() -> void:
     while app.agent.busy: await process_frame
 func reload_pending() -> void:
     while app.agent.busy and app.agent.pending_reload.is_empty(): await process_frame
+func wait_for_file(path: String, timeout_ms: int) -> bool:
+    var started = Time.get_ticks_msec()
+    while Time.get_ticks_msec() - started < timeout_ms:
+        if FileAccess.file_exists(path): return true
+        await create_timer(0.05).timeout
+    return false
 func run() -> void:
     OS.set_environment("GAMESMITH_CLINE_BIN", ProjectSettings.globalize_path("res://tools/testing/fake-cline.mjs"))
     app = load("res://main.tscn").instantiate()
@@ -100,8 +106,13 @@ func run() -> void:
     for flag in ["GAMESMITH_CLINE_STUCK_START", "GAMESMITH_CLINE_STUCK_TURN", "GAMESMITH_CLINE_STUCK_CANCEL"]:
         OS.set_environment(flag, "1")
         app.agent.restart_runtime()
+        # Wait until the fixture has accepted the request it will get stuck on.
+        # A fixed delay can press Stop before the turn exists, which leaves a
+        # healthy runtime alive and makes this check flaky.
+        var marker = app.tools.workspace.path_join(".cline-fixture-busy.json")
+        DirAccess.remove_absolute(ProjectSettings.globalize_path(marker))
         app.agent.send_player_request("wait")
-        await create_timer(0.7).timeout
+        await wait_for_file(marker, 8000)
         var start = Time.get_ticks_msec()
         app.agent.cancel()
         await idle()

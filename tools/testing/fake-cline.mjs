@@ -1,5 +1,5 @@
 import {createInterface} from 'node:readline';
-import {readFileSync,appendFileSync} from 'node:fs';
+import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
 import {spawn} from 'node:child_process';
 const emit=r=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...r})+'\n');
 const session='cline-fixture-session',pending=new Map();let serial=0,active,cancelled=false,mcp;
@@ -67,14 +67,14 @@ createInterface({input:process.stdin}).on('line',async line=>{
   if(r.method===process.env.GAMESMITH_CLINE_FAIL_METHOD || r.method==='session/prompt' && r.params.prompt.at(-1).text.split('Player request:\n').at(-1)==='reject-before-admission'){emit({id:r.id,error:{code:-32000,message:'Fixture readiness failure: '+r.method}});return;}
   if(r.method==='initialize'){
     if(process.env.GAMESMITH_CLINE_EXPECT_API_KEY && process.env.CLINE_API_KEY!==process.env.GAMESMITH_CLINE_EXPECT_API_KEY){emit({id:r.id,error:{code:-32000,message:'Native provider key was not inherited'}});return;}
-    if(process.env.GAMESMITH_CLINE_STUCK_START==='1')return;reply({protocolVersion:1,agentCapabilities:{loadSession:true}});return;
+    if(process.env.GAMESMITH_CLINE_STUCK_START==='1'){writeFileSync('.cline-fixture-busy.json',JSON.stringify({phase:'initialize'}));return;}reply({protocolVersion:1,agentCapabilities:{loadSession:true}});return;
   }
   if(r.method==='session/new' || r.method==='session/load'){
     if(r.method==='session/load' && r.params.sessionId!==session){emit({id:r.id,error:{code:-32000,message:'Native session not found'}});return;}
     await connectMcp();reply({sessionId:session,models:{currentModelId:process.env.GAMESMITH_CLINE_CATALOG_MODEL || process.env.CLINE_MODEL}});return;
   }
   if(r.method==='session/set_model'){reply({});return;}
-  if(r.method==='session/prompt'){if(process.env.GAMESMITH_CLINE_STUCK_TURN==='1')return;active=r;cancelled=false;void run(r);return;}
+  if(r.method==='session/prompt'){writeFileSync('.cline-fixture-busy.json',JSON.stringify({phase:'prompt'}));if(process.env.GAMESMITH_CLINE_STUCK_TURN==='1')return;active=r;cancelled=false;void run(r);return;}
   if(r.method==='session/cancel'){
     if(process.env.GAMESMITH_CLINE_STUCK_CANCEL==='1')return;
     cancelled=true;if(active){emit({id:active.id,result:{stopReason:'cancelled'}});active=undefined;}return;

@@ -27,6 +27,20 @@ func process_alive(pid: int) -> bool:
     OS.execute("tasklist", ["/FI", "PID eq %d" % pid, "/FO", "CSV", "/NH"], output, true)
     return not output.is_empty() and ('"%d"' % pid) in str(output[0])
 
+func wait_for_file(path: String, timeout_ms: int) -> bool:
+    var started = Time.get_ticks_msec()
+    while Time.get_ticks_msec() - started < timeout_ms:
+        if FileAccess.file_exists(path): return true
+        await create_timer(0.05).timeout
+    return false
+
+func wait_dead(pid: int, timeout_ms: int) -> bool:
+    if pid <= 0: return true
+    var started = Time.get_ticks_msec()
+    while process_alive(pid) and Time.get_ticks_msec() - started < timeout_ms:
+        await create_timer(0.05).timeout
+    return not process_alive(pid)
+
 func run() -> void:
     OS.set_environment("GAMESMITH_CODEX_BIN", ProjectSettings.globalize_path("res://tools/testing/fake-codex.mjs"))
     app = load("res://main.tscn").instantiate()
@@ -120,16 +134,24 @@ func run() -> void:
         var flag = "GAMESMITH_CODEX_STUCK_" + mode
         OS.set_environment(flag, "1")
         app.agent.restart_runtime()
+        # Wait until the fixture has accepted the request it will get stuck on.
+        # A fixed delay can press Stop before the turn exists, which leaves a
+        # healthy runtime alive and makes this check flaky.
+        var marker = app.tools.workspace.path_join(".codex-fixture-busy.json")
+        DirAccess.remove_absolute(ProjectSettings.globalize_path(marker))
         app.agent.send_player_request("wait")
-        await create_timer(0.6).timeout
+        await wait_for_file(marker, 8000)
         var stuck_pid = app.agent.rpc.pid
         var cli_pid = JsonStore.read_dict(app.tools.workspace.path_join(".codex-fixture-pids.json"), {}).get("cli", -1)
         var began = Time.get_ticks_msec()
         app.agent.cancel()
         while app.agent.busy and Time.get_ticks_msec() - began < 7000: await process_frame
-        await create_timer(0.2).timeout
-        check(not app.agent.busy and Time.get_ticks_msec() - began < 6500, "Codex Stop bounds stalled " + mode)
-        check(not OS.is_process_running(stuck_pid) and not process_alive(int(cli_pid)), "Codex Stop kills adapter and backend for " + mode)
+        var settled_ms = Time.get_ticks_msec() - began
+        check(not app.agent.busy and settled_ms < 6500, "Codex Stop bounds stalled " + mode)
+        # Process termination is asynchronous; poll instead of assuming a delay.
+        var adapter_dead = await wait_dead(stuck_pid, 3000)
+        var backend_dead = await wait_dead(int(cli_pid), 3000)
+        check(adapter_dead and backend_dead, "Codex Stop kills adapter and backend for " + mode)
         OS.unset_environment(flag)
         if app.agent.busy:
             app.agent.restart_runtime()

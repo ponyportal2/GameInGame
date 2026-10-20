@@ -172,9 +172,53 @@ func _run() -> void:
         return
     print("PASS: packaged runtime preflights late insertion and removes only its injected child")
     print("PASS: packaged child code requires player approval before preflight and live application")
+    tools.write_file("mouse_ability.gd", "extends Node\nvar pressed_count = 0\nfunc _input(event):\n\tif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed:\n\t\tpressed_count += 1\n")
+    var started = tools.execute("start_test_game", {"mode": "headless"})
+    var test_id = str(started.get("run_id", ""))
+    deadline = Time.get_ticks_msec() + 20000
+    while tools.tests().status(test_id).get("state") == "starting" and Time.get_ticks_msec() < deadline: await process_frame
+    var injected = await _bridge_action(controller, "injection", {"run_id": test_id, "action": "inject_child", "candidate_path": ".", "name": "MouseAbility", "script_path": "mouse_ability.gd"})
+    var pressed = await _bridge_action(controller, "press", {"run_id": test_id, "action": "mouse_button", "button_index": 3, "pressed": true})
+    await _bridge_action(controller, "release", {"run_id": test_id, "action": "mouse_button", "button_index": 3, "pressed": false})
+    var mouse_inspected = await _bridge_action(controller, "inspect", {"run_id": test_id, "action": "inspect", "path": "MouseAbility", "properties": ["pressed_count"]})
+    if not injected.get("ok", false) or injected.get("pending", true) or injected.get("physics_ticks_completed", 0) < 3 or not pressed.get("ok", false) or mouse_inspected.get("properties", {}).get("pressed_count") != "1" or runner.active_game.has_node("MouseAbility"):
+        push_error("FAIL: packaged detached injection/mouse/completion: " + str([injected, pressed, mouse_inspected]))
+        tools.execute("stop_test_game", {"run_id": test_id})
+        quit(1)
+        return
+    tools.execute("stop_test_game", {"run_id": test_id})
+    deadline = Time.get_ticks_msec() + 10000
+    while tools.tests().status(test_id).get("state") != "exited" and Time.get_ticks_msec() < deadline: await process_frame
+    if tools.tests().status(test_id).get("stop_method") != "graceful":
+        push_error("FAIL: packaged detached workflow shutdown")
+        quit(1)
+        return
+    print("PASS: packaged detached late injection, real middle mouse and same-call action results preserve live game")
     controller.free()
     runner.queue_free()
     await process_frame
     print("PASS: exported runtime inspects and patches live properties without reloading")
     print("PASS: exported GameSmith.pck contains all harness adapters and the bundled Pi extension")
     quit(0)
+
+func _bridge_action(controller: Node, id: String, args: Dictionary) -> Dictionary:
+    # The host answers "pending" when an action needs more than one frame, so a
+    # caller polls with the returned action_id exactly like the agent does. A
+    # single call only proves the same-call fast path on an idle machine.
+    var result: Dictionary = await _bridge_call(controller, id, args)
+    var attempts := 0
+    var deadline = Time.get_ticks_msec() + 15000
+    while result.get("pending", false) and attempts < 200 and Time.get_ticks_msec() < deadline:
+        attempts += 1
+        await create_timer(0.05).timeout
+        result = await _bridge_call(controller, "%s-poll-%d" % [id, attempts], {"run_id": args.get("run_id", ""), "action": "poll", "action_id": result.get("action_id", "")})
+    return result
+
+func _bridge_call(controller: Node, id: String, args: Dictionary) -> Dictionary:
+    controller._dispatch_host_request({"id": id, "command": "test_game_action", "args": args}, controller.bridge_dir)
+    var path = controller.bridge_dir.path_join("response-" + id + ".json")
+    var deadline = Time.get_ticks_msec() + 10000
+    while not FileAccess.file_exists(path) and Time.get_ticks_msec() < deadline:
+        controller._service_pending_test_commands()
+        await process_frame
+    return JsonStore.read_dict(path, {"ok": false})
