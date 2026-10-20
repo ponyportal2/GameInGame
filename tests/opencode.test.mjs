@@ -61,7 +61,9 @@ test('MCP approval waits send progress and preserve structured host failures as 
     assert.equal(records.find(r=>r.id===1).result.protocolVersion,'2024-11-05');
     child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list'})+'\n');
     await wait(()=>records.some(r=>r.id===2));
-    assert.equal(records.find(r=>r.id===2).result.tools.length,17);
+    // Assert the exact surface so adding or dropping a host tool is a deliberate edit.
+    const expectedTools=['add_runtime_child','remove_runtime_child','rg_search','inspect_runtime','set_properties','generate_image','blender','reload_game','read_runtime_log','start_test_game','read_test_log','stop_test_game','test_game_action','git_status','git_diff','git_log','git_commit','delete_path','move_path'];
+    assert.deepEqual(records.find(r=>r.id===2).result.tools.map(tool=>tool.name).sort(),[...expectedTools].sort());
     for(const name of ['inspect_runtime','set_properties','rg_search']) assert(records.find(r=>r.id===2).result.tools.some(tool=>tool.name===name));
     assert(records.find(r=>r.id===2).result.tools.some(tool=>tool.name==='generate_image'));
     child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'reload_game',arguments:{},_meta:{progressToken:'approval'}}})+'\n');

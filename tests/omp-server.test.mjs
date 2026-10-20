@@ -29,7 +29,11 @@ test('assembled runtime reconciles partial streaming, uses native context and re
   const result=await f.until(r=>r.type==='complete');assert.equal(result.ok,true);assert.equal(result.text,'Fixture complete');
   assert.equal(f.records.filter(r=>r.type==='delta' && r.kind==='assistant').map(r=>r.text).join(''),result.text);
   assert.equal((await f.until(r=>r.type==='context')).tokens,4321);
-  const backend=JSON.parse(readFileSync(join(f.directory,'backend.json')));assert.equal(backend.tools.length,22);assert(backend.tools.includes('gamesmith_generate_image'));assert.equal(backend.model,'fixture-free');
+  const backend=JSON.parse(readFileSync(join(f.directory,'backend.json')));assert.equal(backend.model,'fixture-free');
+  // Assert the exact surface so adding or dropping a tool is a deliberate edit.
+  const expectedTools=['read','write','edit','list','search','add_runtime_child','remove_runtime_child','rg_search','inspect_runtime','set_properties','generate_image','blender','reload_game','read_runtime_log','start_test_game','read_test_log','stop_test_game','test_game_action','git_status','git_diff','git_log','git_commit','delete_path','move_path'].map(name=>'gamesmith_'+name);
+  assert.deepEqual(backend.tools,[...expectedTools].sort());
+  assert(backend.tools.includes('gamesmith_generate_image'));
   for(const name of ['gamesmith_inspect_runtime','gamesmith_set_properties','gamesmith_rg_search']) assert(backend.tools.includes(name),name);
   f.send({type:'prompt',id:'two',message:'/compact'});assert.equal((await f.until(r=>r.id==='two')).success,true);
   while(f.records.filter(r=>r.type==='complete').length<2)await new Promise(r=>setTimeout(r,10));
