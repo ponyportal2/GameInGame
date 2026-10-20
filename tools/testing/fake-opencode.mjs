@@ -10,6 +10,7 @@ const parts=[];
 let partId=0;
 let waiting;
 let aborted=false;
+const boundaryHistory=[];
 const session='ses_fixture';
 const emit=frame=>{
  const type={step_start:'step-start',step_finish:'step-finish',tool_use:'tool',text:'text',reasoning:'reasoning'}[frame.type];
@@ -45,6 +46,20 @@ async function run(prompt) {
  parts.length=0;aborted=false;
  await writeFile('.opencode-fixture-busy.json',JSON.stringify({prompt}));
  emit({type:'step_start',part:{}});
+ if (prompt==='boundary-task-a' || prompt==='Task B: add grenade on middle mouse; do not reload; pending action grenade-17') {
+   boundaryHistory.push(prompt);
+   const context=prompt==='boundary-task-a'
+     ? [{role:'user',text:prompt},{role:'assistant',text:'Task A completed'}]
+     : [{role:'assistant',text:'Compacted summary: Task A completed'}, {role:'user',text:prompt}, {role:'tool',action_id:'grenade-17',pending:true}];
+   if (context.length===3) {
+     for (const response of subscribers) response.write('data: '+JSON.stringify({type:'session.compacted',properties:{sessionID:session}})+'\n\n');
+     emit({type:'tool_use',part:{tool:'gamesmith_test_game_action',state:{status:'completed',input:{action:'poll',action_id:'grenade-17'},output:'{"ok":true,"pending":false}'}}});
+   }
+   await writeFile('.opencode-fixture-boundary.json',JSON.stringify({received:boundaryHistory,context}));
+   const text=context.length===3 ? 'Task B grenade completed without reload; grenade-17 resolved' : 'Task A completed';
+   emit({type:'text',part:{text}});
+   return {info:{finish:'stop'},parts:[...parts]};
+ }
  if (prompt==='wait') {
    const reasoning={id:'live-reasoning',sessionID:session,messageID:'live-assistant',type:'reasoning',text:'',time:{start:Date.now()}};
    for (const response of subscribers) {

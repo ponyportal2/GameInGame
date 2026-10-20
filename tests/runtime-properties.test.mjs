@@ -15,6 +15,18 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
   const directory=mkdtempSync(join(tmpdir(),'gs-runtime-tools-'));
   assembleHarnessRuntime(harness.id,directory);
   const shared=await import(pathToFileURL(join(directory,'host-tools.mjs')));
+  for (const name of ['read_runtime_log','read_test_log']) {
+    const schema=shared.hostTools[name].properties;
+    assert.equal(schema.cursor.type,'integer');
+    assert.equal(schema.raw.type,'boolean');
+    assert.equal(schema.since_sequence,undefined);
+  }
+  const actions=shared.hostTools.test_game_action.properties;
+  assert(actions.action.enum.includes('inject_child'));
+  assert(actions.action.enum.includes('mouse_button'));
+  assert.equal(actions.button_index.maximum,9);
+  assert.equal(actions.candidate_path.type,'string');
+
   const rejected=await shared.executeHostTool('rg_search',{target:'runtime',pattern:'Cliff',path:'GardenModel'},{workspace:directory,callHost:async()=>assert.fail('invalid arguments must not inspect')});
   assert.equal(rejected.ok,false);assert.match(rejected.error,/root/);
   const incomplete=await shared.executeHostTool('rg_search',{target:'runtime',pattern:'Cliff'},{workspace:directory,callHost:async()=>({ok:true,nodes:[],next_offset:null,truncated_by:['depth_limit'],game_generation:'9'})});
@@ -28,6 +40,7 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     await (await import(pathToFileURL(join(directory,'gamesmith-extension.ts')))).default({on(){},registerTool(tool){registered.push(tool);}});
     for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.name===name),name);
     assert.equal(registered.find(t=>t.name==='inspect_runtime').parameters.properties.offset.maximum,1000);
+    assert.deepEqual(registered.find(t=>t.name==='test_game_action').parameters.required,['run_id','action']);
   }else if(harness.id==='command-code'){
     const registered=[];
     process.env.GAMESMITH_PROMPT_PATH=join(directory,'prompt.md');writeFileSync(process.env.GAMESMITH_PROMPT_PATH,'fixture');
@@ -36,6 +49,8 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
       for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(names.includes(name),`active ${name}`);
     },hooks(){}});
     for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.schema.name===name),name);
+    assert.equal(registered.find(t=>t.schema.name==='read_runtime_log').schema.input_schema.properties.cursor.type,'integer');
+    assert.equal(registered.find(t=>t.schema.name==='read_test_log').schema.input_schema.properties.since_sequence,undefined);
     assert.equal(registered.find(t=>t.schema.name==='inspect_runtime').schema.input_schema.properties.discover_properties.type,'boolean');
   }else{
     const {hostTools}=await import(pathToFileURL(join(directory,'host-tools.mjs')));

@@ -119,6 +119,22 @@ func perform_action(args: Dictionary) -> void:
                 result = {"ok": true}
             else:
                 result = {"ok": false, "error": "Input action not found."}
+        "mouse_button":
+            var button = args.get("button_index", 0)
+            var position = args.get("position", {"x": 0, "y": 0})
+            if not (button is int or button is float) or float(button) != int(button) or int(button) < 1 or int(button) > 9 or not args.get("pressed", true) is bool:
+                result = {"ok": false, "error": "button_index must be an integer from 1 to 9; pressed must be boolean."}
+            elif not position is Dictionary or position.size() != 2 or not (position.get("x") is float or position.get("x") is int) or not (position.get("y") is float or position.get("y") is int) or not is_finite(float(position.x)) or not is_finite(float(position.y)):
+                result = {"ok": false, "error": "position must contain finite numeric x and y."}
+            else:
+                var event = InputEventMouseButton.new()
+                event.button_index = int(button)
+                event.pressed = args.get("pressed", true)
+                event.position = Vector2(position.x, position.y)
+                event.global_position = event.position
+                event.button_mask = (1 << (int(button) - 1)) if event.pressed else 0
+                Input.parse_input_event(event)
+                result = {"ok": true}
         "screenshot":
             if config.mode != "rendered":
                 result = {"ok": false, "error": "Screenshots require rendered testing."}
@@ -153,7 +169,23 @@ func _smoke_window(args: Dictionary) -> void:
     if args.get("action") == "inject_child":
         var helper = preload("res://src/core/runtime_properties.gd").new(runner)
         var parent = helper._path(runner.active_game, args.get("candidate_path"))
-        var injection = preload("res://src/core/runtime_children.gd").insert(runner, config.workspace, parent, args)
+        var Children = preload("res://src/core/runtime_children.gd")
+        var fields: Dictionary = {}
+        for key in ["candidate_path", "name", "script_path", "properties"]:
+            if args.has(key): fields[key] = args[key]
+        var injection = Children.validate(config.workspace, fields)
+        for key in args:
+            if key not in ["action", "action_id", "run_id", "parent", "candidate_path", "name", "script_path", "properties", "expected"]:
+                injection = Children.error("invalid_arguments", "Unknown injection argument: " + str(key) + "; use candidate_path for the detached parent.")
+        if injection.ok:
+            fields.expected = args.get("expected", {"class": parent.get_class(), "script": Children.script_path(parent)} if parent != null else {})
+            # Explicit script checks use workspace-relative paths in public actions.
+            if fields.expected is Dictionary and fields.expected.get("script", "") != "" and not str(fields.expected.script).is_absolute_path():
+                fields.expected.script = ProjectSettings.globalize_path(config.workspace.path_join(fields.expected.script))
+            if not fields.expected is Dictionary or fields.expected.size() != 2 or not fields.expected.get("class") is String or not fields.expected.get("script") is String:
+                injection = Children.error("parent_mismatch", "expected requires class and workspace-relative script.")
+            else:
+                injection = Children.insert(runner, config.workspace, parent, fields)
         if not injection.ok:
             injection.action_id = args.action_id
             injection.pending = false
@@ -172,6 +204,7 @@ func _smoke_window(args: Dictionary) -> void:
             result.ok = false
             result.reason = "injected_child_changed"
             result.error = "Injected child did not survive smoke with its expected identity, parent and name."
+    if not inserted_handle.is_empty(): result.handle = inserted_handle
     result.action_id = args.action_id
     result.pending = false
     JsonStore.write_dict(config.control_dir.path_join("action-result.json"), result)

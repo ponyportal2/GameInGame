@@ -106,3 +106,33 @@ for (const message of ['partial-stream','lost-stream']) test(`HTTP final answer 
     assert.equal(records.filter(r=>r.type==='delta' && r.kind==='assistant').map(r=>r.text).join(''),result.text);
   } finally {worker.stdin.end();await closed;}
 });
+
+// Native owns history selection/compaction. This fixture tests our production
+// worker across that event boundary, not OpenCode's summarizer or provider.
+test('native compaction event preserves the current request, constraints and unfinished action through the adapter', {timeout:15000}, async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-compact-boundary-'));
+  const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
+  const config={workspace,bridge_dir:workspace,name:'Boundary fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
+  const records=[];const closed=once(worker,'close');
+  createInterface({input:worker.stdout}).on('line',line=>records.push(JSON.parse(line)));
+  const wait=async predicate=>{const deadline=Date.now()+10000;while(!predicate()){assert(Date.now()<deadline,'boundary deadline');await new Promise(r=>setTimeout(r,10));}};
+  const taskB='Task B: add grenade on middle mouse; do not reload; pending action grenade-17';
+  try {
+    worker.stdin.write(JSON.stringify({id:'A',type:'prompt',message:'boundary-task-a'})+'\n');
+    await wait(()=>records.filter(r=>r.type==='complete').length===1);
+    const backend=JSON.parse(await readFile(join(workspace,'backend.json'),'utf8'));
+    worker.stdin.write(JSON.stringify({id:'B',type:'prompt',message:taskB})+'\n');
+    await wait(()=>records.filter(r=>r.type==='complete').length===2);
+    const evidence=JSON.parse(await readFile(join(workspace,'.opencode-fixture-boundary.json'),'utf8'));
+    assert.deepEqual(evidence.received,['boundary-task-a',taskB]);
+    assert.equal(evidence.context[1].text,taskB);
+    assert.equal(evidence.context[2].action_id,'grenade-17');
+    const completions=records.filter(r=>r.type==='complete');
+    assert(completions.every(r=>r.ok));
+    assert.match(completions[1].text,/Task B grenade completed without reload/);
+    assert.equal(JSON.parse(await readFile(join(workspace,'backend.json'),'utf8')).pid,backend.pid);
+    assert.equal(JSON.parse(await readFile(config.session_file,'utf8')).session,'ses_fixture');
+  } finally {worker.stdin.end();await closed;}
+});
