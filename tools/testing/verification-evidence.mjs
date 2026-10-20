@@ -26,10 +26,12 @@ export function reusedTests(previous,current,key){
 }
 export function assertionCounts(text,phase){
   if(phase==='node')return {passed:Number(text.match(/^# pass (\d+)/m)?.[1]||0),failed:Number(text.match(/^# fail (\d+)/m)?.[1]||0),skipped:Number(text.match(/^# skipped (\d+)/m)?.[1]||0)};
-  return {passed:(text.match(/^PASS:/gm)||[]).length,failed:(text.match(/^FAIL:/gm)||[]).length};
+  // Godot's push_error prefixes stderr with "ERROR: "; count that form too or a
+  // failed host run would report zero failed assertions.
+  return {passed:(text.match(/^PASS:/gm)||[]).length,failed:(text.match(/^(?:ERROR: )?FAIL:/gm)||[]).length};
 }
 export function failureExcerpt(text,maxLines=24){
-  const lines=text.split(/\r?\n/);const at=lines.findIndex(l=>/^not ok\b|^FAIL:|AssertionError|Traceback|^Error:/.test(l));
+  const lines=text.split(/\r?\n/);const at=lines.findIndex(l=>/^not ok\b|^(?:ERROR: )?FAIL:|AssertionError|Traceback|^Error:/.test(l));
   const start=at<0?Math.max(0,lines.length-maxLines):Math.max(0,at-2);
   return {start_line:start+1,end_line:Math.min(lines.length,start+maxLines),text:lines.slice(start,start+maxLines).join('\n')};
 }

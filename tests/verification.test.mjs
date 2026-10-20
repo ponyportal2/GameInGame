@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {parseArgs,runVerification} from '../tools/testing/verify.mjs';
-import {fingerprint,reusedTests} from '../tools/testing/verification-evidence.mjs';
+import {fingerprint,reusedTests,assertionCounts,failureExcerpt} from '../tools/testing/verification-evidence.mjs';
 import {selectTests,inventory,resolveTest} from '../tools/testing/verification-plan.mjs';
 import {generatedLauncher,exportFilter} from '../tools/testing/generate-harness-inventory.mjs';
 import {atomicSaveSession,failureRecord} from '../tools/agent/session-state.mjs';
@@ -46,6 +46,15 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
  for(const path of ['src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','src/pi/pi_runtime_config.gd'])
   assert.deepEqual(ids([path]),selectTests(root,'full').map(t=>t.id).sort(),path);
+});
+test('host failures are counted and excerpted from Godot error output',()=>{
+ const text=['PASS: keeps working','ERROR: FAIL: rejects a workspace link','   at: push_error (core/variant/variant_utility.cpp:1023)','ERROR: FAIL: second failure'].join('\n');
+ assert.deepEqual(assertionCounts(text,'host'),{passed:1,failed:2});
+ assert.deepEqual(assertionCounts('PASS: plain failure\nFAIL: plain failure\n','host'),{passed:1,failed:1});
+ const excerpt=failureExcerpt(text,3);
+ assert.equal(excerpt.start_line,1);
+ assert.match(excerpt.text,/ERROR: FAIL: rejects a workspace link/);
+ assert.deepEqual(assertionCounts('# pass 3\n# fail 1\n# skipped 2\n','node'),{passed:3,failed:1,skipped:2});
 });
 function repository(t){
  const dir=mkdtempSync(join(tmpdir(),'gs-verify-spec-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
