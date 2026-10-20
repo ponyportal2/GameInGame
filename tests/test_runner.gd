@@ -181,6 +181,16 @@ func _test_tool_boundary() -> void:
     assert_true(not tools.read_file("../host/credentials.json").ok, "tool cannot escape workspace")
     assert_true(tools.write_file("main.gd", "extends Node\n").ok, "tool writes inside workspace")
     assert_true(tools.write_file("keep.txt", "keep\n").ok, "tool writes a second workspace file")
+    if OS.get_name() == "Windows":
+        assert_true(tools.write_file("locked/held.txt", "x").ok, "tool writes a file to hold open")
+        var held = FileAccess.open(ProjectSettings.globalize_path(root.path_join("locked/held.txt")), FileAccess.READ)
+        assert_true(held != null, "recursive delete regression holds the file open")
+        var refused_delete = tools.delete_path("locked")
+        assert_true(not refused_delete.ok and str(refused_delete.get("error", "")).contains("Delete failed ("), "a failed recursive delete reports its error code")
+        assert_true(str(refused_delete.get("error", "")).contains("retry"), "a failed recursive delete explains recovery")
+        if held != null:
+            held.close()
+        assert_true(tools.delete_path("locked").ok, "the same delete succeeds once the file is released")
     assert_true(not tools.move_path("main.gd", "keep.txt").ok, "move refuses an existing destination")
     assert_true(FileAccess.get_file_as_string(root.path_join("keep.txt")) == "keep\n", "a refused move keeps the destination intact")
     assert_true(FileAccess.file_exists(root.path_join("main.gd")), "a refused move keeps the source")

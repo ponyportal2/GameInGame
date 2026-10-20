@@ -163,7 +163,10 @@ func delete_path(relative_path: String) -> Dictionary:
     if _reserved(relative_path): return _reserved_path()
     var abs = ProjectSettings.globalize_path(path)
     if DirAccess.dir_exists_absolute(abs):
-        return {"ok": _remove_tree_abs(abs) == OK}
+        var err_tree = _remove_tree_abs(abs)
+        if err_tree == OK:
+            return {"ok": true}
+        return {"ok": false, "error": "Delete failed (%d). A file inside may still be open; stop the game and retry." % err_tree}
     if FileAccess.file_exists(path):
         var err = DirAccess.remove_absolute(abs)
         return {"ok": err == OK, "error": "" if err == OK else "Delete failed (%d)." % err}
