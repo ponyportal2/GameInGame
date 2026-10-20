@@ -4,7 +4,7 @@
 - [x] Fix recursive unlinking and the shared runtime-log schema.
 - [x] Pass focused regressions.
 - [x] Rebuild Windows package and complete final full verification.
-- [ ] Merge into main, push, and verify remote revision.
+- [x] Merge into main, push, and verify remote revision.
 
 Preserve unrelated Brain.txt and tools/fake-openai-endpoint.zip. No live provider
 calls or GitHub CI are required. Keep inputs unchanged during verification.
@@ -41,3 +41,7 @@ Unchanged-code failed-only rerun:
 The combined evidence covers the complete final code/package tree, with the
 initial intermittent shutdown failure retained explicitly. All executions were
 deterministic fixtures and real local Godot processes, with no provider calls.
+
+Merged by fast-forward and pushed both `main` and `ds`; `git ls-remote`
+confirmed both at `c2a387302f056ae35f16ed2e8b3a0cc94f98b3f1`.
+This final checklist update changes documentation only.
