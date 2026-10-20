@@ -379,7 +379,12 @@ func _remove_tree_abs(abs: String) -> Error:
     var item = dir.get_next()
     while item != "":
         var child = abs.path_join(item)
-        if dir.current_is_dir():
+        # A normal directory may contain links to content outside the workspace.
+        # Delete the link entry itself, never recurse into its target.
+        if dir.is_link(item):
+            var err_link = DirAccess.remove_absolute(child)
+            if err_link != OK: return err_link
+        elif dir.current_is_dir():
             var err = _remove_tree_abs(child)
             if err != OK: return err
         else:

@@ -218,6 +218,15 @@ func _test_tool_boundary() -> void:
         assert_true(not FileAccess.file_exists(outside.path_join("moved.txt")), "move through a link moves nothing outside")
         var listing = tools.list_files()
         assert_true(listing.ok and not listing.files.any(func(f): return str(f).begins_with("escape/")), "listing omits linked content")
+        var container = root.path_join("delete-me")
+        DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(container))
+        var nested_link = container.path_join("escape")
+        var nested_link_created = _create_dir_link(nested_link, outside)
+        assert_true(nested_link_created, "recursive delete fixture creates a nested directory link")
+        if nested_link_created:
+            assert_true(tools.delete_path("delete-me").ok, "public delete removes a normal directory containing a link")
+            assert_true(FileAccess.file_exists(outside.path_join("keep.txt")), "public recursive delete preserves the outside sentinel")
+            assert_true(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(container)), "public recursive delete removes its containing directory")
         # A link may be removed without following it into foreign content.
         var cleanup = "user://games/tool-boundary-cleanup"
         DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(cleanup))

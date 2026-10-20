@@ -22,6 +22,11 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     assert.equal(schema.since_sequence,undefined);
   }
   const actions=shared.hostTools.test_game_action.properties;
+  assert.equal(shared.hostTools.read_runtime_log.properties.session_id?.type,'string');
+  assert.equal(shared.hostTools.read_runtime_log.properties.session,undefined);
+  let forwardedSession;
+  await shared.executeHostTool('read_runtime_log',{session_id:'earlier-session',raw:true},{workspace:directory,callHost:async(_name,args)=>{forwardedSession=args.session_id;return {ok:true};}});
+  assert.equal(forwardedSession,'earlier-session');
   assert(actions.action.enum.includes('inject_child'));
   assert(actions.action.enum.includes('mouse_button'));
   assert.equal(actions.button_index.maximum,9);
@@ -50,6 +55,7 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     },hooks(){}});
     for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.schema.name===name),name);
     assert.equal(registered.find(t=>t.schema.name==='read_runtime_log').schema.input_schema.properties.cursor.type,'integer');
+    assert.equal(registered.find(t=>t.schema.name==='read_runtime_log').schema.input_schema.properties.session_id.type,'string');
     assert.equal(registered.find(t=>t.schema.name==='read_test_log').schema.input_schema.properties.since_sequence,undefined);
     assert.equal(registered.find(t=>t.schema.name==='inspect_runtime').schema.input_schema.properties.discover_properties.type,'boolean');
   }else{

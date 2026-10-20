@@ -52,6 +52,11 @@ func run():
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(workspace))
     put("main.gd", "extends Node3D\nvar mode = 'menu'\nvar ready_count = 0\nvar cam = null\nvar pos = Vector3.ZERO\nvar fx = null\nvar enemies = []\nvar explosions = 0\nvar damage = 0.0\nfunc _ready():\n\tready_count += 1\nfunc start_play():\n\tmode = 'playing'\nfunc _explode_at(_at, _radius, amount, _owner):\n\texplosions += 1\n\tdamage += amount\nfunc slow():\n\tOS.delay_msec(900)\n\treturn 7\nfunc announce():\n\tprint('AFTER_CURSOR')\n")
     put("grenade.gd", FileAccess.get_file_as_string("res://tests/fixtures/warframe-grenade.gd"))
+    var earlier_log = preload("res://src/core/runtime_log.gd").new()
+    earlier_log.start(workspace.get_file(), workspace)
+    earlier_log.add("print", "EARLIER_SESSION_ONLY")
+    var earlier_session = earlier_log.session_id
+    earlier_log.close()
     var runner = Runner.new()
     root.add_child(runner)
     check(runner.load_game(workspace).ok, "host fixture loads")
@@ -67,6 +72,9 @@ func run():
     logs = await command("read_runtime_log", {"cursor": cursor})
     check(not logs.get("records", []).is_empty(), "public runtime cursor returns new records")
     for record in logs.get("records", []): check(record.seq > cursor, "runtime cursor is exclusive")
+    logs = await command("read_runtime_log", {"session_id": earlier_session, "raw": true})
+    check(logs.get("ok", false) and logs.get("session_id") == earlier_session and earlier_session != runner.runtime_log.session_id, "public runtime log selects a non-current session")
+    check(logs.get("records", []).any(func(record): return record.message == "EARLIER_SESSION_ONLY") and not logs.get("records", []).any(func(record): return record.message == "AFTER_LIVE_CURSOR"), "selected session contains historical evidence without current-session records")
     var started = await command("start_test_game", {"mode": "headless"})
     var id = str(started.get("run_id", ""))
     var deadline = Time.get_ticks_msec() + 15000
@@ -78,7 +86,7 @@ func run():
     result = await action(id, {"action": "call", "method": "start_play"})
     check(result.get("ok", false) and not result.get("pending", true), "gameplay setup completes in same call")
     var injection = {"action": "inject_child", "candidate_path": ".", "name": "Grenade", "script_path": "grenade.gd"}
-    result = await action(id, injection)
+    result = await settled_action(id, injection)
     check(result.get("ok", false) and not result.get("pending", true) and result.get("process_ticks_completed", 0) >= 4 and result.get("physics_ticks_completed", 0) >= 3, "detached late injection returns completed survival smoke")
     check(not runner.active_game.has_node("Grenade") and agent.pending_reload.is_empty(), "detached injection neither touches live game nor requests live approval")
     result = await action(id, {"action": "mouse_button", "button_index": 3, "pressed": true, "position": {"x": 20, "y": 30}})
