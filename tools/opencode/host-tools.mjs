@@ -19,7 +19,7 @@ export const hostTools = {
     git_log: {description:'Show workspace Git milestones.',properties:{limit:{type:'integer'}}},
     git_commit: {description:'Commit a coherent game milestone.',properties:{message:{type:'string'}}},
     delete_path: {description:'Delete a workspace path.',properties:{path:{type:'string'}}},
-    move_path: {description:'Move a workspace path.',properties:{from:{type:'string'},to:{type:'string'}}},
+    move_path: {description:'Move a workspace path. The destination must not already exist.',properties:{from:{type:'string'},to:{type:'string'}}},
   };
 
 // Set by the host for each game runtime; inherited by native MCP children.

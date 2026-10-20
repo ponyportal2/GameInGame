@@ -145,6 +145,12 @@ func move_path(from_relative: String, to_relative: String) -> Dictionary:
     if from == "" or to == "": return _unsafe()
     if _linked(from_relative) or _linked(to_relative): return _linked_path()
     if _reserved(from_relative) or _reserved(to_relative): return _reserved_path()
+    if not FileAccess.file_exists(from) and not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(from)):
+        return {"ok": false, "error": "Source not found."}
+    # Windows fails a rename onto an existing path while POSIX silently replaces
+    # it, so refuse instead of letting a move destroy a file on one platform only.
+    if FileAccess.file_exists(to) or DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(to)):
+        return {"ok": false, "error": "Destination already exists. Delete or rename it first."}
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(to.get_base_dir()))
     var err = DirAccess.rename_absolute(ProjectSettings.globalize_path(from), ProjectSettings.globalize_path(to))
     return {"ok": err == OK, "error": "" if err == OK else "Move failed (%d)." % err}

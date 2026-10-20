@@ -180,6 +180,13 @@ func _test_tool_boundary() -> void:
     tools.workspace = root
     assert_true(not tools.read_file("../host/credentials.json").ok, "tool cannot escape workspace")
     assert_true(tools.write_file("main.gd", "extends Node\n").ok, "tool writes inside workspace")
+    assert_true(tools.write_file("keep.txt", "keep\n").ok, "tool writes a second workspace file")
+    assert_true(not tools.move_path("main.gd", "keep.txt").ok, "move refuses an existing destination")
+    assert_true(FileAccess.get_file_as_string(root.path_join("keep.txt")) == "keep\n", "a refused move keeps the destination intact")
+    assert_true(FileAccess.file_exists(root.path_join("main.gd")), "a refused move keeps the source")
+    assert_true(not tools.move_path("missing.gd", "moved.gd").ok, "move refuses a missing source")
+    assert_true(tools.move_path("main.gd", "sub/moved.gd").ok, "move creates the destination directory")
+    assert_true(tools.write_file("main.gd", "extends Node\n").ok, "tool restores the workspace entry point")
     assert_true(not tools.write_file(".git/config", "x").ok, "tool cannot write reserved .git metadata")
     assert_true(not tools.patch_file(".git/config", "a", "b").ok, "tool cannot patch reserved .git metadata")
     assert_true(not tools.delete_path(".git").ok, "tool cannot delete reserved .git metadata")
