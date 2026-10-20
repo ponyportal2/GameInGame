@@ -11,6 +11,20 @@ function gitPath(root, target) {
   return rel === ".git" || rel.startsWith(".git/");
 }
 
+const DEVICES = new Set(["con", "prn", "aux", "nul", ...Array.from({ length: 9 }, (_, i) => "com" + (i + 1)), ...Array.from({ length: 9 }, (_, i) => "lpt" + (i + 1))]);
+
+// Windows opens "CON", "nul.txt" and "aux.gd" as devices, not workspace files,
+// and silently strips trailing dots and spaces from a name. Either one would let
+// a tool call leave the workspace or read the console instead of a game file.
+function devicePath(value) {
+  if (process.platform !== "win32") return false;
+  return value.split(/[\\/]+/).some(segment => {
+    if (!segment || segment === "." || segment === "..") return false;
+    if (segment.endsWith(".") || segment.endsWith(" ")) return true;
+    return DEVICES.has(segment.split(".")[0].trim().toLowerCase());
+  });
+}
+
 // Resolve existing ancestors as well as the target: write/move destinations may
 // not exist yet, and a parent can be a symlink or a Windows junction.
 async function resolvedTarget(target) {
@@ -31,6 +45,7 @@ async function resolvedTarget(target) {
 
 export async function workspacePath(cwd, value, { destructive = false } = {}) {
   if (typeof value !== "string" || !value || isAbsolute(value)) throw new Error("Expected a relative workspace path.");
+  if (devicePath(value)) throw new Error("Windows device names and trailing dots or spaces are not workspace paths.");
   const root = resolve(cwd);
   const target = resolve(root, value);
   if (!inside(root, target, !destructive)) throw new Error("Path targets the workspace root or escapes the workspace.");

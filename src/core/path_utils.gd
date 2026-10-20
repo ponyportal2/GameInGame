@@ -64,8 +64,20 @@ static func safe_relative_path(relative_path: String) -> String:
             continue
         if part == "..":
             return ""
+        if _is_windows_device_path(part):
+            return ""
         clean.append(part)
     return "/".join(clean)
+
+static func _is_windows_device_path(segment: String) -> bool:
+    # Windows opens "CON" or "nul.txt" as a device instead of a workspace file
+    # and silently strips a trailing dot or space, so both would let a tool call
+    # escape the game directory.
+    if OS.get_name() != "Windows":
+        return false
+    if segment.ends_with(".") or segment.ends_with(" "):
+        return true
+    return _is_reserved_device_name(segment)
 
 static func join_workspace(workspace: String, relative_path: String) -> String:
     var safe = safe_relative_path(relative_path)

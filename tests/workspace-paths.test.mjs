@@ -5,6 +5,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { workspacePath } from "../tools/pi/workspace-paths.mjs";
 
+test("Windows device names and trailing dots or spaces are rejected", async () => {
+  if (process.platform !== "win32") return;
+  const fixture = await mkdtemp(join(tmpdir(), "gamesmith-device-"));
+  const root = join(fixture, "game");
+  try {
+    await mkdir(root);
+    for (const path of ["CON", "nul.txt", "aux.gd", "sub/CON.gd", "dir./x.gd", "name /x.gd"]) {
+      await assert.rejects(workspacePath(root, path, { destructive: true }), /device names/);
+    }
+    assert.equal(await workspacePath(root, "main.gd", { destructive: true }), join(root, "main.gd"));
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
 test("destructive tools reject roots, traversal, Git metadata and link escapes", async () => {
   const fixture = await mkdtemp(join(tmpdir(), "gamesmith-paths-"));
   const root = join(fixture, "game");

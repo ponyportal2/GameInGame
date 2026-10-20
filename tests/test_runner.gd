@@ -184,6 +184,17 @@ func _test_tool_boundary() -> void:
     assert_true(not tools.patch_file(".git/config", "a", "b").ok, "tool cannot patch reserved .git metadata")
     assert_true(not tools.delete_path(".git").ok, "tool cannot delete reserved .git metadata")
     assert_true(not tools.move_path("main.gd", ".git/main.gd").ok, "tool cannot move into reserved .git metadata")
+    if OS.get_name() == "Windows":
+        # Windows opens these as devices and strips trailing dots/spaces, so they
+        # would reach outside the workspace or block on the console.
+        for device_name in ["CON", "nul.txt", "aux.gd", "assets/CON.gd", "notes./main.gd", "notes /main.gd"]:
+            assert_true(PathUtils.safe_relative_path(device_name) == "", "path guard rejects " + device_name)
+        assert_true(PathUtils.safe_relative_path("assets/main.gd") == "assets/main.gd", "path guard keeps ordinary nested paths")
+        assert_true(not tools.read_file("CON").ok, "read rejects a Windows device name")
+        assert_true(not tools.write_file("nul.txt", "x").ok, "write rejects a Windows device name")
+        assert_true(not tools.write_file("assets/aux.gd", "x").ok, "write rejects a device name in a subdirectory")
+        assert_true(not tools.write_file("notes./main.gd", "x").ok, "write rejects a segment with a trailing dot")
+        assert_true(not tools.write_file("notes /main.gd", "x").ok, "write rejects a segment with a trailing space")
     _write_abs(ProjectSettings.globalize_path(outside.path_join("keep.txt")), "keep")
     var link = root.path_join("escape")
     if _create_dir_link(link, outside):
