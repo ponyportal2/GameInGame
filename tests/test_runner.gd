@@ -170,12 +170,57 @@ func _test_rename_metadata_and_snapshot() -> void:
 
 func _test_tool_boundary() -> void:
     var root = "user://games/tool-boundary-test"
+    var outside = "user://games/tool-boundary-outside"
+    var meta = MetadataStoreScript.new()
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    meta._remove_tree_abs(ProjectSettings.globalize_path(outside))
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root))
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(outside))
     var tools = GameToolsScript.new()
     tools.workspace = root
     assert_true(not tools.read_file("../host/credentials.json").ok, "tool cannot escape workspace")
     assert_true(tools.write_file("main.gd", "extends Node\n").ok, "tool writes inside workspace")
-    var meta = MetadataStoreScript.new(); meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    assert_true(not tools.write_file(".git/config", "x").ok, "tool cannot write reserved .git metadata")
+    assert_true(not tools.patch_file(".git/config", "a", "b").ok, "tool cannot patch reserved .git metadata")
+    assert_true(not tools.delete_path(".git").ok, "tool cannot delete reserved .git metadata")
+    assert_true(not tools.move_path("main.gd", ".git/main.gd").ok, "tool cannot move into reserved .git metadata")
+    _write_abs(ProjectSettings.globalize_path(outside.path_join("keep.txt")), "keep")
+    var link = root.path_join("escape")
+    if _create_dir_link(link, outside):
+        assert_true(not tools.read_file("escape/keep.txt").ok, "read rejects a path through a workspace link")
+        assert_true(not tools.write_file("escape/new.txt", "x").ok, "write rejects a path through a workspace link")
+        assert_true(not tools.delete_path("escape/keep.txt").ok, "delete rejects a path through a workspace link")
+        assert_true(not tools.delete_path("escape").ok, "delete rejects the workspace link itself")
+        assert_true(not tools.move_path("escape/keep.txt", "moved.txt").ok, "move rejects a source through a workspace link")
+        assert_true(not tools.move_path("main.gd", "escape/main.gd").ok, "move rejects a destination through a workspace link")
+        assert_true(not tools.list_files("escape").ok, "listing a linked directory is rejected")
+        assert_true(not tools.search_text("keep").get("matches", []).any(func(m): return "escape/" in str(m)), "search does not read through a link")
+        assert_true(FileAccess.file_exists(outside.path_join("keep.txt")), "linked outside file survives rejected tools")
+        assert_true(not FileAccess.file_exists(outside.path_join("new.txt")), "write through a link creates nothing outside")
+        assert_true(not FileAccess.file_exists(outside.path_join("moved.txt")), "move through a link moves nothing outside")
+        var listing = tools.list_files()
+        assert_true(listing.ok and not listing.files.any(func(f): return str(f).begins_with("escape/")), "listing omits linked content")
+        # A link may be removed without following it into foreign content.
+        var cleanup = "user://games/tool-boundary-cleanup"
+        DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(cleanup))
+        var linked_cleanup = cleanup.path_join("link")
+        if _create_dir_link(linked_cleanup, outside):
+            assert_true(meta._remove_tree_abs(ProjectSettings.globalize_path(cleanup)) == OK, "tree removal accepts a link entry")
+            assert_true(FileAccess.file_exists(outside.path_join("keep.txt")), "tree removal never follows the link")
+            assert_true(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(cleanup)), "tree removal deletes the containing directory")
+        DirAccess.remove_absolute(ProjectSettings.globalize_path(link))
+    else:
+        assert_true(false, "test fixture could create a directory link")
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    meta._remove_tree_abs(ProjectSettings.globalize_path(outside))
+
+func _create_dir_link(link: String, target: String) -> bool:
+    var abs_link = ProjectSettings.globalize_path(link)
+    var abs_target = ProjectSettings.globalize_path(target)
+    var output: Array = []
+    if OS.get_name() == "Windows":
+        return OS.execute("cmd", ["/c", "mklink", "/J", abs_link.replace("/", "\\"), abs_target.replace("/", "\\")], output, true) == 0
+    return OS.execute("ln", ["-s", abs_target, abs_link], output, true) == 0
 
 func _test_large_file_read_and_patch_integrity() -> void:
     var root_dir = "user://games/large-file-tool-test"

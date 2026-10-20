@@ -46,6 +46,7 @@ func list_files(relative_dir: String = "") -> Dictionary:
     if relative_dir != "":
         base = _path(relative_dir)
         if base == "": return _unsafe()
+        if _linked(relative_dir): return _linked_path()
     if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(base)):
         return {"ok": false, "error": "Directory not found."}
     var result: Array[String] = []
@@ -55,6 +56,7 @@ func list_files(relative_dir: String = "") -> Dictionary:
 func read_file(relative_path: String, offset: int = 1, limit: int = DEFAULT_READ_LINES) -> Dictionary:
     var path = _path(relative_path)
     if path == "": return _unsafe()
+    if _linked(relative_path): return _linked_path()
     if not FileAccess.file_exists(path):
         return {"ok": false, "error": "File not found."}
     var full = FileAccess.get_file_as_string(path)
@@ -105,6 +107,8 @@ func search_text(query: String) -> Dictionary:
 func write_file(relative_path: String, content: String) -> Dictionary:
     var path = _path(relative_path)
     if path == "": return _unsafe()
+    if _linked(relative_path): return _linked_path()
+    if _reserved(relative_path): return _reserved_path()
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
     var f = FileAccess.open(path, FileAccess.WRITE)
     if f == null: return {"ok": false, "error": "Could not write file."}
@@ -115,6 +119,8 @@ func write_file(relative_path: String, content: String) -> Dictionary:
 func patch_file(relative_path: String, old_text: String, new_text: String) -> Dictionary:
     var path = _path(relative_path)
     if path == "": return _unsafe()
+    if _linked(relative_path): return _linked_path()
+    if _reserved(relative_path): return _reserved_path()
     if not FileAccess.file_exists(path):
         return {"ok": false, "error": "File not found."}
     if old_text == "":
@@ -137,6 +143,8 @@ func move_path(from_relative: String, to_relative: String) -> Dictionary:
     var from = _path(from_relative)
     var to = _path(to_relative)
     if from == "" or to == "": return _unsafe()
+    if _linked(from_relative) or _linked(to_relative): return _linked_path()
+    if _reserved(from_relative) or _reserved(to_relative): return _reserved_path()
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(to.get_base_dir()))
     var err = DirAccess.rename_absolute(ProjectSettings.globalize_path(from), ProjectSettings.globalize_path(to))
     return {"ok": err == OK, "error": "" if err == OK else "Move failed (%d)." % err}
@@ -145,6 +153,8 @@ func delete_path(relative_path: String) -> Dictionary:
     var path = _path(relative_path)
     if path == "": return _unsafe()
     if path == workspace: return _unsafe()
+    if _linked(relative_path): return _linked_path()
+    if _reserved(relative_path): return _reserved_path()
     var abs = ProjectSettings.globalize_path(path)
     if DirAccess.dir_exists_absolute(abs):
         return {"ok": _remove_tree_abs(abs) == OK}
@@ -310,6 +320,33 @@ func _path(relative_path: String) -> String:
 func _unsafe() -> Dictionary:
     return {"ok": false, "error": "Unsafe path. Tools are limited to the current game workspace."}
 
+func _linked_path() -> Dictionary:
+    return {"ok": false, "error": "Unsafe path. Symbolic links and junctions inside the workspace are not followed."}
+
+func _reserved_path() -> Dictionary:
+    return {"ok": false, "error": "GameSmith reserves .git metadata; use the Git tools instead."}
+
+# Lexical containment is not enough: a link inside the workspace can point
+# outside it, and following one would let a file tool read or delete foreign
+# files. Check every existing component because a parent may be the link.
+func _linked(relative_path: String) -> bool:
+    var safe = PathUtils.safe_relative_path(relative_path)
+    if safe == "": return false
+    var current = workspace
+    for part in safe.split("/", false):
+        var dir = DirAccess.open(current)
+        if dir == null: return false
+        if dir.is_link(part): return true
+        current = current.path_join(part)
+    return false
+
+func _reserved(relative_path: String) -> bool:
+    var safe = PathUtils.safe_relative_path(relative_path)
+    if safe == "": return false
+    for part in safe.split("/", false):
+        if part.to_lower() == ".git": return true
+    return false
+
 func _walk(dir_path: String, root_path: String, out: Array[String]) -> void:
     var dir = DirAccess.open(dir_path)
     if dir == null: return
@@ -318,9 +355,11 @@ func _walk(dir_path: String, root_path: String, out: Array[String]) -> void:
     while item != "":
         var full = dir_path.path_join(item)
         var rel = full.trim_prefix(root_path + "/")
+        # Linked entries are not workspace content: a linked directory may
+        # resolve outside the workspace and a linked file would be read through.
+        if dir.is_link(item) or item == ".git":
+            item = dir.get_next(); continue
         if dir.current_is_dir():
-            if item == ".git":
-                item = dir.get_next(); continue
             _walk(full, root_path, out)
         else:
             out.append(rel)

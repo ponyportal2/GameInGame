@@ -132,6 +132,10 @@ func _copy_tree(src: String, dst: String, skip_git: bool = false) -> bool:
         if skip_git and item == ".git":
             item = dir.get_next()
             continue
+        # Copying through a link would duplicate content from outside the game.
+        if dir.is_link(item):
+            item = dir.get_next()
+            continue
         var from = src.path_join(item)
         var to = dst.path_join(item)
         if dir.current_is_dir():
