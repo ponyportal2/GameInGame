@@ -43,6 +43,7 @@ async function host(name,args={}) {
 }
 async function run(prompt) {
  parts.length=0;aborted=false;
+ await writeFile('.opencode-fixture-busy.json',JSON.stringify({prompt}));
  emit({type:'step_start',part:{}});
  if (prompt==='wait') {
    const reasoning={id:'live-reasoning',sessionID:session,messageID:'live-assistant',type:'reasoning',text:'',time:{start:Date.now()}};
