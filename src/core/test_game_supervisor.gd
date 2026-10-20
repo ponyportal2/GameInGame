@@ -136,6 +136,12 @@ func poll() -> void:
                         if bytes.size() > available:
                             run[channel + "_dropped_bytes"] = int(run.get(channel + "_dropped_bytes", 0)) + bytes.size() - available
         var child = _read_data(run.path.path_join("status.json"))
+        var exited = not OS.is_process_running(run.pid)
+        if exited:
+            # The child can publish its final status between our first read and
+            # the liveness check. Once it has exited, read the final record
+            # before freezing the outcome and shutdown classification.
+            child = _read_data(run.path.path_join("status.json"))
         for key in ["session_id", "session_path", "user_data", "load_result", "startup_smoke"]:
             if child.has(key):
                 run[key] = child[key]
@@ -146,7 +152,7 @@ func poll() -> void:
             if not action.is_empty() and action.get("action_id") == run.get("action_id"):
                 run.action_result = action
                 run.action_pending = false
-        if not OS.is_process_running(run.pid):
+        if exited:
             run.state = "exited"
             run.exit_code = OS.get_process_exit_code(run.pid)
             if run.stop_method == "requested":

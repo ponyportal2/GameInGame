@@ -159,8 +159,16 @@ func run() -> void:
     check(old_config.resource_name == "old", "existing resource object remains unchanged")
     put("extends Node\nconst Config = preload('config.tres')\nvar answer = Config.resource_name\nvar embedded = Config.get_meta('child').resource_name\n")
     result = await runner.checked_reload(workspace)
+    if not result.ok:
+        push_error("Serialized-resource reload failed: " + JSON.stringify(result))
     check(result.ok and runner.active_game.answer == "new", "preflighted full reload gets fresh serialized preload")
     check(result.ok and runner.active_game.embedded == "new", "preflighted reload refreshes embedded serialized resources")
+    if not result.ok:
+        # Later cache rollback checks require this accepted game. Do not turn a
+        # useful preflight failure into an invalid-property exception and hang.
+        runner.free()
+        quit(1)
+        return
     check(old_config.resource_name == "old", "full reload preserves previous resource object")
     var accepted_config = ResourceLoader.get_cached_ref(workspace.path_join("config.tres"))
     var accepted_embedded = accepted_config.get_meta("child")
