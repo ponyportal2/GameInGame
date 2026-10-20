@@ -51,6 +51,12 @@ func run() -> void:
                 # This is the same virtual method production startup writes to prompt.md.
                 prompt = controller._native_prompt()
             var label = str(entry.id) + " blender=" + str(blender_enabled)
+            check("verify the actual before-to-after transition" in prompt and "before editing defaults" in prompt, label + " preserves transition test conditions")
+            check("already-existing objects" in prompt and "future spawns" in prompt, label + " distinguishes existing-object and spawn evidence")
+            check("prepare needed observability up front" in prompt and "Reuse the same running test" in prompt and "immediately before input" in prompt, label + " plans evidence and reuses detached tests")
+            check("naturally owned tuning parameters" in prompt and "property bag" in prompt, label + " encourages bounded gameplay configuration")
+            check("Remove verification-only helpers" in prompt and "final code" in prompt and "preflight" in prompt, label + " finalizes helpers before preflight")
+            check("normally durable" in prompt and "no reload" in prompt, label + " distinguishes persistence from delivery")
             for clause in ["Stay inside it", "main.gd", "Use preload() for helper scripts", "Script inheritance", "literal PNG/JPG/JPEG/WAV/OGG", "outside the static check", "res:// refers to the GameSmith host project", "Image.load_from_file(assets.path(", "ImageTexture.create_from_image(image)", "Only one image job can run at a time", "inspect_runtime", "set_properties", "add_runtime_child", "remove_runtime_child", "check live capabilities before building", "Do not wire the child into startup first", "parameter patch", "Never infer", "live-only", "do not reload even when inspection fails", "immediate property readback separately from visual verification and persistence", "Godot late-child lifecycle", "request_ready()", "process_physics_priority", "ordinary startup alone", "completed process and physics ticks", "rg_search", "output_truncated", "existing gameplay construction/spawning paths", "not persistent source edits", "visible=true are not visual verification", "only when pending=true", "Use inject_child", "mouse_button", "durable outcomes"]:
                 check(clause in prompt, label + " retains " + clause)
             check(("- Blender is available" in prompt) == blender_enabled, label + " Blender tool instruction toggles")
