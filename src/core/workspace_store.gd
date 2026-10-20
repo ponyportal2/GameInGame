@@ -69,8 +69,12 @@ func rename_game(old_name: String, raw_new_name: String) -> Dictionary:
     return {"ok": true, "name": new_name}
 
 func delete_game(name: String) -> bool:
-    var ok = _remove_tree(game_path(name))
-    return metadata.delete_game(name) and ok
+    # Remove the workspace first. If a file is still open, the workspace stays
+    # and its metadata must stay too, so the game remains visible and deletion
+    # can be retried instead of leaving an orphaned, unlisted directory.
+    if not _remove_tree(game_path(name)):
+        return false
+    return metadata.delete_game(name)
 
 func game_path(name: String) -> String:
     return GAMES_ROOT.path_join(name)

@@ -54,6 +54,13 @@ static func append_json_line(path: String, data: Dictionary) -> bool:
         file = FileAccess.open(path, FileAccess.WRITE)
     if file == null:
         return false
+    # A process killed mid-append can leave a partial final record. Terminate
+    # it so this record starts on its own line instead of corrupting both.
+    if file.get_length() > 0:
+        file.seek(file.get_length() - 1)
+        if file.get_8() != 10:
+            file.seek_end()
+            file.store_8(10)
     file.seek_end()
     file.store_line(JSON.stringify(data))
     file.close()
