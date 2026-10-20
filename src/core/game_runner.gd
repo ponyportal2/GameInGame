@@ -204,3 +204,18 @@ func unload_game() -> void:
 
 func has_active_game() -> bool:
     return is_instance_valid(active_game)
+
+# A rename moves the workspace under the running game. Keep the recorded source
+# and dependency paths pointing at the new location, otherwise the host stops
+# recognising the live game as the workspace copy and silently skips snapshot
+# promotion after the next reload.
+func rebind_workspace(old_workspace: String, new_workspace: String) -> void:
+    if old_workspace == "" or old_workspace == new_workspace:
+        return
+    var prefix = old_workspace + "/"
+    if active_source_path.begins_with(prefix):
+        active_source_path = new_workspace + active_source_path.substr(old_workspace.length())
+    var rebound: Array[String] = []
+    for path in dependency_paths:
+        rebound.append(new_workspace + path.substr(old_workspace.length()) if path.begins_with(prefix) else path)
+    dependency_paths = rebound

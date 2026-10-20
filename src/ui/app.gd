@@ -755,6 +755,8 @@ func _rename_game() -> void:
             game_edit_guard = destination_guard
             agent.editor_guard = game_edit_guard
         current_game = new_name
+        if is_instance_valid(runner):
+            runner.rebind_workspace(store.game_path(old), store.game_path(new_name))
         game_title_label.text = current_game
         game_title_label.tooltip_text = current_game
         workspace_title_label.text = current_game

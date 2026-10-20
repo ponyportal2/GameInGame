@@ -86,6 +86,28 @@ func run() -> void:
     check(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(app.store.game_path(open_name))), "deleting the open game removes its workspace")
     check(not app.store.list_games().has(open_name), "deleting the open game removes it from the library")
     check(app.current_game == "", "deleting the open game returns to the library")
+    # Renaming the open game moves its files; the runner must follow, otherwise
+    # snapshot promotion stops recognising the live workspace after the rename.
+    var rename_created = app.store.create_game("Rename source fixture")
+    var rename_path: String = app.store.game_path(rename_created.name)
+    var handle = FileAccess.open(rename_path.path_join("main.gd"), FileAccess.WRITE)
+    handle.store_string("extends Node3D\n")
+    handle.close()
+    app._open_game(rename_created.name)
+    await process_frame
+    app._run_game()
+    await process_frame
+    check(app.runner.active_source_path == rename_path.path_join("main.gd"), "the running game records its loaded source")
+    app._open_rename(rename_created.name)
+    app.rename_edit.text = "Rename source fixture renamed"
+    app._rename_game()
+    await process_frame
+    var renamed_path: String = app.store.game_path("Rename source fixture renamed")
+    check(app.current_game == "Rename source fixture renamed", "renaming the open game updates the title")
+    check(app.runner.active_source_path == renamed_path.path_join("main.gd"), "renaming the open game rebinds the loaded source")
+    app.pending_delete = "Rename source fixture renamed"
+    app._delete_game_confirmed()
+    check(not DirAccess.dir_exists_absolute(renamed_path), "the renamed fixture is cleaned up")
     app.queue_free()
     await process_frame
     quit(1 if failures else 0)
