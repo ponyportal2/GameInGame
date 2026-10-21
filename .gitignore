@@ -2,6 +2,23 @@
 *.tmp
 .DS_Store
 
+# Credentials and local secrets — never commit these.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+settings.json
+
+# Local agent workspace state.
+.workbuddy-ai/
+
+# Local archive of tools/fake-openai-endpoint/; the tracked directory is authoritative.
+tools/fake-openai-endpoint.zip
+
 runtime/
 !GameSmith-Windows/runtime/
 !GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe

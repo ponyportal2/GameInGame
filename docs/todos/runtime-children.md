@@ -32,6 +32,6 @@ Verification (2026-10-20):
   111 assertions, zero failures/skips/reuse. These failures did not reproduce;
   no production timeout or acceptance requirement was weakened.
 - Evidence directories above are beneath
-  `C:/Users/User/AppData/Local/Temp/`. Deterministic fixture/source/package tests;
+  `%TEMP%/`. Deterministic fixture/source/package tests;
   no real-provider invocation and no claim of Jopa 2 gameplay/visual validation.
   The user's live game, source and Brain.txt were left untouched.

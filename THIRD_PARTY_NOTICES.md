@@ -32,7 +32,10 @@ Godot license information: https://godotengine.org/license/
 `tools/fake-openai-endpoint/` contains the user-supplied snapshot of
 `seyf1elislam/fake_openai_endpoint_ts` at commit
 `d1105bf2573d95b043f5e1d0c5c427aa316d4487`, used only for local verification.
-Its package metadata declares the project MIT-licensed. GameSmith's
+Its package metadata declares the project MIT-licensed. That commit ships no
+`LICENSE` file of its own, so the MIT declaration above is taken from the
+snapshot's `package.json`; see `tools/fake-openai-endpoint/UPSTREAM.md` for
+provenance. GameSmith's
 `pi-server.mjs` is a small project-specific, zero-dependency scripted server
 added beside that upstream source for deterministic real-Pi acceptance tests.
 

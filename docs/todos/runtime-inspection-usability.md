@@ -43,7 +43,7 @@ No generic output storage or permission expansion is introduced here.
   lifecycle/recovery coverage, packaged contents and package structure. No
   production code changed after that package build.
 - Actual `2d` replay, isolated copy:
-  `C:/Users/User/AppData/Local/Temp/gamesmith-wall-replay-nai4sqn7/` contains
+  `%TEMP%/gamesmith-wall-replay-nai4sqn7/` contains
   `manifest.json`, `replay.gd`, `source.log` and `package.log`. Both source and PCK
   runs passed: two pages (14723 and 4300 serialized public-response bytes), all
   64 real wall handles, temporary recolor, readback after two frames, unchanged

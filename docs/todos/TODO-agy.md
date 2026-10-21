@@ -15,9 +15,9 @@ No successful model invocation or live generated-game acceptance may be claimed.
 
 - Node: `node --test tests/*.test.mjs`: 101 passed, 0 failed, including eight AGY tests. Tool-step regression first failed, then passed after correcting the native `tool` event fields (including final-only snapshots).
 - Windows launcher: `go test ./...` passed; rebuilt `GameSmith.exe` includes AGY detection.
-- Targeted AGY lifecycle, harness settings/switching and ownership: passed in `C:/Users/User/AppData/Local/Temp/gamesmith-tests-zyUvho`.
+- Targeted AGY lifecycle, harness settings/switching and ownership: passed in `%TEMP%/gamesmith-tests-zyUvho`.
 - Default host run: prior runners passed, but stopped on one Cursor PID-change assertion in `gamesmith-tests-1rFW9I`. Cursor, Grok Build, AGY and process shutdown all passed on the separate remaining-runner invocation in `gamesmith-tests-qmmoOl` (exit 0). All 24 runners were covered across these runs, but this is not a clean uninterrupted full-suite result. The cause of the initial Cursor assertion failure was not established.
 - Final PCK export, structural package-content regression and `verify_windows_package.py`: passed.
-- Installed AGY startup/MCP discovery and explicit conversation resume: passed in `C:/Users/User/AppData/Local/Temp/gamesmith-agy-native-FDeEIs`; both model requests returned the expected unsupported-location error. No probe processes remained afterwards.
-- Packaged fixture lifecycle: passed in `C:/Users/User/AppData/Local/Temp/gamesmith-agy-package-fixture-jStzuH`; final PCK fixture rerun after the tool-event correction also passed in `C:/Users/User/AppData/Local/Temp/gamesmith-agy-package-fixture-n7lkGK`.
+- Installed AGY startup/MCP discovery and explicit conversation resume: passed in `%TEMP%/gamesmith-agy-native-FDeEIs`; both model requests returned the expected unsupported-location error. No probe processes remained afterwards.
+- Packaged fixture lifecycle: passed in `%TEMP%/gamesmith-agy-package-fixture-jStzuH`; final PCK fixture rerun after the tool-event correction also passed in `%TEMP%/gamesmith-agy-package-fixture-n7lkGK`.
 - Automatic CI remains disabled; these are local Windows results.

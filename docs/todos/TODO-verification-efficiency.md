@@ -23,6 +23,6 @@ node tools/testing/verify.mjs --suite release --output errors --build-package
 - Host: all 37 isolated runners, including canonical assembly for all 14 harnesses.
 - Packaged contents/structure and Go launcher tests passed. Windows launcher and PCK rebuilt.
 - Installed Pi/local provider emulator: 140/140; migration: 1/1; windowed ownership: 29/29.
-- Complete logs, diagnostics, progress and fingerprints: `C:/Users/User/AppData/Local/Temp/gamesmith-verify-ro5nfz/results.json`.
+- Complete logs, diagnostics, progress and fingerprints: `%TEMP%/gamesmith-verify-ro5nfz/results.json`.
 - No paid-provider acceptance calls or GitHub CI runs. This evidence is local, not a remote status check.
 - This final evidence annotation is documentation only and was added after the frozen-tree run.

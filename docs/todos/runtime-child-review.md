@@ -23,7 +23,7 @@ identities. Injection restores the old cache after compiling the fresh child.
 
 ## Verification (2026-10-20)
 
-Artifacts are under `C:/Users/User/AppData/Local/Temp/`.
+Artifacts are under `%TEMP%/`.
 
 - RED: `gamesmith-verify-WVLkYW/results.json` reproduced approval, clean
   deletion/rename/reparent, and serialized preload defects before implementation.

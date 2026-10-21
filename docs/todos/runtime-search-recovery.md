@@ -14,7 +14,7 @@ Added shared-harness recovery/rejection checks before final verification.
 
 Final verification: `node tools/testing/verify.mjs --suite affected --build-package --output summary`
 passed all 84 entries, with zero failures, skips or reused results (1059.6 seconds).
-Evidence: `C:/Users/User/AppData/Local/Temp/gamesmith-verify-xPffhn/results.json`.
+Evidence: `%TEMP%/gamesmith-verify-xPffhn/results.json`.
 Includes canonical assembly/shared harness checks, the Tetriscat depth-four mesh
 discovery and live hide regression, 900-node sparse paged system-rg fixture,
 existing output limits, Godot host tests, Windows package contents/structure and

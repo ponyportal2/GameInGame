@@ -14,6 +14,6 @@ Focused verification: assembled AGY/Crush/Cline/OMP adapter tests and shared rec
 
 Final command: `node tools/testing/verify.mjs --suite release --output errors --build-package`. No live paid-provider calls or GitHub CI dispatch.
 
-Final evidence: `C:/Users/User/AppData/Local/Temp/gamesmith-verify-tGnKd7/results.json` — passed all 81 steps in one uninterrupted run (1077.6 seconds), with no failed, blocked, interrupted or reused steps. This includes all isolated host runners, rebuilt Windows package checks, Pi/local-provider emulator acceptance (140/140), migration (1/1), and windowed ownership (29/29). Shared recovery passed 52 assertions; the native recovery matrix passed 135.
+Final evidence: `%TEMP%/gamesmith-verify-tGnKd7/results.json` — passed all 81 steps in one uninterrupted run (1077.6 seconds), with no failed, blocked, interrupted or reused steps. This includes all isolated host runners, rebuilt Windows package checks, Pi/local-provider emulator acceptance (140/140), migration (1/1), and windowed ownership (29/29). Shared recovery passed 52 assertions; the native recovery matrix passed 135.
 
 The tested inputs stayed unchanged during the release run. This final evidence annotation was added afterward. These are local fixture/emulator results, not real-provider acceptance or remote CI. Conservative native-admission evidence does not guarantee exactly-once tool execution; retry instructions explicitly require inspecting existing work.
