@@ -1,0 +1,61 @@
+{
+  "repo": "ponyportal2/GameInGame",
+  "baseBranch": "main",
+  "branchPrefix": "softfac/",
+  "labels": {
+    "ready": "softfac:ready",
+    "running": "softfac:running",
+    "blocked": "softfac:blocked",
+    "needsHuman": "softfac:needs-human",
+    "followUp": "softfac:follow-up",
+    "bug": "bug",
+    "substantial": [
+      "feature",
+      "architecture",
+      "epic"
+    ]
+  },
+  "architecture": {
+    "everyCommits": 10,
+    "requireForSubstantial": true,
+    "maxDiffChars": 60000
+  },
+  "review": {
+    "maxRounds": 2,
+    "trustedAuthors": []
+  },
+  "tdd": {
+    "testPatterns": [
+      "tests/**",
+      "test/**",
+      "**/*.test.*",
+      "**/*.spec.*",
+      "**/__tests__/**"
+    ]
+  },
+  "verification": {
+    "commands": [
+      "node tools/testing/verify.mjs --suite affected --output summary"
+    ]
+  },
+  "bugs": {
+    "autoClose": true,
+    "autoMerge": false
+  },
+  "maxIssuesPerRun": 1,
+  "pollIntervalMs": 60000,
+  "sandbox": "no-sandbox",
+  "agents": {
+    "implementerModel": "openai-codex/gpt-6-luna",
+    "reviewerModel": "openai-codex/gpt-6-luna",
+    "architectModel": "openai-codex/gpt-6-luna",
+    "thinking": "xhigh"
+  },
+  "prompts": {
+    "implementer": ".softfac/prompts/implementer.md",
+    "reviewer": ".softfac/prompts/reviewer.md",
+    "architect": ".softfac/prompts/architect.md"
+  },
+  "statePath": ".softfac/state.json",
+  "logDir": ".softfac/logs"
+}

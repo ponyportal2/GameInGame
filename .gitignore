@@ -25,3 +25,9 @@ runtime/
 
 __pycache__/
 *.pyc
+.softfac/state.json
+.softfac/state.json.tmp
+.softfac/run.lock
+.softfac/logs/
+.softfac/worktrees/
+.sandcastle/
