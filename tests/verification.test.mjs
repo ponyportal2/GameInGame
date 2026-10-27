@@ -44,7 +44,11 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly']);
  check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification']);
  check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:game_assets','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
- check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
+ check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:workspace_ops','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
+ // Pi is no longer a parent controller: its transport edit selects its own
+ // consumers instead of every harness, while the shared base stays exhaustive.
+ check(['src/agent/pi_agent_controller.gd'],['host:pi_controller','host:turn_recovery','host:reliability','host:test','host:harness','host:library_actions','host:reload_settings','host:ui_layout','host:blender','host:review_stop','host:chat_history','host:prompt_contract','host:bridge_claim','host:chat_test_process','host:maintenance','host:test_process','node:verification']);
+ assert.equal(selectTests(root,'affected',['src/agent/agent_controller_base.gd']).length,selectTests(root,'all').length,'the shared controller base must stay exhaustive');
  check(['src/core/workspace_ops.gd'],['host:workspace_ops','host:runtime_properties','host:reliability','host:blender','package:contents','node:verification']);
  check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
  // An unmapped path is exhaustive, never zero and never a guess: an unknown

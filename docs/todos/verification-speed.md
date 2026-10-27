@@ -178,35 +178,58 @@ the exhaustive pass is the only run that executes every scenario.
   instead of obtaining the prompt through the Pi config. Pi request completion
   and stale settlement moved to `host:pi_controller`; `host:turn_recovery`
   became a shared harness test because it now drives inherited behavior.
+- **Pi selection.** Pi is no longer a parent controller, so it left the
+  hard-coded inherited-controller escalation. Its `INPUT_CONSUMERS` entry is
+  audited by behavior: every suite that instantiates the Pi controller
+  (`pi_controller`, `turn_recovery`, `reliability`, `harness`, `bridge_claim`,
+  `chat_test_process`, `maintenance`, `test_process`, `prompt_contract`) plus
+  the app suites that drive the default agent (`test`, `library_actions`,
+  `reload_settings`, `ui_layout`, `blender`, `review_stop`, `chat_history`).
+  `agent_controller_base.gd` stays unmapped and therefore exhaustive.
 - **Workspace operations.** `WorkspaceOps` owns list/read/search/write/patch/
   move/delete plus the containment, link and `.git` rules. `GameTools` keeps a
   settable `workspace` that forwards to it, so renaming a game rebinds the
   boundary through the existing assignment and the facade stays the call site
-  for controllers and fixtures. `host:workspace_ops` holds the boundary,
-  junction and large-file tests; `host:test` left the `game_tools.gd` consumer
-  list because the moved tests were its only use of the facade. Suites that
+  for controllers and fixtures. `host:workspace_ops` holds the component
+  boundary, junction and large-file tests plus one small facade scenario that
+  drives `execute()` dispatch, paginated read/patch, boundary rejection,
+  move/delete and operations after rebinding over real files. `host:test` left
+  the `game_tools.gd` consumer list because the moved tests were its only use
+  of the facade; `host:workspace_ops` is selected for both files. Suites that
   write fixtures through the facade without asserting on the boundary
   (`blender_integration`, `pi_integration`) gain nothing from a narrower
   selection and still run in `full`, `all` and `release`.
 
 Selections after the batch: `core` 49, `full`/`all` 103, `host` 61,
 `node` 39, `release` 106, `pi` 10, `copilot` 7. A change to
-`workspace_ops.gd` selects six tests; a change to `game_tools.gd` selects
-twelve.
+`workspace_ops.gd` selects six tests, `game_tools.gd` thirteen and
+`pi_agent_controller.gd` seventeen; `agent_controller_base.gd` still selects
+all 103.
 
-- Selector regressions: `node --test tests/verification.test.mjs` 11/11 (6.4 s).
+- Selector regressions: `node --test tests/verification.test.mjs` 11/11 (6.4 s),
+  including the Pi narrowing and the base-controller exhaustiveness assertions.
 - `--test host:turn_recovery,host:pi_controller`: 3 passed, 7.8 s.
 - `--test host:test,host:copilot_lifecycle,host:command_code_compaction`:
   4 passed, 88.4 s.
 - `--test host:blender`: 2 passed, 35.6 s.
 - `--test host:workspace_ops,host:test,host:reliability`: 4 entries passed in
-  115.2 s, with 62, 116 and 99 assertions respectively. The focused suite costs
-  0.48 s and no longer constructs an app, runner or Git repository.
+  115.2 s, with 62, 116 and 99 assertions respectively.
+- `--changed src/core/workspace_ops.gd`: the full six-test selection
+  (`workspace_ops`, `runtime_properties`, `reliability`, `blender`,
+  `package:contents`, `node:verification`) passed in 192.7 s with 522
+  assertions and a package rebuild. The focused component suite alone is 0.76 s
+  and 82 assertions and constructs no app, runner or Git repository.
+- `--changed src/agent/pi_agent_controller.gd`: the seventeen-test selection
+  passed in 386.5 s with 2,687 assertions, versus 103 tests and 1,556.7 s for
+  the exhaustive pass.
 - `--check-only` parsed the base controller, Pi, all twelve native controllers
-  and the ten affected runners.
+  and the affected runners.
 - `--suite full` on this tree: 103 selected tests, 105 entries including the
   package build and Godot setup, 4,188 assertions passed, 0 failed, 1 skipped
   (the opt-in Command-code native CLI), 1,556.7 s at jobs=4. Evidence:
   `%TEMP%/gamesmith-verify-YTfCn5/results.json`. The tracked `.pck` was rebuilt
   by that run.
+
+Affected-run evidence: `%TEMP%/gamesmith-verify-gmiz4Y/results.json` (workspace
+operations) and `%TEMP%/gamesmith-verify-nGCUoS/results.json` (Pi transport).
 

@@ -34,7 +34,10 @@ export const INPUT_CONSUMERS = {
   // The file operations moved to WorkspaceOps: a facade edit now only reaches
   // the suites that call the facade, while the boundary has its own focused
   // suite and its own narrower consumer list.
-  'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
+  // Pi is no longer a parent controller, so its affected set is audited by
+  // behavior: every suite that instantiates it or drives the default app agent.
+  'src/agent/pi_agent_controller.gd': ['host:pi_controller','host:turn_recovery','host:reliability','host:test','host:harness','host:library_actions','host:reload_settings','host:ui_layout','host:blender','host:review_stop','host:chat_history','host:prompt_contract','host:bridge_claim','host:chat_test_process','host:maintenance','host:test_process','node:verification'],
+  'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:workspace_ops','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
   'src/core/workspace_ops.gd': ['host:workspace_ops','host:runtime_properties','host:reliability','host:blender','package:contents','node:verification'],
 };
 
@@ -120,9 +123,11 @@ export function selectTests(root,suite='full',changed=[]) {
       continue;
     }
     const consumers=harnesses.filter(h=>path.startsWith('tools/'+h.id+'/')||path===h.controller||h.modules.some(([,source])=>path==='tools/'+source));
-    // These controllers own inherited lifecycle behavior, not just one harness.
-    // Keep this explicit rather than guessing GDScript dependencies.
-    const inherited=['pi','command_code','opencode','cline'].some(id=>path==='src/agent/'+id+'_agent_controller.gd');
+    // Only controllers that other controllers extend escalate to the whole
+    // inventory: a change there reaches every subclass. Pi stopped being a
+    // parent when AgentControllerBase was extracted; its consumers are audited
+    // in INPUT_CONSUMERS instead.
+    const inherited=['command_code','opencode','cline'].some(id=>path==='src/agent/'+id+'_agent_controller.gd');
     // A changed shared module or inherited controller keeps every consumer. An
     // unmapped path is exhaustive: an unknown shared file can change behavior in
     // any harness, and a narrower guess would let SoftFac pass without running

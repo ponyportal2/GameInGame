@@ -5,6 +5,7 @@ extends SceneTree
 # git service, runner, supervisors or tool facade.
 
 const WorkspaceOpsScript = preload("res://src/core/workspace_ops.gd")
+const GameToolsScript = preload("res://src/core/game_tools.gd")
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 
 var failures = 0
@@ -23,6 +24,7 @@ func check_eq(actual, expected, label: String) -> void:
 
 func run() -> void:
     _test_boundary()
+    _test_facade()
     _test_large_file_read_and_patch_integrity()
     print("workspace ops: %d passed, %d failed" % [passed, failures])
     quit(1 if failures else 0)
@@ -109,6 +111,44 @@ func _test_boundary() -> void:
         check(false, "test fixture could create a directory link")
     meta._remove_tree_abs(ProjectSettings.globalize_path(root))
     meta._remove_tree_abs(ProjectSettings.globalize_path(outside))
+
+# The component suite above cannot catch a mistake in the facade's argument
+# forwarding, execute() dispatch or workspace rebinding, so one small scenario
+# drives the public tool methods over real files without an app or a game.
+func _test_facade() -> void:
+    var root = "user://games/tool-facade-test"
+    var rebound = "user://games/tool-facade-rebound"
+    var meta = MetadataStoreScript.new()
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    meta._remove_tree_abs(ProjectSettings.globalize_path(rebound))
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root))
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(rebound))
+    var tools = GameToolsScript.new(root)
+    check(bool(tools.execute("write_file", {"path": "notes.txt", "content": "one\ntwo\nthree\nfour\nfive\n"}).get("ok", false)), "facade dispatch writes through the public tool name")
+    var page = tools.execute("read_file", {"path": "notes.txt", "offset": 2, "limit": 2})
+    check_eq(int(page.get("line_start", 0)), 2, "facade read reports the requested offset")
+    check_eq(int(page.get("line_end", 0)), 3, "facade read respects the requested limit")
+    check(str(page.get("content", "")) == "two\nthree", "facade read returns only the requested lines")
+    check(bool(page.get("truncated", false)) and int(page.get("next_offset", 0)) == 4, "facade read reports the continuation offset")
+    check(bool(tools.execute("patch_file", {"path": "notes.txt", "old_text": "three", "new_text": "THREE"}).get("ok", false)), "facade patch edits the file")
+    check("THREE" in FileAccess.get_file_as_string(root.path_join("notes.txt")), "facade patch reached the filesystem")
+    check(not tools.execute("read_file", {"path": "../outside.txt"}).get("ok", true), "facade read rejects a path outside the workspace")
+    check(not tools.execute("write_file", {"path": ".git/config", "content": "x"}).get("ok", true), "facade write rejects reserved metadata")
+    check(bool(tools.execute("move_path", {"from": "notes.txt", "to": "moved/notes.txt"}).get("ok", false)), "facade move creates the destination directory")
+    check(not tools.execute("move_path", {"from": "moved/notes.txt", "to": "moved/notes.txt"}).get("ok", true), "facade move refuses an existing destination")
+    var listing = tools.execute("list_files", {})
+    check(bool(listing.get("ok", false)) and listing.get("files", []).has("moved/notes.txt"), "facade listing sees the moved file")
+    check(bool(tools.execute("search_text", {"query": "THREE"}).get("matches", []).any(func(m): return "moved/notes.txt" in str(m))), "facade search finds patched content")
+    check(bool(tools.execute("delete_path", {"path": "moved"}).get("ok", false)), "facade delete removes a directory")
+    check(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(root.path_join("moved"))), "facade delete reached the filesystem")
+    tools.workspace = rebound
+    check(tools.ops.workspace == rebound and tools.workspace == rebound, "rebinding the facade rebinds the file boundary")
+    check(bool(tools.execute("write_file", {"path": "rebound.txt", "content": "new root\n"}).get("ok", false)), "facade writes after rebinding")
+    check(FileAccess.file_exists(rebound.path_join("rebound.txt")), "rebound write lands in the new workspace")
+    check(not FileAccess.file_exists(root.path_join("rebound.txt")), "rebound write leaves the old workspace untouched")
+    check(str(tools.execute("read_file", {"path": "rebound.txt"}).get("content", "")) == "new root\n", "facade reads from the rebound workspace")
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    meta._remove_tree_abs(ProjectSettings.globalize_path(rebound))
 
 func _create_dir_link(link: String, target: String) -> bool:
     var abs_link = ProjectSettings.globalize_path(link)
