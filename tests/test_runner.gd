@@ -4,10 +4,8 @@ const PathUtilsScript = preload("res://src/core/path_utils.gd")
 const WorkspaceStoreScript = preload("res://src/core/workspace_store.gd")
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const GameRunnerScript = preload("res://src/core/game_runner.gd")
-const GameToolsScript = preload("res://src/core/game_tools.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
 const PiProviderCatalogScript = preload("res://src/pi/pi_provider_catalog.gd")
-const PiAgentControllerScript = preload("res://src/agent/pi_agent_controller.gd")
 const ThemeFactoryScript = preload("res://src/ui/theme_factory.gd")
 const AppLoggerScript = preload("res://src/core/app_logger.gd")
 const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd")
@@ -94,8 +92,6 @@ func run() -> void:
     await _test_paths()
     await _test_workspace_and_git()
     await _test_rename_metadata_and_snapshot()
-    await _test_tool_boundary()
-    await _test_large_file_read_and_patch_integrity()
     await _test_runner_multifile_and_failed_candidate()
     await _test_app_identity_settings_and_compact_ui()
     _set_test_llm_call_delay(0.0)
@@ -109,8 +105,6 @@ func run() -> void:
     await _test_legacy_user_data_migration()
     await _test_debug_logs_and_redaction()
     await _test_provider_settings_surface()
-    await _test_pi_request_has_no_host_deadline_or_fake_completion()
-    await _test_stale_pi_settlement_does_not_finish_next_request()
     print("TESTS: %d passed, %d failed" % [passed, failures])
     quit(0 if failures == 0 else 1)
 
@@ -167,135 +161,6 @@ func _test_rename_metadata_and_snapshot() -> void:
     assert_true(FileAccess.file_exists(store.metadata.snapshot_dir(new_name).path_join("main.gd")), "working snapshot migrates with metadata")
     assert_true(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(store.metadata.game_meta_dir(old_name))), "old metadata key is removed")
     store.delete_game(new_name)
-
-func _test_tool_boundary() -> void:
-    var root = "user://games/tool-boundary-test"
-    var outside = "user://games/tool-boundary-outside"
-    var meta = MetadataStoreScript.new()
-    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
-    meta._remove_tree_abs(ProjectSettings.globalize_path(outside))
-    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root))
-    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(outside))
-    var tools = GameToolsScript.new()
-    tools.workspace = root
-    assert_true(not tools.read_file("../host/credentials.json").ok, "tool cannot escape workspace")
-    assert_true(tools.write_file("main.gd", "extends Node\n").ok, "tool writes inside workspace")
-    assert_true(tools.write_file("keep.txt", "keep\n").ok, "tool writes a second workspace file")
-    if OS.get_name() == "Windows":
-        assert_true(tools.write_file("locked/held.txt", "x").ok, "tool writes a file to hold open")
-        var held = FileAccess.open(ProjectSettings.globalize_path(root.path_join("locked/held.txt")), FileAccess.READ)
-        assert_true(held != null, "recursive delete regression holds the file open")
-        var refused_delete = tools.delete_path("locked")
-        assert_true(not refused_delete.ok and str(refused_delete.get("error", "")).contains("Delete failed ("), "a failed recursive delete reports its error code")
-        assert_true(str(refused_delete.get("error", "")).contains("retry"), "a failed recursive delete explains recovery")
-        if held != null:
-            held.close()
-        assert_true(tools.delete_path("locked").ok, "the same delete succeeds once the file is released")
-    assert_true(not tools.move_path("main.gd", "keep.txt").ok, "move refuses an existing destination")
-    assert_true(FileAccess.get_file_as_string(root.path_join("keep.txt")) == "keep\n", "a refused move keeps the destination intact")
-    assert_true(FileAccess.file_exists(root.path_join("main.gd")), "a refused move keeps the source")
-    assert_true(not tools.move_path("missing.gd", "moved.gd").ok, "move refuses a missing source")
-    assert_true(tools.move_path("main.gd", "sub/moved.gd").ok, "move creates the destination directory")
-    assert_true(tools.write_file("main.gd", "extends Node\n").ok, "tool restores the workspace entry point")
-    assert_true(not tools.write_file(".git/config", "x").ok, "tool cannot write reserved .git metadata")
-    assert_true(not tools.patch_file(".git/config", "a", "b").ok, "tool cannot patch reserved .git metadata")
-    assert_true(not tools.delete_path(".git").ok, "tool cannot delete reserved .git metadata")
-    assert_true(not tools.move_path("main.gd", ".git/main.gd").ok, "tool cannot move into reserved .git metadata")
-    if OS.get_name() == "Windows":
-        # Windows opens these as devices and strips trailing dots/spaces, so they
-        # would reach outside the workspace or block on the console.
-        for device_name in ["CON", "nul.txt", "aux.gd", "assets/CON.gd", "notes./main.gd", "notes /main.gd"]:
-            assert_true(PathUtils.safe_relative_path(device_name) == "", "path guard rejects " + device_name)
-        assert_true(PathUtils.safe_relative_path("assets/main.gd") == "assets/main.gd", "path guard keeps ordinary nested paths")
-        assert_true(not tools.read_file("CON").ok, "read rejects a Windows device name")
-        assert_true(not tools.write_file("nul.txt", "x").ok, "write rejects a Windows device name")
-        assert_true(not tools.write_file("assets/aux.gd", "x").ok, "write rejects a device name in a subdirectory")
-        assert_true(not tools.write_file("notes./main.gd", "x").ok, "write rejects a segment with a trailing dot")
-        assert_true(not tools.write_file("notes /main.gd", "x").ok, "write rejects a segment with a trailing space")
-    _write_abs(ProjectSettings.globalize_path(outside.path_join("keep.txt")), "keep")
-    var link = root.path_join("escape")
-    if _create_dir_link(link, outside):
-        assert_true(not tools.read_file("escape/keep.txt").ok, "read rejects a path through a workspace link")
-        assert_true(not tools.write_file("escape/new.txt", "x").ok, "write rejects a path through a workspace link")
-        assert_true(not tools.delete_path("escape/keep.txt").ok, "delete rejects a path through a workspace link")
-        assert_true(not tools.delete_path("escape").ok, "delete rejects the workspace link itself")
-        assert_true(not tools.move_path("escape/keep.txt", "moved.txt").ok, "move rejects a source through a workspace link")
-        assert_true(not tools.move_path("main.gd", "escape/main.gd").ok, "move rejects a destination through a workspace link")
-        assert_true(not tools.list_files("escape").ok, "listing a linked directory is rejected")
-        assert_true(not tools.search_text("keep").get("matches", []).any(func(m): return "escape/" in str(m)), "search does not read through a link")
-        assert_true(FileAccess.file_exists(outside.path_join("keep.txt")), "linked outside file survives rejected tools")
-        assert_true(not FileAccess.file_exists(outside.path_join("new.txt")), "write through a link creates nothing outside")
-        assert_true(not FileAccess.file_exists(outside.path_join("moved.txt")), "move through a link moves nothing outside")
-        var listing = tools.list_files()
-        assert_true(listing.ok and not listing.files.any(func(f): return str(f).begins_with("escape/")), "listing omits linked content")
-        var container = root.path_join("delete-me")
-        DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(container))
-        var nested_link = container.path_join("escape")
-        var nested_link_created = _create_dir_link(nested_link, outside)
-        assert_true(nested_link_created, "recursive delete fixture creates a nested directory link")
-        if nested_link_created:
-            assert_true(tools.delete_path("delete-me").ok, "public delete removes a normal directory containing a link")
-            assert_true(FileAccess.file_exists(outside.path_join("keep.txt")), "public recursive delete preserves the outside sentinel")
-            assert_true(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(container)), "public recursive delete removes its containing directory")
-        # A link may be removed without following it into foreign content.
-        var cleanup = "user://games/tool-boundary-cleanup"
-        DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(cleanup))
-        var linked_cleanup = cleanup.path_join("link")
-        if _create_dir_link(linked_cleanup, outside):
-            assert_true(meta._remove_tree_abs(ProjectSettings.globalize_path(cleanup)) == OK, "tree removal accepts a link entry")
-            assert_true(FileAccess.file_exists(outside.path_join("keep.txt")), "tree removal never follows the link")
-            assert_true(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(cleanup)), "tree removal deletes the containing directory")
-        DirAccess.remove_absolute(ProjectSettings.globalize_path(link))
-    else:
-        assert_true(false, "test fixture could create a directory link")
-    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
-    meta._remove_tree_abs(ProjectSettings.globalize_path(outside))
-
-func _create_dir_link(link: String, target: String) -> bool:
-    var abs_link = ProjectSettings.globalize_path(link)
-    var abs_target = ProjectSettings.globalize_path(target)
-    var output: Array = []
-    if OS.get_name() == "Windows":
-        return OS.execute("cmd", ["/c", "mklink", "/J", abs_link.replace("/", "\\"), abs_target.replace("/", "\\")], output, true) == 0
-    return OS.execute("ln", ["-s", abs_target, abs_link], output, true) == 0
-
-func _test_large_file_read_and_patch_integrity() -> void:
-    var root_dir = "user://games/large-file-tool-test"
-    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root_dir))
-    var tools = GameToolsScript.new(root_dir)
-    var large = ""
-    for i in 800:
-        if i == 10:
-            large += "var TARGET_TOKEN = 1\n"
-        else:
-            large += "line_%04d = \"%s\"\n" % [i, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
-    large += "TAIL_SENTINEL\n"
-    _write(root_dir.path_join("large.gd"), large)
-    assert_true(large.to_utf8_buffer().size() > 30000, "large-file regression fixture exceeds old 30 KB read cap")
-
-    var head = tools.execute("read_file", {"path": "large.gd", "offset": 1, "limit": 25})
-    assert_true(bool(head.get("ok", false)), "chunked read succeeds")
-    assert_true(bool(head.get("truncated", false)), "chunked read explicitly reports that more file content exists")
-    assert_eq(int(head.get("line_start", 0)), 1, "chunked read reports first returned line")
-    assert_eq(int(head.get("line_end", 0)), 25, "chunked read respects requested line limit")
-    assert_eq(int(head.get("next_offset", 0)), 26, "chunked read exposes continuation offset")
-
-    var tail = tools.execute("read_file", {"path": "large.gd", "offset": 790, "limit": 30})
-    assert_true("TAIL_SENTINEL" in str(tail.get("content", "")), "chunked read can retrieve the tail of a large file")
-
-    var before = FileAccess.get_file_as_string(root_dir.path_join("large.gd"))
-    var patched = tools.patch_file("large.gd", "var TARGET_TOKEN = 1", "var TARGET_TOKEN = 2")
-    var after = FileAccess.get_file_as_string(root_dir.path_join("large.gd"))
-    assert_true(bool(patched.get("ok", false)), "patch_file accepts an exact unique edit in a large file")
-    assert_true("var TARGET_TOKEN = 2" in after, "patch_file applies requested edit")
-    assert_true("TAIL_SENTINEL" in after, "patch_file preserves content beyond the read preview window")
-    assert_eq(after.length(), before.length(), "equal-length patch preserves the complete file length")
-    assert_eq(int(patched.get("bytes_before", -1)), before.to_utf8_buffer().size(), "patch result reports original full-file size")
-    assert_eq(int(patched.get("bytes_after", -1)), after.to_utf8_buffer().size(), "patch result reports resulting full-file size")
-
-    var meta = MetadataStoreScript.new()
-    meta._remove_tree_abs(ProjectSettings.globalize_path(root_dir))
-
 
 func _test_runner_multifile_and_failed_candidate() -> void:
     var dir = "user://games/runtime-test"
@@ -702,27 +567,5 @@ func _test_provider_settings_surface() -> void:
     assert_true(settings.has("custom_base_url"), "global settings include custom /v1 base address")
     assert_true(settings.has("reasoning_effort"), "global settings include Pi reasoning effort")
     assert_true(settings.has("llm_call_delay_sec"), "global settings include configurable delay between Pi provider calls")
-func _test_pi_request_has_no_host_deadline_or_fake_completion() -> void:
-    var source = FileAccess.get_file_as_string("res://src/agent/pi_agent_controller.gd")
-    assert_true(not "20 * 60 * 1000" in source and not "20 minute host deadline" in source, "Pi requests have no arbitrary host wall-clock deadline")
-    assert_true(not 'final_text = "Done."' in source, "GameSmith never invents a fake assistant completion message")
-    var rpc_source = FileAccess.get_file_as_string("res://src/pi/pi_rpc_session.gd")
-    assert_true(not "timeout_sec" in rpc_source and not "Timed out waiting for Pi RPC response" in rpc_source, "Pi RPC commands wait for a response or process exit instead of an artificial timeout")
-    var extension_source = FileAccess.get_file_as_string("res://tools/pi/gamesmith-extension.ts")
-    assert_true(not "Timed out waiting for GameSmith host tool" in extension_source and not "Date.now() + 60_000" in extension_source, "GameSmith Pi host tools wait for completion or abort instead of an artificial timeout")
-
-func _test_stale_pi_settlement_does_not_finish_next_request() -> void:
-    var agent = PiAgentControllerScript.new()
-    root.add_child(agent)
-    agent.busy = true
-    agent.turn_count = 0
-    agent._on_pi_record({"type": "agent_settled"})
-    assert_true(not agent.has_meta("_pi_settled"), "settlement from a previous aborted run cannot settle a new request before its first Pi turn")
-    agent._on_pi_record({"type": "turn_start"})
-    agent._on_pi_record({"type": "agent_settled"})
-    assert_true(agent.has_meta("_pi_settled"), "settlement is accepted after the current request has actually started a Pi turn")
-    agent.queue_free()
-    await process_frame
-
 func _write(path: String, content: String) -> void:
     var f = FileAccess.open(path, FileAccess.WRITE); f.store_string(content); f.close()

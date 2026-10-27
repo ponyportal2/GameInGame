@@ -159,3 +159,54 @@ pass SoftFac without the harness that depends on it. Untracked files are still
 inputs: a local scratch file must be ignored (it lives in `.git/info/exclude`
 here) or moved out of the repository, rather than making unknown code cheaper.
 
+## 2026-10-28: per-harness recovery, controller base, workspace operations
+
+Three boundaries were separated without changing behavior. Evidence is one
+focused run per boundary plus a single exhaustive pass over the completed set;
+the exhaustive pass is the only run that executes every scenario.
+
+- **Recovery scenarios.** `native_recovery_runner.gd` keeps one shared
+  implementation and takes the harness as `-- <id>`. `allTests()` registers
+  thirteen `host:native_recovery_<harness>` entries that share the file, and the
+  affected selector collects every entry for a shared source instead of only the
+  first. `verify.mjs` forwards an entry's arguments to the runner. A harness
+  suite now runs one scenario (13.6 s for Copilot), while
+  `--changed tests/native_recovery_runner.gd` still selects all thirteen.
+- **Controllers.** `AgentControllerBase` owns the signals, host bridge, recovery
+  loop, editor guard and shared state; `PiAgentController` keeps only the Pi
+  transport. The twelve native controllers call `game_prompt.gd` directly
+  instead of obtaining the prompt through the Pi config. Pi request completion
+  and stale settlement moved to `host:pi_controller`; `host:turn_recovery`
+  became a shared harness test because it now drives inherited behavior.
+- **Workspace operations.** `WorkspaceOps` owns list/read/search/write/patch/
+  move/delete plus the containment, link and `.git` rules. `GameTools` keeps a
+  settable `workspace` that forwards to it, so renaming a game rebinds the
+  boundary through the existing assignment and the facade stays the call site
+  for controllers and fixtures. `host:workspace_ops` holds the boundary,
+  junction and large-file tests; `host:test` left the `game_tools.gd` consumer
+  list because the moved tests were its only use of the facade. Suites that
+  write fixtures through the facade without asserting on the boundary
+  (`blender_integration`, `pi_integration`) gain nothing from a narrower
+  selection and still run in `full`, `all` and `release`.
+
+Selections after the batch: `core` 49, `full`/`all` 103, `host` 61,
+`node` 39, `release` 106, `pi` 10, `copilot` 7. A change to
+`workspace_ops.gd` selects six tests; a change to `game_tools.gd` selects
+twelve.
+
+- Selector regressions: `node --test tests/verification.test.mjs` 11/11 (6.4 s).
+- `--test host:turn_recovery,host:pi_controller`: 3 passed, 7.8 s.
+- `--test host:test,host:copilot_lifecycle,host:command_code_compaction`:
+  4 passed, 88.4 s.
+- `--test host:blender`: 2 passed, 35.6 s.
+- `--test host:workspace_ops,host:test,host:reliability`: 4 entries passed in
+  115.2 s, with 62, 116 and 99 assertions respectively. The focused suite costs
+  0.48 s and no longer constructs an app, runner or Git repository.
+- `--check-only` parsed the base controller, Pi, all twelve native controllers
+  and the ten affected runners.
+- `--suite full` on this tree: 103 selected tests, 105 entries including the
+  package build and Godot setup, 4,188 assertions passed, 0 failed, 1 skipped
+  (the opt-in Command-code native CLI), 1,556.7 s at jobs=4. Evidence:
+  `%TEMP%/gamesmith-verify-YTfCn5/results.json`. The tracked `.pck` was rebuilt
+  by that run.
+

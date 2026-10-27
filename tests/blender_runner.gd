@@ -88,7 +88,7 @@ func run() -> void:
         var controller_path = "res://src/agent/" + harness + "_agent_controller.gd"
         if FileAccess.file_exists(controller_path):
             var source = FileAccess.get_file_as_string(controller_path)
-            check("_game_prompt(" in source or harness in ["pi", "kilo"], harness + " uses the common Blender instructions")
+            check("_game_prompt(" in source or "GamePromptScript.build(" in source or harness in ["pi", "kilo"], harness + " uses the common Blender instructions")
         else:
             # Exported scripts are compiled resources, not source text. The
             # behavioral bridge/approval checks below still run for all harnesses.

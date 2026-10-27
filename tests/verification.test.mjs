@@ -44,7 +44,8 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly']);
  check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification']);
  check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:game_assets','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
- check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
+ check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
+ check(['src/core/workspace_ops.gd'],['host:workspace_ops','host:runtime_properties','host:reliability','host:blender','package:contents','node:verification']);
  check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
  // An unmapped path is exhaustive, never zero and never a guess: an unknown
  // shared file can change behavior in any harness, so narrowing it would let a
@@ -144,6 +145,12 @@ test('harness coverage defaults to Pi and expands only on an explicit all reques
  assert.equal(host.size,[...full].filter(id=>id.startsWith('host:')).length,'host must be every host test');
  assert.equal(node.size,[...full].filter(id=>id.startsWith('node:')).length,'node must be every node test');
  assert(ids('copilot').has('host:copilot_lifecycle'),'explicit harness selection still works');
+ // The recovery runner is shared but registers one entry per harness: an
+ // explicit suite runs only its own scenario, while an edit to the shared
+ // source still selects every scenario.
+ assert.deepEqual(selectTests(root,'copilot').filter(t=>t.id.startsWith('host:native_recovery')).map(t=>t.id),['host:native_recovery_copilot']);
+ assert.equal(selectTests(root,'affected',['tests/native_recovery_runner.gd']).filter(t=>t.id.startsWith('host:native_recovery')).length,13);
+ assert.deepEqual(resolveTest(root,'host:native_recovery_copilot').args,['copilot']);
  assert(ids('release').has('host:copilot_lifecycle'),'release remains the comprehensive gate');
  assert([...full].some(id=>!core.has(id)));
 });

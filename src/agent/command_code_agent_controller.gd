@@ -1,6 +1,7 @@
-extends "res://src/agent/pi_agent_controller.gd"
+extends "res://src/agent/agent_controller_base.gd"
 
 const HarnessInventory = preload("res://src/agent/harness_inventory.gd")
+const GamePromptScript = preload("res://src/agent/game_prompt.gd")
 
 const CommandSession = preload("res://src/agent/command_code_session.gd")
 
@@ -209,5 +210,5 @@ func start_new_session() -> Dictionary:
     return {"ok": true, "archive": archive}
 
 func _native_prompt() -> String:
-    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
+    var prompt = GamePromptScript.build(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "Command-code's read_file/edit_file/write_file/grep/glob/read_directory").replace("Pi's", "Command-code's").replace("Pi process", "Command-code process")
     return prompt

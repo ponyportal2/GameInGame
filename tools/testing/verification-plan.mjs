@@ -1,14 +1,19 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const HOST_SCRIPTS = ['test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','image_generation','turn_recovery','native_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','kilo_stop','agent_shutdown','harness_assembly'];
+export const HOST_SCRIPTS = ['test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','workspace_ops','image_generation','turn_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','kilo_stop','agent_shutdown','harness_assembly','pi_controller'];
 
 export function inventory(root) {
   return JSON.parse(readFileSync(resolve(root,'tools/agent/harnesses.json'),'utf8')).harnesses;
 }
+// One recovery scenario per non-Pi harness. The runner keeps the scenario
+// implementation shared and takes the harness as an argument, so a change that
+// only concerns one harness no longer executes the other twelve.
+export const RECOVERY_HARNESSES = ['command-code','opencode','codex','cline','cursor','grok-build','agy','kimi','kiro','kilo','copilot','crush','omp'];
 export function allTests(root) {
   const node = readdirSync(resolve(root,'tests')).filter(f=>f.endsWith('.test.mjs')).sort().map(file=>({id:'node:'+file.replace('.test.mjs',''),phase:'node',file:'tests/'+file}));
-  return [...node,...HOST_SCRIPTS.map(name=>({id:'host:'+name,phase:'host',file:'tests/'+name+'_runner.gd'})),
+  const recovery = RECOVERY_HARNESSES.map(h=>({id:'host:native_recovery_'+h.replaceAll('-','_'),phase:'host',file:'tests/native_recovery_runner.gd',args:[h],owner:h}));
+  return [...node,...recovery,...HOST_SCRIPTS.map(name=>({id:'host:'+name,phase:'host',file:'tests/'+name+'_runner.gd'})),
     {id:'package:structure',phase:'package',file:'tools/testing/verify_windows_package.py'},
     {id:'package:contents',phase:'package',file:'tests/package_contents_runner.gd'},
     {id:'launcher:unit',phase:'launcher',file:'tools/windows-bootstrap'}];
@@ -26,7 +31,11 @@ export const INPUT_CONSUMERS = {
   // excluded; they still run in `full` and `release`. A new suite that asserts
   // on this behavior must be added here or it silently loses affected coverage.
   'src/core/game_runner.gd': ['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:game_assets','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','host:library_actions','package:contents','host:harness_assembly','node:verification'],
-  'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
+  // The file operations moved to WorkspaceOps: a facade edit now only reaches
+  // the suites that call the facade, while the boundary has its own focused
+  // suite and its own narrower consumer list.
+  'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
+  'src/core/workspace_ops.gd': ['host:workspace_ops','host:runtime_properties','host:reliability','host:blender','package:contents','node:verification'],
 };
 
 // The reference harness stays in every broad run. The other thirteen suites
@@ -34,9 +43,14 @@ export const INPUT_CONSUMERS = {
 // phase suites stay exhaustive, and an affected change that names a harness
 // still selects that harness.
 export const REFERENCE_HARNESS = 'pi';
-const SHARED_HARNESS_TESTS = new Set(['host:harness','host:harness_assembly','host:native_recovery']);
+// The recovery loop lives in AgentControllerBase, so its runner exercises
+// inherited behavior for every harness, not just the reference one.
+const SHARED_HARNESS_TESTS = new Set(['host:harness','host:harness_assembly','host:turn_recovery']);
 function defaultSurface(tests,harnesses) {
   return tests.filter(t=>{
+    // A registered entry may name its harness directly; a shared runner file is
+    // owned by every harness that lists it.
+    if(t.owner)return t.owner===REFERENCE_HARNESS;
     const owners=harnesses.filter(h=>h.node_suites.includes(t.file)||h.host_runners.includes(t.file));
     return !owners.length||owners.some(h=>h.id===REFERENCE_HARNESS);
   });
@@ -89,16 +103,18 @@ export function selectTests(root,suite='full',changed=[]) {
   if(suite==='acceptance')return RELEASE_TESTS;
   if(suite==='smoke')return tests.filter(t=>['node:verification','host:harness_assembly','host:test','host:library_actions'].includes(t.id));
   const harness=harnesses.find(h=>h.id===suite);
-  if(harness)return tests.filter(t=>harness.node_suites.includes(t.file)||harness.host_runners.includes(t.file)||SHARED_HARNESS_TESTS.has(t.id));
+  if(harness)return tests.filter(t=>t.owner===harness.id||(!t.owner&&(harness.node_suites.includes(t.file)||harness.host_runners.includes(t.file)))||SHARED_HARNESS_TESTS.has(t.id));
   if(suite!=='affected')throw new Error('Unknown suite: '+suite);
   const selected=new Map();
   for(const path of changed){
     if(/\.(md|png|jpg|zip)$/.test(path)&&!path.startsWith('tools/blender/'))continue;
     const source=path.endsWith('.gd.uid')?path.slice(0,-4):path;
-    const ownTest=tests.find(t=>t.file===source);
+    // A shared runner file can register several entries (the recovery scenarios
+    // do); a change to that source selects every entry, not just the first.
+    const ownTests=tests.filter(t=>t.file===source);
     const explicit=INPUT_CONSUMERS[source];
-    if(ownTest||explicit){
-      const ids=ownTest?[ownTest.id,'node:verification']:explicit;
+    if(ownTests.length||explicit){
+      const ids=ownTests.length?[...ownTests.map(t=>t.id),'node:verification']:explicit;
       // Missing catalog entries are a configuration error, never a quiet omission.
       for(const id of ids){const test=tests.find(t=>t.id===id);if(!test)throw new Error('Missing affected consumer: '+id);selected.set(id,test);}
       continue;

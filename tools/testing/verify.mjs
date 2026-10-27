@@ -128,7 +128,10 @@ export async function runVerification(options,root=ROOT){
           // Real CLI login remains native-owned; fixture suites stay isolated.
           if(options.live){const {liveEnvironment}=await import('./verification-live.mjs');Object.assign(env,liveEnvironment(options.live,process.env));}
           const args=test.id==='package:contents'?['--main-pack',join(root,'GameSmith-Windows/GameSmith.pck')]:['--path',root];
-          await run(test,godot,['--headless',...args,'--log-file',join(data,'engine.log'),'--script','res://'+test.file],env,test.id==='package:contents'?data:root);
+          // A shared runner can register several entries; the entry's arguments
+          // name the scenario, so the runner executes only the selected one.
+          const scenario=test.args?.length?['--',...test.args]:[];
+          await run(test,godot,['--headless',...args,'--log-file',join(data,'engine.log'),'--script','res://'+test.file,...scenario],env,test.id==='package:contents'?data:root);
         },()=>interrupted);
       }else for(const test of host){result.tests.push({id:test.id,status:'blocked',reason:'Godot import failed'});progress.completed++;}
     }

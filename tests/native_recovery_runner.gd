@@ -1,5 +1,8 @@
 extends SceneTree
 
+# Canonical scenario order. Entries are selected by harness id, not by position.
+const HARNESSES = ["command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]
+
 var failures := 0
 func _init() -> void: call_deferred("run")
 func check(value: bool, label: String) -> void:
@@ -11,7 +14,15 @@ func idle(agent) -> void:
     check(not agent.busy, "native request settles")
 func run() -> void:
     # Every executable is a protocol fixture. No provider/model is invoked.
-    var harnesses = ["command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]
+    # A registered entry names one harness, so a change that concerns a single
+    # provider does not pay for the other twelve. Without an argument the legacy
+    # host entrypoint still exercises every scenario in this process.
+    var requested := OS.get_cmdline_user_args()
+    if requested.size() > 1 or (requested.size() == 1 and not HARNESSES.has(requested[0])):
+        push_error("Usage: native_recovery_runner.gd [-- <harness>]")
+        quit(1)
+        return
+    var harnesses = HARNESSES if requested.is_empty() else [requested[0]]
     for index in harnesses.size():
         var harness: String = harnesses[index]
         var env_name = "GAMESMITH_" + harness.replace("-", "_").to_upper() + "_BIN"
@@ -21,7 +32,16 @@ func run() -> void:
         root.add_child(app)
         await process_frame
         app.name_edit.text = "Recovery " + harness
-        app.harness_option.select(index + 1)
+        var option := -1
+        for item in app.harness_option.item_count:
+            if str(app.harness_option.get_item_metadata(item)) == harness: option = item
+        if option < 0:
+            push_error("Unknown harness in the new-game selector: " + harness)
+            failures += 1
+            app.queue_free()
+            await process_frame
+            continue
+        app.harness_option.select(option)
         app._create_game()
         # Exercise real IPC/retirement/resume while avoiding 8 seconds per fixture.
         app.agent.recovery_delays = [0.02, 0.02, 0.02, 0.02]

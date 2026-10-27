@@ -52,7 +52,8 @@
       "host_runners": [
         "tests/turn_recovery_runner.gd",
         "tests/reliability_runner.gd",
-        "tests/diagnostics_runner.gd"
+        "tests/diagnostics_runner.gd",
+        "tests/pi_controller_runner.gd"
       ]
     },
     {

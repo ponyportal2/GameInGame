@@ -123,7 +123,7 @@ func _native_directory_name() -> String:
 
 
 func _native_prompt() -> String:
-    var prompt = PiRuntimeConfigScript._game_prompt(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "gamesmith__read/edit/write/search/list").replace("Pi's", "Cline's").replace("Pi process", "Cline process")
+    var prompt = GamePromptScript.build(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", "gamesmith__read/edit/write/search/list").replace("Pi's", "Cline's").replace("Pi process", "Cline process")
     prompt += "\nAll GameSmith tools are MCP tools named gamesmith__<command>, including gamesmith__start_test_game, gamesmith__reload_game, and gamesmith__git_commit. Use gamesmith__read with 1-based offset/limit, gamesmith__edit with path/old_text/new_text, gamesmith__write with path/content, gamesmith__search with a literal pattern, and gamesmith__list for files. Native shell, delegation and native filesystem tools are denied; use only the GameSmith tools. Model, reasoning and compaction are managed by your Cline configuration.\n"
     prompt += "GameSmith file paths must be relative to the game workspace (for example main.gd), never absolute paths. For a headless startup check, read_test_log reporting state=running and load_result.ok=true means startup succeeded; latest_outcome=accepted also confirms acceptance. The test keeps running until you stop it: do not wait for it to finish by itself or repeatedly poll identical logs. Once your checks pass, call stop_test_game with its run_id, then use reload_game if a full reload is needed. A successful live parameter patch with set_properties needs no reload.\n"
     return prompt
