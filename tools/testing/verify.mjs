@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectTests, resolveTest, runHostTests } from './verification-plan.mjs';
-import { atomicJson, assertionCounts, digest, failureExcerpt, fingerprint, git, reusedTests } from './verification-evidence.mjs';
+import { atomicJson, assertionCounts, digest, failureExcerpt, fatalScriptError, fingerprint, git, reusedTests } from './verification-evidence.mjs';
 import { killProcessTree } from '../agent/process-tree.mjs';
 
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
@@ -75,19 +75,24 @@ export async function runVerification(options,root=ROOT){
   const run=async(test,bin,args,env={},cwd=root)=>{
     if(interrupted)return;
     const time=Date.now(),log=join(directory,test.id.replaceAll(':','-')+'.log');
-    const stream=createWriteStream(log);let text='',error='',timedOut=false;
+    const stream=createWriteStream(log);let text='',error='',timedOut=false,crashed=false;
     if(!result.selection.includes(test.id))progress.total++;
     progress.running.push(test.id);progress.last_progress_at=new Date().toISOString();persist();
     const childEnv={...process.env,GODOT_BIN:godot,...env};delete childEnv.NODE_TEST_CONTEXT;
     const child=spawn(bin,args,{cwd,env:childEnv,windowsHide:true,stdio:['ignore','pipe','pipe']});children.add(child);
-    const consume=chunk=>{stream.write(chunk);text+=chunk.toString();if(options.output==='full')process.stdout.write(chunk);};
+    // A Godot script error inside the host project aborts the runner coroutine,
+    // so quit() can never run and the deadline would wait out the full timeout.
+    // Generated candidates under user:// are expected to fail parsing; only the
+    // runner or the core code it drives is fatal.
+    const consume=chunk=>{stream.write(chunk);text+=chunk.toString();if(options.output==='full')process.stdout.write(chunk);
+      if(!crashed&&test.file?.endsWith('.gd')&&fatalScriptError(text.slice(-8192))){crashed=true;error='Godot script error aborted the test runner';child.pid&&killProcessTree(child.pid);}};
     child.stdout.on('data',consume);child.stderr.on('data',consume);
     child.once('error',e=>{error=e.message;consume(Buffer.from('\n'+error+'\n'));});
     const timer=setTimeout(()=>{timedOut=true;error='Test deadline exceeded';child.pid&&killProcessTree(child.pid);},options.timeout);
     const stall=setInterval(()=>console.log('Still running: '+test.id+'; progress: '+join(directory,'progress.json')),options.stall);
     const code=await new Promise(resolve=>child.once('close',resolve));clearTimeout(timer);clearInterval(stall);children.delete(child);
     await new Promise(resolve=>stream.end(resolve));
-    const entry={id:test.id,status:interrupted?'interrupted':code===0&&!timedOut?'passed':'failed',exit_code:code,duration_ms:Date.now()-time,assertions:assertionCounts(text,test.phase),log};
+    const entry={id:test.id,status:interrupted?'interrupted':code===0&&!timedOut&&!crashed?'passed':'failed',exit_code:code,duration_ms:Date.now()-time,assertions:assertionCounts(text,test.phase),log};
     if(entry.status!=='passed'){
       const excerpt=failureExcerpt(text);const diagnostic=join(directory,test.id.replaceAll(':','-')+'.diagnostic.json');
       atomicJson(diagnostic,{...excerpt,error:error||null,exit_code:code});entry.diagnostics=[{file:diagnostic,log,start_line:excerpt.start_line,end_line:excerpt.end_line}];
@@ -145,6 +150,6 @@ export async function runVerification(options,root=ROOT){
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|smoke|full|release|acceptance|node|host|package|launcher|<harness> --output summary|errors|full [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--test id,id] [--build-package] [--live harness]');else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
+  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|smoke|full|all|release|acceptance|node|host|package|launcher|<harness> --output summary|errors|full [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--test id,id] [--build-package] [--live harness]');else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
   catch(error){console.error(error.message);process.exitCode=2;}
 }

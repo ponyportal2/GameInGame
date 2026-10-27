@@ -30,6 +30,12 @@ export function assertionCounts(text,phase){
   // failed host run would report zero failed assertions.
   return {passed:(text.match(/^PASS:/gm)||[]).length,failed:(text.match(/^(?:ERROR: )?FAIL:/gm)||[]).length};
 }
+// Godot prints a script error with the innermost frame on the next line. Only a
+// frame inside the host project proves the runner (or the code it drives) died
+// before quit(); several suites deliberately write broken GDScript under user://.
+export function fatalScriptError(text){
+  return /SCRIPT ERROR:[^\n]*\r?\n\s*at: [^(]*\(res:\/\/(?:src|tests)\//.test(text);
+}
 export function failureExcerpt(text,maxLines=24){
   const lines=text.split(/\r?\n/);const at=lines.findIndex(l=>/^not ok\b|^(?:ERROR: )?FAIL:|AssertionError|Traceback|^Error:/.test(l));
   const start=at<0?Math.max(0,lines.length-maxLines):Math.max(0,at-2);

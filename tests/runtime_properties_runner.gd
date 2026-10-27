@@ -25,7 +25,12 @@ func run() -> void:
     tools.write_file("main.gd", "extends Node2D\nconst Enemy = preload('enemy.gd')\nfunc _ready():\n    for i in range(50):\n        var enemy = Enemy.new()\n        enemy.name = 'Enemy%d' % i\n        add_child(enemy)\n        enemy.add_to_group('enemies')\n")
     tools.patch_file("enemy.gd", "var speed: float = 80.0", "var speed = 80.0")
     tools.write_file("getter.gd", "extends Node\nvar dangerous: float:\n    get:\n        queue_free()\n        return 1.0\n")
-    check((await tools.wait_reload(tools.reload_game())).ok, "fixture loaded through production loader")
+    var loaded = await tools.wait_reload(tools.reload_game())
+    check(loaded.ok, "fixture loaded through production loader")
+    if not loaded.ok or runner.active_game == null:
+        runner.queue_free()
+        quit(1)
+        return
     var game = runner.active_game
     var budget_handles = tools.execute("inspect_runtime", {"group": "enemies", "properties": ["title"]}).nodes.map(func(entry): return entry.handle)
     var rejected_batch = tools.execute("set_properties", {"targets": budget_handles, "values": {"title": "new"}})

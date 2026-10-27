@@ -76,7 +76,14 @@ func finish(code: int) -> void:
     # Execute generated cleanup before closing diagnostics.
     runner.free()
     watchdog.close()
-    JsonStore.write_dict(config.control_dir.path_join("status.json"), status)
+    var status_path: String = config.control_dir.path_join("status.json")
+    if not JsonStore.write_dict(status_path, status):
+        # The final status is the only proof of a graceful stop. Never quit
+        # without publishing it when the atomic replacement stayed blocked.
+        var file = FileAccess.open(status_path, FileAccess.WRITE)
+        if file != null:
+            file.store_string(JSON.stringify(status, "  "))
+            file.close()
     quit(code)
 
 func _finalize() -> void:

@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {parseArgs,runVerification} from '../tools/testing/verify.mjs';
-import {fingerprint,reusedTests,assertionCounts,failureExcerpt} from '../tools/testing/verification-evidence.mjs';
+import {fingerprint,reusedTests,assertionCounts,failureExcerpt,fatalScriptError} from '../tools/testing/verification-evidence.mjs';
 import {selectTests,inventory,resolveTest} from '../tools/testing/verification-plan.mjs';
 import {generatedLauncher,exportFilter} from '../tools/testing/generate-harness-inventory.mjs';
 import {atomicSaveSession,failureRecord} from '../tools/agent/session-state.mjs';
@@ -43,6 +43,8 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  check(['tests/package_contents_runner.gd'],['package:contents','node:verification']);
  check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly']);
  check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification']);
+ check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
+ check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
  check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
  for(const path of ['src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','src/pi/pi_runtime_config.gd'])
   assert.deepEqual(ids([path]),selectTests(root,'full').map(t=>t.id).sort(),path);
@@ -55,6 +57,10 @@ test('host failures are counted and excerpted from Godot error output',()=>{
  assert.equal(excerpt.start_line,1);
  assert.match(excerpt.text,/ERROR: FAIL: rejects a workspace link/);
  assert.deepEqual(assertionCounts('# pass 3\n# fail 1\n# skipped 2\n','node'),{passed:3,failed:1,skipped:2});
+ assert.equal(fatalScriptError("SCRIPT ERROR: Invalid access to property or key 'nodes' on a base object of type 'Dictionary'.\n   at: run (res://tests/runtime_properties_runner.gd:36)\n"),true);
+ assert.equal(fatalScriptError("SCRIPT ERROR: Cannot call method 'ok' on a null value.\n   at: run (res://src/core/game_runner.gd:214)\n"),true);
+ assert.equal(fatalScriptError("SCRIPT ERROR: Parse Error: Expected expression.\n   at: GDScript::reload (user://script-policy-1/bad.gd:3)\n"),false);
+ assert.equal(fatalScriptError("ERROR: FAIL: expected rejection\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   at: check (res://tests/x_runner.gd:15)\n"),false);
 });
 function repository(t){
  const dir=mkdtempSync(join(tmpdir(),'gs-verify-spec-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
@@ -105,17 +111,32 @@ test('inventory paths and launcher stay synchronized; affected mapping is conser
  assert(selectTests(root,'affected',['tools/copilot/worker.mjs']).some(t=>t.id==='host:copilot_lifecycle'));
  for(const id of ['node:workspace-paths','node:model-capabilities','node:diagnostic-delivery','node:empty-response-retry','host:turn_recovery','host:reliability','host:diagnostics'])assert(selectTests(root,'pi').some(t=>t.id===id),'Pi suite missing '+id);
  assert.equal(selectTests(root,'affected',['README.md']).length,0);
- assert.equal(selectTests(root,'affected',['src/core/game_tools.gd']).length,selectTests(root,'full').length);
+ assert(selectTests(root,'affected',['src/core/game_tools.gd']).length<selectTests(root,'full').length);
  for(const source of ['cline/mcp.mjs','codex/tools.mjs','kiro/mcp.mjs']){
   const selected=new Set(selectTests(root,'affected',['tools/'+source]).map(t=>t.id));
   for(const consumer of catalog.harnesses.filter(h=>h.modules.some(([,file])=>file===source)))
    for(const entry of selectTests(root,consumer.id))assert(selected.has(entry.id),source+' misses '+consumer.id+': '+entry.id);
  }
- for(const parent of ['cline','command_code'])assert.equal(selectTests(root,'affected',['src/agent/'+parent+'_agent_controller.gd']).length,selectTests(root,'full').length,'inherited '+parent+' controller needs broad coverage');
+ for(const parent of ['cline','command_code'])assert.equal(selectTests(root,'affected',['src/agent/'+parent+'_agent_controller.gd']).length,selectTests(root,'all').length,'inherited '+parent+' controller needs broad coverage');
  assert.equal(resolveTest(root,'host:opencode_stop').file,'tests/opencode_stop_runner.gd');
  assert.equal(resolveTest(root,'acceptance:windowed').phase,'acceptance');
  assert.throws(()=>resolveTest(root,'host:codex_integration'),/Unknown test/);
  assert.throws(()=>resolveTest(root,'host:../outside'),/Unknown test/);
+});
+test('harness coverage defaults to Pi and expands only on an explicit all request',()=>{
+ const ids=suite=>new Set(selectTests(root,suite).map(t=>t.id));
+ const full=ids('full'),all=ids('all'),host=ids('host'),node=ids('node');
+ for(const id of ['host:turn_recovery','host:reliability','host:diagnostics','node:workspace-paths','node:model-capabilities','host:harness_assembly'])
+  assert(full.has(id),'default surface misses reference coverage '+id);
+ for(const id of ['host:copilot_lifecycle','host:cline_lifecycle','host:command_code_lifecycle','node:copilot','node:command-code'])
+  assert(!full.has(id),'default surface leaked opt-in harness '+id);
+ for(const id of ['host:copilot_lifecycle','host:cline_lifecycle','node:copilot','node:command-code','host:turn_recovery'])
+  assert(all.has(id),'all suite misses '+id);
+ assert(!host.has('host:copilot_lifecycle')&&host.has('host:turn_recovery'));
+ assert(!node.has('node:copilot')&&node.has('node:workspace-paths'));
+ assert(ids('copilot').has('host:copilot_lifecycle'),'explicit harness selection still works');
+ assert(ids('release').has('host:copilot_lifecycle'),'release remains the comprehensive gate');
+ assert([...all].some(id=>!full.has(id)));
 });
 test('shared session persistence and failure records preserve native lifecycle distinctions',t=>{
  const dir=repository(t),path=join(dir,'session.json');atomicSaveSession(path,{session:'first'});atomicSaveSession(path,{session:'second'});

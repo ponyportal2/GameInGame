@@ -90,3 +90,36 @@ The earlier interrupted parallel attempt had completed tests through
 `host:reload_settings` by 530.513 seconds without recorded failures. This later
 completed run provides evidence that the parallel full-suite execution finishes;
 the earlier interruption alone was not evidence of a stall.
+
+## 2026-10-27: opt-in harnesses, hot-core mapping and crash fail-fast
+
+Measured full run on this tree: 90 entries, 2,017.1 seconds wall with jobs=4;
+host tests were 86% of the total. The fourteen lifecycle suites alone cost
+533.0 seconds (24%), and one crashed runner consumed a 600-second deadline.
+
+- Harness breadth is now explicit. `--suite full` (and `host`/`node`) keeps the
+  reference harness (Pi); `--suite all` adds the other thirteen. `release` is the
+  pre-release gate and keeps all of them. An affected change that names a
+  harness still selects that harness, and a changed shared module or inherited
+  controller still selects every consumer.
+- `src/core/game_runner.gd` and `src/core/game_tools.gd` are audited in
+  `INPUT_CONSUMERS` by behavior, not by preload count: direct preloads plus the
+  suites that drive the run/reload path or call the tool facade and assert on the
+  result. A core edit now selects 16 and 11 tests instead of the whole inventory.
+  Suites that only start a game as scaffolding for another subject stay out; they
+  still run in `all` and `release`. Unknown paths select the 48-test default
+  surface instead of 89.
+- A `SCRIPT ERROR` whose innermost frame is under `res://src/` or `res://tests/`
+  proves the runner coroutine died before `quit()`. The verifier kills that test
+  immediately. Parse errors in generated candidates under `user://` remain
+  expected and do not trigger the kill.
+- `runtime_properties_runner.gd` now exits after a failed fixture load instead of
+  continuing into a null game and hanging until the deadline.
+- `JsonStore._replace_file` retries the Windows replacement briefly, and the test
+  child falls back to a direct final status write. A supervisor polling
+  `status.json` could hold the destination open and turn a graceful stop into
+  `cleanup_failed`; that was the remaining source of the preflight flake.
+- The fail-fast immediately exposed a real race in `reliability_runner.gd`:
+  approval responses are written only after the reload coroutine resumes, so the
+  suite read `response-*.json` before it existed and crashed on `null.ok`. It now
+  waits for each response, which removes the suite's dependency on reload timing.
