@@ -10,7 +10,7 @@ Last updated: 2026-10-16 18:00 (Asia/Novosibirsk, UTC+07:00).
 
 ## Verification without unnecessary overhead
 
-- Use `node tools/testing/verify.mjs --suite affected --output summary` for focused changes; choose broader suites when shared behavior or release scope warrants them. See `tools/testing/README.md` for commands and contracts.
+- Use `node tools/testing/verify.mjs --suite affected --since main --output summary` for focused changes; the `--since` ref keeps committed branch work in the selection. Choose broader suites when shared behavior or release scope warrants them. See `tools/testing/README.md` for commands and contracts.
 - Output modes change presentation, not test coverage or saved evidence. Prefer `summary` or `errors`; use `full` when investigating a failure.
 - Let the runner report phases, failures, stalls, and completion. Do not repeatedly poll `progress.json` or narrate counters. Inspect progress only for an apparent stall; read `results.json` at completion and open individual logs only when needed.
 - Trust structured results and exit status, not searches for the word `ERROR`; some tests deliberately produce diagnostics.
