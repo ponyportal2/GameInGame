@@ -56,6 +56,16 @@ func put(path: String, text: String) -> void:
     file.store_string(text)
     file.close()
 
+func read_response(path: String, timeout_ms: int = 10000) -> Dictionary:
+    # Approval resumes after the reload's preflight and candidate run, so the
+    # response lands one or more frames after the approving input is delivered.
+    # Reading the file directly made the suite depend on that timing.
+    var deadline = Time.get_ticks_msec() + timeout_ms
+    while not FileAccess.file_exists(path) and Time.get_ticks_msec() < deadline:
+        await process_frame
+    var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+    return parsed if parsed is Dictionary else {}
+
 func run() -> void:
     await test_empty_run_state()
     await test_manual_execution()
@@ -249,8 +259,8 @@ func test_reload_approval() -> void:
     Input.action_press("approve_game_reload")
     app._process(0.0)
     Input.action_release("approve_game_reload")
-    var response = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-first.json")))
-    check(response.ok and app.runner.active_game.answer == 2, "Shift+F5 action approves and returns actual reload outcome")
+    var response = await read_response(bridge.path_join("response-first.json"))
+    check(response.get("ok", false) and app.runner.active_game.answer == 2, "Shift+F5 action approves and returns actual reload outcome")
     check(app.agent.pending_reload.is_empty() and not app.reload_notice.visible and not app.approve_reload_button.visible, "approval consumes request and clears both notices")
     var version = app.runner.runtime_log.load_version
     app._approve_agent_reload()
@@ -261,15 +271,16 @@ func test_reload_approval() -> void:
     app._set_chat_visible(true)
     check(app.chat_overlay.visible and not app.approve_reload_button.disabled, "F1 chat path exposes approval while agent waits")
     app.approve_reload_button.pressed.emit()
-    check(app.runner.active_game.answer == 3 and app.chat_overlay.visible, "mouse approval reloads while retaining chat input ownership")
+    var second = await read_response(bridge.path_join("response-second.json"))
+    check(second.get("ok", false) and app.runner.active_game.answer == 3 and app.chat_overlay.visible, "mouse approval reloads while retaining chat input ownership")
     old = app.runner.active_game
     put(main, "extends Node\nfunc broken(:\n")
     put(bridge.path_join("request-broken.json"), JSON.stringify({"id": "broken", "command": "reload_game"}))
     app.agent._service_host_bridge()
     app.toast_label.visible = false
     app.approve_reload_button.pressed.emit()
-    response = JSON.parse_string(FileAccess.get_file_as_string(bridge.path_join("response-broken.json")))
-    check(not response.ok and app.runner.active_game == old and app.agent.pending_reload.is_empty(), "approved broken reload returns failure and preserves accepted game")
+    response = await read_response(bridge.path_join("response-broken.json"))
+    check(not response.get("ok", true) and app.runner.active_game == old and app.agent.pending_reload.is_empty(), "approved broken reload returns failure and preserves accepted game")
     check(not app.toast_label.visible, "agent reload failures return to the model without a raw player error toast")
     put(main, "extends Node\nvar answer = 4\n")
     put(bridge.path_join("request-cancelled.json"), JSON.stringify({"id": "cancelled", "command": "reload_game"}))

@@ -123,6 +123,7 @@ func run() -> void:
     while not runner.reload_in_progress: await process_frame
     put("extends Node\nvar changed = true\n", "added_dependency.gd")
     result = await tools.wait_reload(pending)
+    if result.get("reason") != "code_changed": print("Source-change rejection: ", result.get("reason"), "; preflight: ", result.get("preflight", {}).get("reason"))
     check(not result.ok and not result.live_attempted and result.reason == "code_changed", "new dependency invalidates tested inputs")
 
     # Revalidate the name after the test/apply time gap.
