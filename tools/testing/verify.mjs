@@ -11,7 +11,7 @@ import { killProcessTree } from '../agent/process-tree.mjs';
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 export function parseArgs(args){
   const options={suite:'affected',output:'summary',jobs:4,timeout:600000,stall:60000,changed:[]};
-  const values=new Set(['suite','output','jobs','timeout','stall','godot','artifacts','rerun-failed','reuse','changed','live','test']);
+  const values=new Set(['suite','output','jobs','timeout','stall','godot','artifacts','rerun-failed','reuse','changed','since','live','test']);
   for(let i=0;i<args.length;i++){
     const key=args[i].replace(/^--/,'');
     if(key==='help'){options.help=true;continue;}
@@ -31,7 +31,11 @@ export async function runVerification(options,root=ROOT){
   const resultsPath=join(directory,'results.json');
   if(existsSync(resultsPath))throw new Error('Artifact directory already contains results.json; use a new directory');
   const godot=resolve(options.godot||process.env.GODOT_BIN||join(root,'GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe'));
-  const changed=options.changed.length?options.changed:[...new Set([...git(root,['diff','--name-only','HEAD']).split('\n'),...git(root,['ls-files','--others','--exclude-standard']).split('\n')].filter(Boolean))];
+  // `--since <ref>` adds the branch diff against its base, so a committed branch
+  // still selects what it changed. Uncommitted and untracked work is always
+  // included: a verifier that only sees commits can silently select nothing.
+  const diffs=options.since?[['diff','--name-only',options.since+'...HEAD'],['diff','--name-only','HEAD']]:[['diff','--name-only','HEAD']];
+  const changed=options.changed.length?options.changed:[...new Set([...diffs.flatMap(a=>git(root,a).split('\n')),...git(root,['ls-files','--others','--exclude-standard']).split('\n')].filter(Boolean))];
   // Explicit selections and failed-only reruns do not consult unrelated changes.
   let tests=options.test||options['rerun-failed']||options.live?[]:selectTests(root,options.suite,changed);
   if(options['rerun-failed']){
@@ -49,11 +53,11 @@ export async function runVerification(options,root=ROOT){
     if(options.live==='codex'&&!process.env.GAMESMITH_CODEX_BIN?.includes('codex-luna-launcher'))throw new Error('Codex live tests require GAMESMITH_CODEX_BIN pointing at tools/testing/codex-luna-launcher.mjs (explicit gpt-6-luna flag).');
     tests=[{id:'live:'+options.live,phase:'host',file:'tests/'+id+'_integration_runner.gd'}];
   }
-  // The packaged tests read the tracked PCK, not the working tree. Editing the
-  // runner's assertions, or any source the PCK compiles, must not run stale
-  // bytes and count that as evidence for the change under test.
-  const packaged=t=>t.id==='package:contents';
-  if(tests.some(packaged)&&changed.some(p=>p==='tests/package_contents_runner.gd'||p==='tests/package_contents_runner.gd.uid'||p==='project.godot'||p.startsWith('src/')))options.build=true;
+  // The packaged tests read the tracked PCK, not the working tree. The export
+  // preset packs src/, tools/ and project.godot, and enumerating that list here
+  // would just be another stale boundary; rebuilding is cheaper than a package
+  // test that silently verifies old bytes.
+  if(tests.some(t=>t.id==='package:contents'))options.build=true;
   const needsGodot=tests.some(t=>t.phase==='host'||t.phase==='acceptance'||t.id==='package:contents'||(t.phase==='node'&&readFileSync(join(root,t.file),'utf8').includes('assembled-runtime.mjs')))||options.build;
   const version=(bin,args)=>{const r=spawnSync(bin,args,{encoding:'utf8',windowsHide:true,timeout:10000});if(r.status!==0)return {unavailable:bin,error:r.error?.message||r.stderr?.trim()||'version probe failed'};return r.stdout.trim();};
   const runtimes={node:process.version,platform:process.platform,arch:process.arch};
@@ -63,6 +67,10 @@ export async function runVerification(options,root=ROOT){
   const {resolveBlender}=await import('../blender/jobs.mjs');
   const blender=tests.some(t=>/blender|game_assets|native_recovery/.test(t.id))?await resolveBlender().catch(()=>null):null;
   if(blender&&existsSync(blender))runtimes.blender={path:blender,version:version(blender,['--version']),sha256:digest(readFileSync(blender))};
+  // Say so when an affected run stopped at the Pi-centric surface, so a narrowed
+  // fallback for an unmapped input is visible instead of silent.
+  if(options.suite==='affected'&&!options.test&&!options['rerun-failed']&&tests.length===selectTests(root,'core').length)
+    console.log('Selection: '+tests.length+' tests (core surface; use --suite full for every harness)');
   // Test artifacts and live global state must never be reused as fresh evidence.
   const selectedTests=[...tests];
   const evidence=fingerprint(root,tests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]);
@@ -152,6 +160,6 @@ export async function runVerification(options,root=ROOT){
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|smoke|full|all|release|acceptance|node|host|package|launcher|<harness> --output summary|errors|full [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--test id,id] [--build-package] [--live harness]');else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
+  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--live harness]');else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
   catch(error){console.error(error.message);process.exitCode=2;}
 }

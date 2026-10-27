@@ -97,11 +97,12 @@ Measured full run on this tree: 90 entries, 2,017.1 seconds wall with jobs=4;
 host tests were 86% of the total. The fourteen lifecycle suites alone cost
 533.0 seconds (24%), and one crashed runner consumed a 600-second deadline.
 
-- Harness breadth is now explicit. `--suite full` (and `host`/`node`) keeps the
-  reference harness (Pi); `--suite all` adds the other thirteen. `release` is the
-  pre-release gate and keeps all of them. An affected change that names a
-  harness still selects that harness, and a changed shared module or inherited
-  controller still selects every consumer.
+- Harness breadth is now explicit. `--suite core` (the fallback for `affected`
+  and the phase suites) keeps the reference harness (Pi); `--suite full` and its
+  explicit alias `all` stay exhaustive, and `release` is the pre-release gate. An
+  affected change that names a harness still selects that harness, and a changed
+  shared module or inherited controller still selects every consumer. A run that
+  stops at `core` prints the fact, so the narrower fallback is never silent.
 - `src/core/game_runner.gd` and `src/core/game_tools.gd` are audited in
   `INPUT_CONSUMERS` by behavior, not by preload count: direct preloads plus the
   suites that drive the run/reload path or call the tool facade and assert on the

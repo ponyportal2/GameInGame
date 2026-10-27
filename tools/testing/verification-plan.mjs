@@ -26,12 +26,13 @@ export const INPUT_CONSUMERS = {
   // excluded; they still run in `all` and `release`. A new suite that asserts
   // on this behavior must be added here or it silently loses affected coverage.
   'src/core/game_runner.gd': ['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','host:library_actions','package:contents','host:harness_assembly','node:verification'],
-  'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
+  'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
 };
 
 // The reference harness stays in every broad run. The other thirteen suites
-// cost minutes each, so they run only when explicitly requested: --suite all,
-// --suite <harness>, release, or an affected change that names that harness.
+// cost minutes each, so the `core` surface (the default for affected and the
+// phase suites) keeps only Pi. `full`/`all` and `release` stay exhaustive, and
+// an affected change that names a harness still selects that harness.
 export const REFERENCE_HARNESS = 'pi';
 const SHARED_HARNESS_TESTS = new Set(['host:harness','host:harness_assembly','host:native_recovery']);
 function defaultSurface(tests,harnesses) {
@@ -74,14 +75,16 @@ export function resolveTest(root,id) {
 }
 
 export function selectTests(root,suite='full',changed=[]) {
-  const tests=allTests(root), harnesses=inventory(root);
-  if(suite==='all')return tests;
+  const tests=allTests(root), harnesses=inventory(root), core=defaultSurface(tests,harnesses);
+  // `full` keeps its historical meaning: every discovered deterministic test.
+  // The cheaper Pi-centric surface has its own name so no suite lies about scope.
+  if(suite==='full'||suite==='all')return tests;
+  if(suite==='core')return core;
   // Release is the deliberate pre-release gate, so it keeps every harness.
   if(suite==='release')return [...tests,...RELEASE_TESTS];
   if(suite==='acceptance')return RELEASE_TESTS;
   if(suite==='smoke')return tests.filter(t=>['node:verification','host:harness_assembly','host:test','host:library_actions'].includes(t.id));
-  if(suite==='full')return defaultSurface(tests,harnesses);
-  if(['node','host','package','launcher'].includes(suite))return defaultSurface(tests,harnesses).filter(t=>t.phase===suite);
+  if(['node','host','package','launcher'].includes(suite))return core.filter(t=>t.phase===suite);
   const harness=harnesses.find(h=>h.id===suite);
   if(harness)return tests.filter(t=>harness.node_suites.includes(t.file)||harness.host_runners.includes(t.file)||SHARED_HARNESS_TESTS.has(t.id));
   if(suite!=='affected')throw new Error('Unknown suite: '+suite);
@@ -104,7 +107,7 @@ export function selectTests(root,suite='full',changed=[]) {
     // A changed shared module or inherited controller is an explicit dependency
     // signal and keeps every consumer; an unknown path falls back to the default
     // surface instead of pulling all thirteen opt-in harness suites.
-    const subset=inherited?tests:consumers.length?consumers.flatMap(h=>selectTests(root,h.id)):defaultSurface(tests,harnesses);
+    const subset=inherited?tests:consumers.length?consumers.flatMap(h=>selectTests(root,h.id)):core;
     for(const t of subset)selected.set(t.id,t);
   }
   return [...selected.values()];

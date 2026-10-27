@@ -44,10 +44,12 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly']);
  check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification']);
  check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
- check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
+ check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
  check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
+ // Unknown inputs still get the Pi-centric core surface, never zero tests, and
+ // never the thirteen opt-in harness suites. `full` stays exhaustive.
  for(const path of ['src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','src/pi/pi_runtime_config.gd'])
-  assert.deepEqual(ids([path]),selectTests(root,'full').map(t=>t.id).sort(),path);
+  assert.deepEqual(ids([path]),selectTests(root,'core').map(t=>t.id).sort(),path);
 });
 test('host failures are counted and excerpted from Godot error output',()=>{
  const text=['PASS: keeps working','ERROR: FAIL: rejects a workspace link','   at: push_error (core/variant/variant_utility.cpp:1023)','ERROR: FAIL: second failure'].join('\n');
@@ -111,7 +113,8 @@ test('inventory paths and launcher stay synchronized; affected mapping is conser
  assert(selectTests(root,'affected',['tools/copilot/worker.mjs']).some(t=>t.id==='host:copilot_lifecycle'));
  for(const id of ['node:workspace-paths','node:model-capabilities','node:diagnostic-delivery','node:empty-response-retry','host:turn_recovery','host:reliability','host:diagnostics'])assert(selectTests(root,'pi').some(t=>t.id===id),'Pi suite missing '+id);
  assert.equal(selectTests(root,'affected',['README.md']).length,0);
- assert(selectTests(root,'affected',['src/core/game_tools.gd']).length<selectTests(root,'full').length);
+ assert(selectTests(root,'affected',['src/core/game_tools.gd']).length<selectTests(root,'core').length);
+ assert(selectTests(root,'full').length>selectTests(root,'core').length,'full must stay exhaustive');
  for(const source of ['cline/mcp.mjs','codex/tools.mjs','kiro/mcp.mjs']){
   const selected=new Set(selectTests(root,'affected',['tools/'+source]).map(t=>t.id));
   for(const consumer of catalog.harnesses.filter(h=>h.modules.some(([,file])=>file===source)))
@@ -125,18 +128,19 @@ test('inventory paths and launcher stay synchronized; affected mapping is conser
 });
 test('harness coverage defaults to Pi and expands only on an explicit all request',()=>{
  const ids=suite=>new Set(selectTests(root,suite).map(t=>t.id));
- const full=ids('full'),all=ids('all'),host=ids('host'),node=ids('node');
+ const core=ids('core'),full=ids('full'),all=ids('all'),host=ids('host'),node=ids('node');
  for(const id of ['host:turn_recovery','host:reliability','host:diagnostics','node:workspace-paths','node:model-capabilities','host:harness_assembly'])
-  assert(full.has(id),'default surface misses reference coverage '+id);
+  assert(core.has(id),'core surface misses reference coverage '+id);
  for(const id of ['host:copilot_lifecycle','host:cline_lifecycle','host:command_code_lifecycle','node:copilot','node:command-code'])
-  assert(!full.has(id),'default surface leaked opt-in harness '+id);
+  assert(!core.has(id),'core surface leaked opt-in harness '+id);
  for(const id of ['host:copilot_lifecycle','host:cline_lifecycle','node:copilot','node:command-code','host:turn_recovery'])
-  assert(all.has(id),'all suite misses '+id);
+  assert(full.has(id)&&all.has(id),'exhaustive suite misses '+id);
+ assert.equal(full.size,all.size,'all is the explicit name for the exhaustive suite');
  assert(!host.has('host:copilot_lifecycle')&&host.has('host:turn_recovery'));
  assert(!node.has('node:copilot')&&node.has('node:workspace-paths'));
  assert(ids('copilot').has('host:copilot_lifecycle'),'explicit harness selection still works');
  assert(ids('release').has('host:copilot_lifecycle'),'release remains the comprehensive gate');
- assert([...all].some(id=>!full.has(id)));
+ assert([...full].some(id=>!core.has(id)));
 });
 test('shared session persistence and failure records preserve native lifecycle distinctions',t=>{
  const dir=repository(t),path=join(dir,'session.json');atomicSaveSession(path,{session:'first'});atomicSaveSession(path,{session:'second'});

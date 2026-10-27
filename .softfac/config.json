@@ -35,7 +35,7 @@
   },
   "verification": {
     "commands": [
-      "node tools/testing/verify.mjs --suite affected --output summary"
+      "node tools/testing/verify.mjs --suite affected --since main --output summary"
     ]
   },
   "bugs": {
