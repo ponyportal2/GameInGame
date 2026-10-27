@@ -106,9 +106,9 @@ host tests were 86% of the total. The fourteen lifecycle suites alone cost
 - `src/core/game_runner.gd` and `src/core/game_tools.gd` are audited in
   `INPUT_CONSUMERS` by behavior, not by preload count: direct preloads plus the
   suites that drive the run/reload path or call the tool facade and assert on the
-  result. A core edit now selects 16 and 11 tests instead of the whole inventory.
+  result. A core edit now selects 16 and 13 tests instead of the whole inventory.
   Suites that only start a game as scaffolding for another subject stay out; they
-  still run in `all` and `release`. Unknown paths select the 48-test default
+  still run in `full`, `all` and `release`. Unknown paths select the 48-test core
   surface instead of 89.
 - A `SCRIPT ERROR` whose innermost frame is under `res://src/` or `res://tests/`
   proves the runner coroutine died before `quit()`. The verifier kills that test
@@ -124,3 +124,21 @@ host tests were 86% of the total. The fourteen lifecycle suites alone cost
   approval responses are written only after the reload coroutine resumes, so the
   suite read `response-*.json` before it existed and crashed on `null.ok`. It now
   waits for each response, which removes the suite's dependency on reload timing.
+
+### Evidence for the `core`/`full` split
+
+- Selector unit regressions: `node --test tests/verification.test.mjs` 11/11.
+- `--changed src/core/game_tools.gd`: 13 tests, 15 entries, passed in 576.4 s.
+- `--changed src/core/game_runner.gd`: 16 tests, 18 entries, passed in 544.3 s.
+- `--suite full` parity after the split: 91 entries (89 tests, package build and
+  Godot setup), 0 failed, 1,578.3 s. The exhaustive request still runs everything.
+- `--since main` was proved end to end on a scratch branch whose only change was
+  already committed, so `git diff HEAD` was empty: the SoftFac command
+  `--suite affected --since main` selected `node:verification`, ran it, and failed
+  a deliberate red assertion with exit code 1. A committed branch is no longer a
+  vacuous green.
+
+An untracked file in the working tree counts as an unknown input and therefore
+escalates an affected run to the core surface. That over-selects rather than
+under-selects, and the selection line makes it visible.
+
