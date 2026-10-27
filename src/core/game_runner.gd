@@ -28,15 +28,21 @@ func checked_reload(workspace: String, cancelled: Callable = Callable()) -> Dict
         load_failed.emit(rejected.error)
         return rejected
     var preflight: Dictionary = await ReloadPreflight.run(self, workspace, cancelled, preflight_timeout_ms)
-    # A preflight verdict only describes the inputs it started with. Re-fingerprint
-    # before trusting it, so edits made while it ran are reported as changed inputs
-    # instead of as a defect in code that was never actually tested.
-    var after = ReloadPreflight.fingerprint(workspace)
     var reason = ""
-    if cancelled.is_valid() and cancelled.call(): reason = "cancelled"
-    elif not after.ok or after.files != before.files: reason = "code_changed"
-    elif not preflight.ok: reason = str(preflight.get("reason", "preflight_failed"))
-    elif active_game != previous: reason = "live_game_changed"
+    if cancelled.is_valid() and cancelled.call():
+        # Nothing is going to be loaded, so the second fingerprint would only
+        # delay the caller.
+        reason = "cancelled"
+    else:
+        # A preflight verdict only describes the inputs it started with.
+        # Re-fingerprint before trusting it, so edits made while it ran are
+        # reported as changed inputs instead of as a defect in code that was
+        # never actually tested. A failed fingerprint is not a diff.
+        var after = ReloadPreflight.fingerprint(workspace)
+        if not after.ok: reason = "fingerprint_failed"
+        elif after.files != before.files: reason = "code_changed"
+        elif not preflight.ok: reason = str(preflight.get("reason", "preflight_failed"))
+        elif active_game != previous: reason = "live_game_changed"
     var result: Dictionary
     if reason != "":
         result = {"ok": false, "reason": reason, "error": "Reload preflight rejected: " + reason, "live_game_modified": false}

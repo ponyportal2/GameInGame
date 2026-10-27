@@ -125,6 +125,11 @@ host tests were 86% of the total. The fourteen lifecycle suites alone cost
   write and reports it if that also fails. A supervisor polling `status.json`
   could turn a graceful stop into `cleanup_failed`; that was the remaining
   source of the preflight flake.
+- A cancelled operation skips the second workspace fingerprint, in the
+  verifier and in `GameRunner.checked_reload()` /
+  `GameTools._checked_runtime_child()`: nothing will be loaded, so the check only
+  delays the caller. A second fingerprint that fails is `fingerprint_failed`,
+  not `code_changed`, which claimed an edit nobody observed.
 - The fail-fast immediately exposed a real race in `reliability_runner.gd`:
   approval responses are written only after the reload coroutine resumes, so the
   suite read `response-*.json` before it existed and crashed on `null.ok`. It now

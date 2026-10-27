@@ -271,18 +271,24 @@ func _checked_runtime_child(command: String, args: Dictionary, token: int) -> Di
     operation.action = "inject_child"
     runner.reload_in_progress = true
     var preflight: Dictionary = await preload("res://src/core/reload_preflight.gd").run(runner, workspace, func(): return token != reload_token, runner.preflight_timeout_ms, operation)
-    # The preflight only describes the inputs it started with. Check the workspace
-    # first so a mid-run edit is reported as changed inputs rather than as a
-    # failure of code that was never actually tested.
-    var after = preload("res://src/core/reload_preflight.gd").fingerprint(workspace)
     var reason = ""
-    if token != reload_token: reason = "cancelled"
-    elif not after.ok or after.files != before.files: reason = "code_changed"
-    elif not preflight.ok: reason = str(preflight.get("reason", "preflight_failed"))
-    elif helper._game() != game or helper._resolve(target, game) != node: reason = "stale_handle"
-    elif not node.is_node_ready(): reason = "parent_not_ready"
-    elif node.get_class() != args.expected.class or Children.script_path(node) != args.expected.script: reason = "parent_mismatch"
-    elif node.get_node_or_null(NodePath(args.name)) != null: reason = "child_already_present"
+    if token != reload_token:
+        # The token moved, so the candidate will not be inserted and the second
+        # fingerprint would only delay the caller.
+        reason = "cancelled"
+    else:
+        # The preflight only describes the inputs it started with. Check the
+        # workspace first so a mid-run edit is reported as changed inputs rather
+        # than as a failure of code that was never actually tested. A failed
+        # fingerprint is not a diff.
+        var after = preload("res://src/core/reload_preflight.gd").fingerprint(workspace)
+        if not after.ok: reason = "fingerprint_failed"
+        elif after.files != before.files: reason = "code_changed"
+        elif not preflight.ok: reason = str(preflight.get("reason", "preflight_failed"))
+        elif helper._game() != game or helper._resolve(target, game) != node: reason = "stale_handle"
+        elif not node.is_node_ready(): reason = "parent_not_ready"
+        elif node.get_class() != args.expected.class or Children.script_path(node) != args.expected.script: reason = "parent_mismatch"
+        elif node.get_node_or_null(NodePath(args.name)) != null: reason = "child_already_present"
     var result = rejected
     if reason != "":
         result.merge(Children.error(reason, "Late-insertion preflight rejected: " + reason), true)
