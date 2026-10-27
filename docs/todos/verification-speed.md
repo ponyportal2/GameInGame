@@ -97,48 +97,60 @@ Measured full run on this tree: 90 entries, 2,017.1 seconds wall with jobs=4;
 host tests were 86% of the total. The fourteen lifecycle suites alone cost
 533.0 seconds (24%), and one crashed runner consumed a 600-second deadline.
 
-- Harness breadth is now explicit. `--suite core` (the fallback for `affected`
-  and the phase suites) keeps the reference harness (Pi); `--suite full` and its
-  explicit alias `all` stay exhaustive, and `release` is the pre-release gate. An
-  affected change that names a harness still selects that harness, and a changed
-  shared module or inherited controller still selects every consumer. A run that
-  stops at `core` prints the fact, so the narrower fallback is never silent.
+- Harness breadth is now explicit. `--suite core` keeps the reference harness
+  (Pi); `--suite full` and its explicit alias `all` stay exhaustive, and
+  `release` is the pre-release gate. An affected change that names a harness
+  still selects that harness, and a changed shared module or inherited
+  controller still selects every consumer. `--suite host` and `--suite node`
+  stayed complete phase selections: `run-host-tests.mjs` calls `--suite host`,
+  and a compatibility entry point must not silently drop the opt-in harnesses.
+  An unmapped path is exhaustive too. Printing the narrowed fallback did not
+  make it safe: an unknown shared file can change behavior in any harness, and
+  a run that never executes that harness still reports green.
 - `src/core/game_runner.gd` and `src/core/game_tools.gd` are audited in
   `INPUT_CONSUMERS` by behavior, not by preload count: direct preloads plus the
   suites that drive the run/reload path or call the tool facade and assert on the
-  result. A core edit now selects 16 and 13 tests instead of the whole inventory.
+  result. A core edit now selects 17 and 13 tests instead of the whole inventory.
   Suites that only start a game as scaffolding for another subject stay out; they
-  still run in `full`, `all` and `release`. Unknown paths select the 48-test core
-  surface instead of 89.
+  still run in `full`, `all` and `release`.
 - A `SCRIPT ERROR` whose innermost frame is under `res://src/` or `res://tests/`
   proves the runner coroutine died before `quit()`. The verifier kills that test
   immediately. Parse errors in generated candidates under `user://` remain
   expected and do not trigger the kill.
 - `runtime_properties_runner.gd` now exits after a failed fixture load instead of
   continuing into a null game and hanging until the deadline.
-- `JsonStore._replace_file` retries the Windows replacement briefly, and the test
-  child falls back to a direct final status write. A supervisor polling
-  `status.json` could hold the destination open and turn a graceful stop into
-  `cleanup_failed`; that was the remaining source of the preflight flake.
+- `JsonStore._replace_file` retries only on Windows, where a reader holding the
+  destination open actually blocks a replacement, and returns the last error
+  instead of a fixed one. The test child falls back to a direct final status
+  write and reports it if that also fails. A supervisor polling `status.json`
+  could turn a graceful stop into `cleanup_failed`; that was the remaining
+  source of the preflight flake.
 - The fail-fast immediately exposed a real race in `reliability_runner.gd`:
   approval responses are written only after the reload coroutine resumes, so the
   suite read `response-*.json` before it existed and crashed on `null.ok`. It now
-  waits for each response, which removes the suite's dependency on reload timing.
+  waits for each response, and that wait (30 s) outlasts the 15-second preflight
+  it is waiting on instead of failing a slow preflight as a suite error.
 
 ### Evidence for the `core`/`full` split
 
 - Selector unit regressions: `node --test tests/verification.test.mjs` 11/11.
-- `--changed src/core/game_tools.gd`: 13 tests, 15 entries, passed in 576.4 s.
-- `--changed src/core/game_runner.gd`: 16 tests, 18 entries, passed in 544.3 s.
+- `--changed src/core/game_tools.gd`: 13 tests, 15 entries, passed in 570.1 s.
+- `--changed src/core/game_runner.gd`: 17 tests, 19 entries, passed in 548.4 s.
 - `--suite full` parity after the split: 91 entries (89 tests, package build and
-  Godot setup), 0 failed, 1,578.3 s. The exhaustive request still runs everything.
+  Godot setup), 0 failed, 1,544.2 s. The exhaustive request still runs everything.
+- Selections after the follow-up: `core` 48, `full`/`all` 89, `release` 92,
+  `host` 47, `node` 39, `package` 2, `launcher` 1. `--suite host` contains all
+  thirteen non-Pi harness host suites, so `run-host-tests.mjs` still runs
+  everything it used to.
 - `--since main` was proved end to end on a scratch branch whose only change was
   already committed, so `git diff HEAD` was empty: the SoftFac command
   `--suite affected --since main` selected `node:verification`, ran it, and failed
   a deliberate red assertion with exit code 1. A committed branch is no longer a
   vacuous green.
 
-An untracked file in the working tree counts as an unknown input and therefore
-escalates an affected run to the core surface. That over-selects rather than
-under-selects, and the selection line makes it visible.
+An unmapped path now selects every test, including `src/ui/app.gd` and
+`tools/testing/assembled-runtime.mjs`, so an unknown shared file can no longer
+pass SoftFac without the harness that depends on it. Untracked files are still
+inputs: a local scratch file must be ignored (it lives in `.git/info/exclude`
+here) or moved out of the repository, rather than making unknown code cheaper.
 

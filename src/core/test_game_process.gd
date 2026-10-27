@@ -81,9 +81,15 @@ func finish(code: int) -> void:
         # The final status is the only proof of a graceful stop. Never quit
         # without publishing it when the atomic replacement stayed blocked.
         var file = FileAccess.open(status_path, FileAccess.WRITE)
-        if file != null:
+        if file == null:
+            push_error("Test process could not publish final status: %s" % error_string(FileAccess.get_open_error()))
+        else:
             file.store_string(JSON.stringify(status, "  "))
+            file.flush()
+            var write_error = file.get_error()
             file.close()
+            if write_error != OK:
+                push_error("Test process final status write failed: %s" % error_string(write_error))
     quit(code)
 
 func _finalize() -> void:

@@ -43,13 +43,14 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  check(['tests/package_contents_runner.gd'],['package:contents','node:verification']);
  check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly']);
  check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification']);
- check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
+ check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:game_assets','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
  check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
  check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
- // Unknown inputs still get the Pi-centric core surface, never zero tests, and
- // never the thirteen opt-in harness suites. `full` stays exhaustive.
- for(const path of ['src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','src/pi/pi_runtime_config.gd'])
-  assert.deepEqual(ids([path]),selectTests(root,'core').map(t=>t.id).sort(),path);
+ // An unmapped path is exhaustive, never zero and never a guess: an unknown
+ // shared file can change behavior in any harness, so narrowing it would let a
+ // run pass without the suite that would have caught the change.
+ for(const path of ['src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','tools/testing/assembled-runtime.mjs','src/pi/pi_runtime_config.gd','src/ui/app.gd'])
+  assert.deepEqual(ids([path]),selectTests(root,'full').map(t=>t.id).sort(),path);
 });
 test('host failures are counted and excerpted from Godot error output',()=>{
  const text=['PASS: keeps working','ERROR: FAIL: rejects a workspace link','   at: push_error (core/variant/variant_utility.cpp:1023)','ERROR: FAIL: second failure'].join('\n');
@@ -136,8 +137,12 @@ test('harness coverage defaults to Pi and expands only on an explicit all reques
  for(const id of ['host:copilot_lifecycle','host:cline_lifecycle','node:copilot','node:command-code','host:turn_recovery'])
   assert(full.has(id)&&all.has(id),'exhaustive suite misses '+id);
  assert.equal(full.size,all.size,'all is the explicit name for the exhaustive suite');
- assert(!host.has('host:copilot_lifecycle')&&host.has('host:turn_recovery'));
- assert(!node.has('node:copilot')&&node.has('node:workspace-paths'));
+ // Phase suites are complete selections: run-host-tests.mjs calls --suite host,
+ // so a compatibility entry point must not silently drop the opt-in harnesses.
+ assert(host.has('host:copilot_lifecycle')&&host.has('host:turn_recovery'));
+ assert(node.has('node:copilot')&&node.has('node:workspace-paths'));
+ assert.equal(host.size,[...full].filter(id=>id.startsWith('host:')).length,'host must be every host test');
+ assert.equal(node.size,[...full].filter(id=>id.startsWith('node:')).length,'node must be every node test');
  assert(ids('copilot').has('host:copilot_lifecycle'),'explicit harness selection still works');
  assert(ids('release').has('host:copilot_lifecycle'),'release remains the comprehensive gate');
  assert([...full].some(id=>!core.has(id)));

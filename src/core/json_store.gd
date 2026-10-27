@@ -33,19 +33,22 @@ static func write_bytes_atomic(path: String, contents: PackedByteArray) -> bool:
     return error == OK
 
 static func _replace_file(temporary: String, destination: String) -> Error:
-    # Readers poll these control files while writers replace them. Windows
-    # rejects a replacement while a reader holds the destination open, so a
-    # single attempt can lose a final status that the caller cannot retry.
+    # Only Windows rejects a replacement while a reader holds the destination
+    # open. Elsewhere the rename is atomic and a retry cannot help, so a failure
+    # there is returned as-is instead of being hidden behind a fixed delay.
+    if OS.get_name() != "Windows":
+        return DirAccess.rename_absolute(temporary, destination)
+    # Readers poll these control files while writers replace them, so a single
+    # attempt can lose a final status that the caller cannot retry.
+    var error: Error = ERR_CANT_CREATE
     for attempt in range(6):
-        var error = _replace_once(temporary, destination)
+        error = _replace_once(temporary, destination)
         if error == OK:
             return OK
         OS.delay_msec(25)
-    return ERR_CANT_CREATE
+    return error
 
 static func _replace_once(temporary: String, destination: String) -> Error:
-    if OS.get_name() != "Windows":
-        return DirAccess.rename_absolute(temporary, destination)
     # Godot's Windows rename deletes an existing destination before moving the
     # source. File.Replace uses Windows' replacement operation and preserves the
     # destination on failure. Encode paths so names cannot become shell syntax.

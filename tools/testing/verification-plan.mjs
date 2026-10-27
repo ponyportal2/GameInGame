@@ -23,16 +23,16 @@ export const INPUT_CONSUMERS = {
   // audited by behavior: every suite that preloads the file plus every suite
   // that drives the run/reload path or calls the tool facade and asserts on its
   // result. Suites that only start a game as scaffolding for another subject are
-  // excluded; they still run in `all` and `release`. A new suite that asserts
+  // excluded; they still run in `full` and `release`. A new suite that asserts
   // on this behavior must be added here or it silently loses affected coverage.
-  'src/core/game_runner.gd': ['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','host:library_actions','package:contents','host:harness_assembly','node:verification'],
+  'src/core/game_runner.gd': ['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:game_assets','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','host:library_actions','package:contents','host:harness_assembly','node:verification'],
   'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test','host:test_process','host:test_workflow','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
 };
 
 // The reference harness stays in every broad run. The other thirteen suites
-// cost minutes each, so the `core` surface (the default for affected and the
-// phase suites) keeps only Pi. `full`/`all` and `release` stay exhaustive, and
-// an affected change that names a harness still selects that harness.
+// cost minutes each, so `core` keeps only Pi; `full`/`all`, `release` and the
+// phase suites stay exhaustive, and an affected change that names a harness
+// still selects that harness.
 export const REFERENCE_HARNESS = 'pi';
 const SHARED_HARNESS_TESTS = new Set(['host:harness','host:harness_assembly','host:native_recovery']);
 function defaultSurface(tests,harnesses) {
@@ -80,11 +80,14 @@ export function selectTests(root,suite='full',changed=[]) {
   // The cheaper Pi-centric surface has its own name so no suite lies about scope.
   if(suite==='full'||suite==='all')return tests;
   if(suite==='core')return core;
+  // Phase suites are complete selections. `run-host-tests.mjs` calls `--suite
+  // host`, and a compatibility entry point must not quietly drop the thirteen
+  // opt-in harness suites; only `core` is allowed to mean "the narrow surface".
+  if(['node','host','package','launcher'].includes(suite))return tests.filter(t=>t.phase===suite);
   // Release is the deliberate pre-release gate, so it keeps every harness.
   if(suite==='release')return [...tests,...RELEASE_TESTS];
   if(suite==='acceptance')return RELEASE_TESTS;
   if(suite==='smoke')return tests.filter(t=>['node:verification','host:harness_assembly','host:test','host:library_actions'].includes(t.id));
-  if(['node','host','package','launcher'].includes(suite))return core.filter(t=>t.phase===suite);
   const harness=harnesses.find(h=>h.id===suite);
   if(harness)return tests.filter(t=>harness.node_suites.includes(t.file)||harness.host_runners.includes(t.file)||SHARED_HARNESS_TESTS.has(t.id));
   if(suite!=='affected')throw new Error('Unknown suite: '+suite);
@@ -104,10 +107,11 @@ export function selectTests(root,suite='full',changed=[]) {
     // These controllers own inherited lifecycle behavior, not just one harness.
     // Keep this explicit rather than guessing GDScript dependencies.
     const inherited=['pi','command_code','opencode','cline'].some(id=>path==='src/agent/'+id+'_agent_controller.gd');
-    // A changed shared module or inherited controller is an explicit dependency
-    // signal and keeps every consumer; an unknown path falls back to the default
-    // surface instead of pulling all thirteen opt-in harness suites.
-    const subset=inherited?tests:consumers.length?consumers.flatMap(h=>selectTests(root,h.id)):core;
+    // A changed shared module or inherited controller keeps every consumer. An
+    // unmapped path is exhaustive: an unknown shared file can change behavior in
+    // any harness, and a narrower guess would let SoftFac pass without running
+    // the suite that would have caught it.
+    const subset=inherited||!consumers.length?tests:consumers.flatMap(h=>selectTests(root,h.id));
     for(const t of subset)selected.set(t.id,t);
   }
   return [...selected.values()];

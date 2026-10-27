@@ -67,10 +67,6 @@ export async function runVerification(options,root=ROOT){
   const {resolveBlender}=await import('../blender/jobs.mjs');
   const blender=tests.some(t=>/blender|game_assets|native_recovery/.test(t.id))?await resolveBlender().catch(()=>null):null;
   if(blender&&existsSync(blender))runtimes.blender={path:blender,version:version(blender,['--version']),sha256:digest(readFileSync(blender))};
-  // Say so when an affected run stopped at the Pi-centric surface, so a narrowed
-  // fallback for an unmapped input is visible instead of silent.
-  if(options.suite==='affected'&&!options.test&&!options['rerun-failed']&&tests.length===selectTests(root,'core').length)
-    console.log('Selection: '+tests.length+' tests (core surface; use --suite full for every harness)');
   // Test artifacts and live global state must never be reused as fresh evidence.
   const selectedTests=[...tests];
   const evidence=fingerprint(root,tests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]);
@@ -150,8 +146,13 @@ export async function runVerification(options,root=ROOT){
     result.status=interrupted?'interrupted':result.tests.some(t=>!['passed','reused','skipped'].includes(t.status))?'failed':'passed';
   }catch(error){result.status='failed';result.error=error.message;console.log('FAIL: '+error.message);}
   finally{for(const test of tests)if(!result.tests.some(t=>t.id===test.id)){result.tests.push({id:test.id,status:interrupted?'interrupted':'blocked',reason:result.error||'Execution interrupted'});progress.completed++;}
-    const finalEvidence=fingerprint(root,selectedTests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]);
-    if(finalEvidence.fingerprint!==result.fingerprint){result.inputs_changed=true;result.status='failed';result.error='Inputs changed during verification; results cannot be reused.';console.log('FAIL: '+result.error);}
+    // A cancelled run is already unusable evidence, and re-hashing the tree can
+    // only delay the exit. A fingerprint that throws is not proof the inputs
+    // changed either, so it gets its own marker instead of claiming a diff.
+    if(!interrupted)try{
+      const finalEvidence=fingerprint(root,selectedTests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]);
+      if(finalEvidence.fingerprint!==result.fingerprint){result.inputs_changed=true;result.status='failed';result.error='Inputs changed during verification; results cannot be reused.';console.log('FAIL: '+result.error);}
+    }catch(error){result.fingerprint_failed=true;result.status='failed';result.error??='Could not re-fingerprint inputs: '+error.message;console.log('FAIL: '+result.error);}
     process.off('SIGINT',stop);process.off('SIGTERM',stop);progress.phase=result.status;persist();}
   const counts=Object.fromEntries(['passed','failed','blocked','interrupted','reused','skipped'].map(s=>[s,result.tests.filter(t=>t.status===s).length]));
   result.assertions={passed:0,failed:0,skipped:0};for(const entry of result.tests)for(const key of Object.keys(result.assertions))result.assertions[key]+=entry.assertions?.[key]||0;persist();

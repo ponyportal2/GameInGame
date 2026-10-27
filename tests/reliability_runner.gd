@@ -56,10 +56,12 @@ func put(path: String, text: String) -> void:
     file.store_string(text)
     file.close()
 
-func read_response(path: String, timeout_ms: int = 10000) -> Dictionary:
+func read_response(path: String, timeout_ms: int = 30000) -> Dictionary:
     # Approval resumes after the reload's preflight and candidate run, so the
     # response lands one or more frames after the approving input is delivered.
-    # Reading the file directly made the suite depend on that timing.
+    # The wait must outlast the 15-second preflight it is waiting on; a shorter
+    # one turns a slow preflight into a suite failure. Reading the file directly
+    # made the suite depend on that timing.
     var deadline = Time.get_ticks_msec() + timeout_ms
     while not FileAccess.file_exists(path) and Time.get_ticks_msec() < deadline:
         await process_frame
