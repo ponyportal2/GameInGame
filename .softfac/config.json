@@ -49,7 +49,8 @@
     "implementerModel": "openai-codex/gpt-6-luna",
     "reviewerModel": "openai-codex/gpt-6-luna",
     "architectModel": "openai-codex/gpt-6-luna",
-    "thinking": "xhigh"
+    "thinking": "xhigh",
+    "idleTimeoutSeconds": 2700
   },
   "prompts": {
     "implementer": ".softfac/prompts/implementer.md",
