@@ -17,6 +17,19 @@ export function fingerprint(root,tests,runtimes,env=process.env,excluded=[]){
   const suite_hash=digest(JSON.stringify(tests));
   return {revision,dirty_hash,suite_hash,fingerprint:digest(JSON.stringify({revision,dirty_hash,suite_hash,runtimes,knobs})),runtimes};
 }
+// Timing is reported from the same entries the run persisted, so a summary
+// never needs a second exhaustive run. Reused and skipped entries carry a
+// duration from another process or none at all; ranking them would attribute
+// old cost to the current selection.
+export function timingSummary(result,limit=5){
+  const entries=result.tests||[];
+  const spent=prefix=>entries.filter(t=>t.id.startsWith(prefix)).reduce((n,t)=>n+(t.duration_ms||0),0);
+  const build=spent('build:'),setup=spent('setup:'),wall=result.duration_ms||0;
+  const ran=entries.filter(t=>!t.id.startsWith('build:')&&!t.id.startsWith('setup:')&&['passed','failed'].includes(t.status)&&(t.duration_ms||0)>0);
+  const slowest=[...ran].sort((a,b)=>b.duration_ms-a.duration_ms).slice(0,limit);
+  const header=`Timing: ${result.suite}, ${(result.selection||[]).length} selected, ${entries.length} entries; wall ${(wall/1000).toFixed(1)}s (build ${(build/1000).toFixed(1)}s, setup ${(setup/1000).toFixed(1)}s, tests ${((wall-build-setup)/1000).toFixed(1)}s)`;
+  return slowest.length?header+'\nSlowest: '+slowest.map(t=>`${t.id} ${(t.duration_ms/1000).toFixed(1)}s`).join('; '):header;
+}
 export function reusedTests(previous,current,key){
   if(previous.fingerprint!==key||previous.status!=='passed')return [];
   return current.map(test=>{

@@ -30,6 +30,18 @@ func wait_for(supervisor, id: String, predicate: Callable, seconds: float = 12.0
         result = supervisor.status(id)
     return result
 
+# A fixture that hangs cannot publish progress through its own main loop. It
+# writes a marker before hanging so the host waits for the actual hang point
+# instead of guessing how long startup takes.
+func wait_fixture_file(supervisor, id: String, name: String, seconds: float = 15.0) -> bool:
+    var deadline = Time.get_ticks_msec() + int(seconds * 1000)
+    while Time.get_ticks_msec() < deadline:
+        var user_data := str(supervisor.status(id).get("user_data", ""))
+        if user_data != "" and FileAccess.file_exists(user_data.path_join(name)):
+            return true
+        await create_timer(0.02).timeout
+    return false
+
 func run() -> void:
     if not ResourceLoader.exists("res://src/core/test_game_supervisor.gd"):
         check(false, "Separate test-process supervisor exists")
@@ -171,10 +183,10 @@ func run() -> void:
     started = supervisor.start(workspace, "headless")
     stopped = await wait_for(supervisor, started.run_id, func(s): return s.state == "exited")
     check(stopped.exit_code == 88, "Generated quit affects only child and preserves its exit code")
-    workspace = fixture("ProcessHang", "extends Node\nfunc _ready():\n\twhile true:\n\t\tpass\n")
+    workspace = fixture("ProcessHang", "extends Node\nfunc _ready():\n\tvar marker = FileAccess.open('user://hanging.txt', FileAccess.WRITE)\n\tmarker.store_string('hung')\n\tmarker.close()\n\twhile true:\n\t\tpass\n")
     supervisor.grace_ms = 250
     started = supervisor.start(workspace, "headless")
-    await create_timer(0.5).timeout
+    check(await wait_fixture_file(supervisor, started.run_id, "hanging.txt"), "Unresponsive fixture reaches its hang point")
     supervisor.request_stop(started.run_id)
     stopped = await wait_for(supervisor, started.run_id, func(s): return s.state == "exited")
     check(stopped.stop_method == "forced", "Unresponsive child is killed after grace period")
@@ -191,13 +203,13 @@ func run() -> void:
 func test_maintenance() -> void:
     var supervisor = load("res://src/core/test_game_supervisor.gd").new()
     root.add_child(supervisor)
-    var workspace = fixture("ProcessMaintenance", "extends Node\nfunc hang():\n\twhile true:\n\t\tpass\n")
+    var workspace = fixture("ProcessMaintenance", "extends Node\nfunc hang():\n\tvar marker = FileAccess.open('user://action-hung.txt', FileAccess.WRITE)\n\tmarker.store_string('hung')\n\tmarker.close()\n\twhile true:\n\t\tpass\n")
     var started = supervisor.start(workspace)
     var id: String = started.run_id
     await wait_for(supervisor, id, func(s): return s.state == "running")
     var action = supervisor.request_action(id, {"action": "call", "method": "hang"})
     check(action.get("pending", false) and action.get("action_id", "") != "", "Hung action returns an identity immediately")
-    await create_timer(0.3).timeout
+    check(await wait_fixture_file(supervisor, id, "action-hung.txt"), "Hung action starts inside the child")
     check(supervisor.request_action(id, {"action": "poll", "action_id": action.get("action_id")}).get("pending", false), "Hung action polling returns without blocking")
     check(not supervisor.request_action(id, {"action": "poll", "action_id": "wrong"}).ok, "Unrelated action identity cannot retrieve a result")
     supervisor.grace_ms = 100

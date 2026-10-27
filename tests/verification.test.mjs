@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {parseArgs,runVerification} from '../tools/testing/verify.mjs';
-import {fingerprint,reusedTests,assertionCounts,failureExcerpt,fatalScriptError} from '../tools/testing/verification-evidence.mjs';
+import {fingerprint,reusedTests,assertionCounts,failureExcerpt,fatalScriptError,timingSummary} from '../tools/testing/verification-evidence.mjs';
 import {selectTests,inventory,resolveTest} from '../tools/testing/verification-plan.mjs';
 import {generatedLauncher,exportFilter} from '../tools/testing/generate-harness-inventory.mjs';
 import {atomicSaveSession,failureRecord} from '../tools/agent/session-state.mjs';
@@ -32,6 +32,24 @@ test('host scheduling bounds audited concurrency and keeps serial barriers',asyn
  const outcomes=[];
  await runHostTests([{id:'host:runtime_properties'},{id:'host:unreviewed'}],2,async entry=>{outcomes.push(entry.id);return {status:'failed'};});
  assert.equal(outcomes.length,2);
+});
+test('timing summary ranks executed tests and separates setup from test time',()=>{
+ const summary=timingSummary({suite:'affected',duration_ms:9000,selection:['host:a','host:b'],tests:[
+  {id:'setup:godot',status:'passed',duration_ms:1000},
+  {id:'build:package',status:'passed',duration_ms:2000},
+  {id:'host:a',status:'passed',duration_ms:4000},
+  {id:'host:b',status:'failed',duration_ms:5000},
+  {id:'host:c',status:'reused',duration_ms:90000},
+  {id:'host:d',status:'skipped'},
+ ]});
+ assert.match(summary,/^Timing: affected, 2 selected, 6 entries; wall 9\.0s \(build 2\.0s, setup 1\.0s, tests 6\.0s\)/);
+ assert.match(summary,/Slowest: host:b 5\.0s; host:a 4\.0s/);
+ assert(!summary.includes('host:c'),'reused tests do not claim a current duration');
+ assert(!summary.includes('host:d'),'skipped tests have no duration to rank');
+});
+test('parallel-safe hosts are the audited set',async()=>{
+ const {PARALLEL_SAFE_HOSTS}=await import('../tools/testing/verification-plan.mjs');
+ assert.deepEqual([...PARALLEL_SAFE_HOSTS].sort(),['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:harness_assembly','host:pi_controller','host:prompt_contract','host:reliability','host:reload_preflight','host:runtime_children','host:runtime_node_lifecycle','host:runtime_properties','host:script_load_policy','host:test_process','host:workspace_ops','host:workspace_store'].sort());
 });
 const root=resolve('.');
 test('affected selection enumerates known consumers and isolates test edits',()=>{

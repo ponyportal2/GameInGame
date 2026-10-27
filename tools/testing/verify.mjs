@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectTests, resolveTest, runHostTests } from './verification-plan.mjs';
-import { atomicJson, assertionCounts, digest, failureExcerpt, fatalScriptError, fingerprint, git, reusedTests } from './verification-evidence.mjs';
+import { atomicJson, assertionCounts, digest, failureExcerpt, fatalScriptError, fingerprint, git, reusedTests, timingSummary } from './verification-evidence.mjs';
 import { killProcessTree } from '../agent/process-tree.mjs';
 
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 export function parseArgs(args){
   const options={suite:'affected',output:'summary',jobs:4,timeout:600000,stall:60000,changed:[]};
-  const values=new Set(['suite','output','jobs','timeout','stall','godot','artifacts','rerun-failed','reuse','changed','since','live','test']);
+  const values=new Set(['suite','output','jobs','timeout','stall','godot','artifacts','rerun-failed','reuse','changed','since','live','test','report']);
   for(let i=0;i<args.length;i++){
     const key=args[i].replace(/^--/,'');
     if(key==='help'){options.help=true;continue;}
@@ -70,7 +70,10 @@ export async function runVerification(options,root=ROOT){
   // Test artifacts and live global state must never be reused as fresh evidence.
   const selectedTests=[...tests];
   const evidence=fingerprint(root,tests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]);
-  const result={...evidence,results_path:resultsPath,started_at:new Date(started).toISOString(),suite:options.suite,jobs:options.jobs,status:'running',duration_ms:0,tests:[],selection:tests.map(t=>t.id),changed};
+  // An explicit list or failed-only rerun is not the suite it borrowed the
+  // default from; the timing summary must not label it affected/core/full.
+  const suite=options.test||options['rerun-failed']||options.live?'explicit':options.suite;
+  const result={...evidence,results_path:resultsPath,started_at:new Date(started).toISOString(),suite,jobs:options.jobs,status:'running',duration_ms:0,tests:[],selection:tests.map(t=>t.id),changed};
   const progress={phase:'starting',completed:0,total:tests.length,running:[],last_progress_at:new Date().toISOString()};
   const persist=()=>{result.duration_ms=Date.now()-started;atomicJson(resultsPath,result);atomicJson(join(directory,'progress.json'),progress);};
   let interrupted=false;
@@ -160,10 +163,13 @@ export async function runVerification(options,root=ROOT){
   const counts=Object.fromEntries(['passed','failed','blocked','interrupted','reused','skipped'].map(s=>[s,result.tests.filter(t=>t.status===s).length]));
   result.assertions={passed:0,failed:0,skipped:0};for(const entry of result.tests)for(const key of Object.keys(result.assertions))result.assertions[key]+=entry.assertions?.[key]||0;persist();
   console.log(`${result.status.toUpperCase()}: ${JSON.stringify(counts)}; ${(result.duration_ms/1000).toFixed(1)}s\nResults: ${resultsPath}`);
+  console.log(timingSummary(result));
   return result;
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--live harness]');else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
+  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--live harness] [--report results.json]');
+  else if(options.report)console.log(timingSummary(JSON.parse(readFileSync(resolve(options.report),'utf8'))));
+  else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
   catch(error){console.error(error.message);process.exitCode=2;}
 }

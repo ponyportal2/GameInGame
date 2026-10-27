@@ -233,3 +233,65 @@ all 103.
 Affected-run evidence: `%TEMP%/gamesmith-verify-gmiz4Y/results.json` (workspace
 operations) and `%TEMP%/gamesmith-verify-nGCUoS/results.json` (Pi transport).
 
+## 2026-10-28: timing summary, ready markers, audited concurrency
+
+Baseline from the exhaustive pass above: 103 selected tests, 105 entries,
+1,556.7 s wall, 4.4 s Godot setup, 3.4 s package build. The five slowest
+executed entries were `runtime_children` 100.4 s, `reliability` 81.0 s,
+`test_process` 71.8 s, `reload_preflight` 64.2 s and `package:contents`
+54.1 s. Every run now ends with that ranking, and
+`--report <results.json>` prints it from saved evidence without rerunning
+anything.
+
+- **Wait audit.** `runtime_children` and `reliability` contain no fixed
+  sleeps; their cost is preflight child startup and repeated app reloads, and
+  their polling loops already exit on the observed state. `test_process` had
+  two fixed sleeps: 0.5 s before stopping the hung startup fixture and 0.3 s
+  before polling a hung action. Both fixtures now write a marker at the hang
+  point and the host waits for that file (bounded at 15 s, with a failing
+  assertion on timeout). This removes a race where a slow start could be
+  mistaken for an unresponsive child; it is not a measurable saving
+  (`test_process` was 74.1 s under four-way contention against 71.8 s alone).
+- **Concurrency audit.** `PARALLEL_SAFE_HOSTS` grew from 4 to 15. Each added
+  runner drives only a `user://` fixture, reads `res://` without writing it,
+  and starts no agent CLI. The reload and test suites do spawn Godot children,
+  but `TestGameSupervisor` gives every child a per-run control directory and
+  redirects `APPDATA`/`HOME`/`XDG_DATA_HOME` to it, so two instances cannot
+  share game state. `workspace_ops` only creates a junction inside its own
+  fixture. Package and native-CLI lifecycle suites remain serial.
+- **Measured overlap.** The four largest suites together:
+  `--test host:runtime_children,host:reliability,host:test_process,host:reload_preflight --jobs 4`
+  passed in 137.1 s wall against 317.4 s of serial durations
+  (`runtime_children` 131.3 s, `reliability` 106.6 s, `test_process` 95.8 s,
+  `reload_preflight` 82.7 s under contention). Evidence:
+  `%TEMP%/gamesmith-verify-ZKhHvY/results.json`.
+- **Focused batch.** `--test host:test_process,host:workspace_store,host:workspace_ops,host:pi_controller,host:script_load_policy,host:cache_regression,host:cache_edge_regression,host:diagnostics,host:runtime_properties,host:runtime_node_lifecycle,host:harness_assembly,host:prompt_contract --jobs 4`
+  passed 13/13 in 124.9 s (4.3 s setup), with the eleven safe suites taking
+  46.4 s of test wall against 105.3 s of serial durations. That run's evidence
+  was invalidated by an edit made while it was running, so it is not cited as
+  reusable evidence.
+- **Selector tests.** `node --test tests/verification.test.mjs` 13/13, adding
+  the timing-summary format and the audited parallel set.
+- **Exhaustive validation.** `--suite full --jobs 4` on the batch: 103
+  selected tests, 105 entries, 4,212 assertions passed, 0 failed, 1 skipped
+  assertion, 1,358.3 s (build 3.6 s, setup 4.3 s) against 1,556.7 s for the
+  same 103-test selection before the batch, a 198.4 s (12.7%) reduction. The
+  baseline predates the previous review's façade test (twenty assertions,
+  about 0.2 s), so the comparison is conservative. Evidence:
+  `%TEMP%/gamesmith-verify-ka4ss3/results.json`. The four overlapped suites
+  report longer individual durations under contention (`runtime_children`
+  137.8 s, `reliability` 109.6 s, `test_process` 86.1 s, `reload_preflight`
+  84.2 s), but the pool finishes in about the longest one instead of their
+  sum. The added assertions are the two hang markers, the two new selector
+  tests and the twenty façade assertions from the previous batch, not weakened
+  checks.
+- **Reassessment.** No runner split is justified: `runtime_children` is one
+  continuous live-game identity scenario, and `reliability` is already
+  overlapped with other suites, so splitting it would add a process start and
+  selector surface for at most its own share of one pool slot. The remaining
+  serial host block is 1,028.5 s, dominated by the thirteen native-CLI
+  lifecycle suites (45-54 s each); they stay serial because their config and
+  session state can escape the redirected app-data root into `USERPROFILE` or
+  `LOCALAPPDATA`, which the verifier does not redirect. Setup (4.3 s) and the
+  package build (3.6 s) are under 0.6% of the run, so setup caching, a PCK
+  cache, reflinks or per-test outcome caching have no measured case.

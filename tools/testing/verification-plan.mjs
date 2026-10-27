@@ -60,9 +60,13 @@ function defaultSurface(tests,harnesses) {
 }
 
 // Each allowlisted runner was audited for writes outside isolated user://,
-// subprocesses, ports and global CLI state. Package/process/lifecycle suites
-// remain serial. See docs/todos/verification-speed.md for the audit.
-export const PARALLEL_SAFE_HOSTS = new Set(['host:runtime_properties','host:runtime_node_lifecycle','host:harness_assembly','host:prompt_contract']);
+// ports and global CLI state. Package and native-CLI lifecycle suites remain
+// serial. Audited 2026-10-28: each allowlisted runner drives a user:// fixture
+// and reads res:// without writing it; workspace_ops creates a junction inside
+// its own fixture with a short cmd/ln helper. The reload/test suites spawn
+// Godot children that inherit the same redirected app-data root, and every run
+// has a per-run control directory, so overlapping instances cannot collide.
+export const PARALLEL_SAFE_HOSTS = new Set(['host:runtime_properties','host:runtime_node_lifecycle','host:harness_assembly','host:prompt_contract','host:workspace_store','host:workspace_ops','host:pi_controller','host:script_load_policy','host:cache_regression','host:cache_edge_regression','host:diagnostics','host:runtime_children','host:reliability','host:test_process','host:reload_preflight']);
 
 export async function runHostTests(tests,jobs,run,stopped=()=>false) {
   const safe=tests.filter(t=>PARALLEL_SAFE_HOSTS.has(t.id));
