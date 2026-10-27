@@ -49,9 +49,11 @@ export async function runVerification(options,root=ROOT){
     if(options.live==='codex'&&!process.env.GAMESMITH_CODEX_BIN?.includes('codex-luna-launcher'))throw new Error('Codex live tests require GAMESMITH_CODEX_BIN pointing at tools/testing/codex-luna-launcher.mjs (explicit gpt-6-luna flag).');
     tests=[{id:'live:'+options.live,phase:'host',file:'tests/'+id+'_integration_runner.gd'}];
   }
-  // This runner is loaded from the PCK. Editing its assertions must not run an
-  // older packaged copy and count that as evidence for the edited test.
-  if(tests.some(t=>t.id==='package:contents')&&changed.some(p=>p==='tests/package_contents_runner.gd'||p==='tests/package_contents_runner.gd.uid'))options.build=true;
+  // The packaged tests read the tracked PCK, not the working tree. Editing the
+  // runner's assertions, or any source the PCK compiles, must not run stale
+  // bytes and count that as evidence for the change under test.
+  const packaged=t=>t.id==='package:contents';
+  if(tests.some(packaged)&&changed.some(p=>p==='tests/package_contents_runner.gd'||p==='tests/package_contents_runner.gd.uid'||p==='project.godot'||p.startsWith('src/')))options.build=true;
   const needsGodot=tests.some(t=>t.phase==='host'||t.phase==='acceptance'||t.id==='package:contents'||(t.phase==='node'&&readFileSync(join(root,t.file),'utf8').includes('assembled-runtime.mjs')))||options.build;
   const version=(bin,args)=>{const r=spawnSync(bin,args,{encoding:'utf8',windowsHide:true,timeout:10000});if(r.status!==0)return {unavailable:bin,error:r.error?.message||r.stderr?.trim()||'version probe failed'};return r.stdout.trim();};
   const runtimes={node:process.version,platform:process.platform,arch:process.arch};

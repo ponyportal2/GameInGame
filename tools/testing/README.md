@@ -29,7 +29,7 @@ Suites:
 - `release`: `all` plus acceptance. It requires installed pinned Pi, Godot, Python and Go. This is the deliberate pre-release gate, so it keeps every harness.
 
 `--test host:copilot_lifecycle,node:copilot-server` selects exact IDs. `--rerun-failed` selects only failed/interrupted/blocked entries from an earlier result, including children blocked by import failure; build failure also repeats the build. Fixes are allowed before a rerun. This is new evidence for that selection, not a claim that the old full run passed.
-Changes to `package_contents_runner.gd` rebuild the PCK automatically when that test is selected, so an edited assertion cannot accidentally execute its older packaged copy.
+Changes to `package_contents_runner.gd`, `project.godot` or any `src/` file rebuild the PCK automatically when `package:contents` is selected, so an edited assertion or a changed packaged source cannot accidentally execute its older packaged copy.
 
 Reuse is opt-in and recorded per test as `status: "reused"` with `evidence_from`. It requires matching HEAD, working-tree content, suite definition, runtime identities and hashed environment knobs, plus existing complete logs. Changes during execution invalidate the run. Builds, live calls and acceptance are never reused. Runtime fingerprints include Node/platform, the Godot binary, Python/Go when needed, and installed Blender identity. Avoid editing sources while verification runs. No secret environment values are written to results.
 
