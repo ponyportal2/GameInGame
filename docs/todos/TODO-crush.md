@@ -21,3 +21,21 @@ headless testing, reload approval, Stop fallback and per-game native continuity.
 - Windows EXE/PCK rebuilt; isolated package-content regression passes. The complete packaged Crush fixture lifecycle passes, including manual/automatic reload, stale-session recovery and stuck startup/turn/cancel Stop fallback. Packaged real acceptance passes 24/24 using normal PATH discovery with the same free model/high reasoning, including 65-second approval, rename and Stop/resume. Evidence: `%TEMP%/gamesmith-crush-package-fixture.log` and `gamesmith-crush-package-live.log`. No native Crush server remains after the acceptance host closes.
 - All 31 host runners pass in one uninterrupted complete run (native exit 0), including the bridge-claim regression, harness switching/ownership, every harness lifecycle, and shared shutdown/process-tree checks. Evidence: `%TEMP%/gamesmith-crush-full-host.log`. Node, launcher, source live and packaged live/fixture results above are local verification; no GitHub CI started.
 - Rebuilt Windows PCK SHA256: `6300269d8e4a68a7157262ffd096721eaa83fe83fbd8539fc12d01ee218d3b18`. Launcher SHA256: `227c609046fd6ba0ad5f80f391a82eb8a554bac0b9ed15384831a0a368171a94`. Screenshot scratch files remain untracked.
+
+## Crush 0.98.1 (2026-10-29)
+
+The adapter now gates on `0.98.1` instead of `0.96.1`; 0.98.2 is only 5 days old
+and stays inside the 7-day release floor. Installing the CLI surfaced a Windows
+packaging detail: the npm package is a GoReleaser wrapper that puts a
+`crush.cmd` shim on PATH and extracts the real binary to
+`node_modules/@charmland/crush/bin/crush.exe`. `resolveExecutable` accepted
+only `.exe` hits from `where.exe`, so a normal npm install produced "Crush CLI
+was not found". It now maps a `.cmd` hit to the extracted binary and spawns
+that directly, because Node refuses to run a `.cmd` without a shell and a
+shell would re-parse the workspace path. A unit test covers both the missing
+binary and the resolved path.
+
+Live acceptance passes 2/2 in 125.2 s against the installed `crush v0.98.1`
+(`%TEMP%/gamesmith-verify-gJ3F4a/results.json`), including the native MCP
+tool path, the confined policy and the reload approval wait. Crush unit and
+server suites pass 14/14.

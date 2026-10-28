@@ -14,9 +14,15 @@ export const disabledTools=['agent','bash','crush_info','crush_logs','job_output
 export function resolveExecutable(bin=process.env.GAMESMITH_CRUSH_BIN || 'crush',platform=process.platform){
   if(/\.(mjs|js)$/i.test(bin) && existsSync(bin))return {bin:process.execPath,prefix:[resolve(bin)]};
   if(platform!=='win32')return {bin,prefix:[]};
-  const found=existsSync(bin)?resolve(bin):spawnSync('where.exe',[bin],{encoding:'utf8',windowsHide:true}).stdout?.trim().split(/\r?\n/).find(p=>/\.exe$/i.test(p));
+  const found=existsSync(bin)?resolve(bin):spawnSync('where.exe',[bin],{encoding:'utf8',windowsHide:true}).stdout?.trim().split(/\r?\n/).find(p=>/\.(exe|cmd)$/i.test(p));
   if(!found)throw new Error('Crush CLI was not found. Install Crush or set GAMESMITH_CRUSH_BIN to crush.exe.');
-  return {bin:found,prefix:[]};
+  if(/\.exe$/i.test(found))return {bin:found,prefix:[]};
+  // The npm package ships a .cmd shim next to the native binary GoReleaser
+  // extracted. Spawn the binary directly; Node refuses to run .cmd without a
+  // shell, and a shell would re-parse the workspace path.
+  const native=join(dirname(found),'node_modules','@charmland','crush','bin','crush.exe');
+  if(!existsSync(native))throw new Error('Crush CLI was not found. Install Crush or set GAMESMITH_CRUSH_BIN to crush.exe.');
+  return {bin:native,prefix:[]};
 }
 export function policy(config,global={}){
   const names=toolSpecs().map(t=>t.name.slice(10)),mcp={};

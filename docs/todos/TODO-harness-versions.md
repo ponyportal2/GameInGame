@@ -20,8 +20,13 @@ the installed version is supported.
   profile via `session/set_mode`, autopilot forced off. Live acceptance passed
   (2/2). See `TODO-kiro.md`.
 - **Crush** `0.98.1` (was 0.96.1). Published 2026-10-09, well past the floor;
-  0.98.2 (2026-10-23) is only 5 days old. Gate, fixture and docs updated. See
-  `TODO-crush.md`.
+  0.98.2 (2026-10-23) is only 5 days old. Gate, fixture and docs updated, and
+  the CLI is installed so the gate is exercised for real: `crush --version`
+  reports v0.98.1 and live acceptance passed 2/2. The npm package installs a
+  `crush.cmd` shim beside the binary GoReleaser extracted, so
+  `resolveExecutable` now maps a `.cmd` hit to
+  `node_modules/@charmland/crush/bin/crush.exe` instead of failing with "Crush
+  CLI was not found". See `TODO-crush.md`.
 - **Command-code** `1.86.3` (was 1.82.1). Newest release at or above the 7-day
   floor: 1.86.3 is 7.6 days old while 1.87.0 (6.98 d), 1.87.1 (6.75 d) and
   1.88.x are still inside it. `command-code acp` still has no root `--mod`
@@ -51,7 +56,9 @@ the installed version is supported.
   `copilot_integration_runner.gd` passed 36/36 assertions in 151.6 s
   (`%TEMP%/gamesmith-verify-EifdCH/results.json`), and
   `codex_integration_runner.gd` passed 2/2 in 58.1 s against the updated
-  `codex 0.165.0` (`%TEMP%/gamesmith-verify-FKbRLu/results.json`).
+  `codex 0.165.0` (`%TEMP%/gamesmith-verify-FKbRLu/results.json`), and
+  `crush_integration_runner.gd` passed 2/2 in 125.2 s against the freshly
+  installed `crush 0.98.1` (`%TEMP%/gamesmith-verify-gJ3F4a/results.json`).
 
 ## Already current, no change
 

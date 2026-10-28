@@ -7,6 +7,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,copyFileSync
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {killProcessTree} from '../tools/agent/process-tree.mjs';
+import {pathToFileURL} from 'node:url';
 function fixture(t,extra={},saved){
   const directory=mkdtempSync(join(tmpdir(),'gs-crush-server-'));mkdirSync(join(directory,'bridge'));
   assembleHarnessRuntime('crush',directory);
@@ -85,4 +86,16 @@ test('SSE loss fails and retires rather than leaving a busy turn indefinitely',{
 test('agent update waits for native MCP initialization before first inference',{timeout:15000},async t=>{
   const f=fixture(t,{GAMESMITH_CRUSH_DELAY_MCP:'1'});f.send({type:'prompt',id:'one',message:'hello'});
   const r=await f.until(r=>r.type==='complete' || r.type==='response' && !r.success);assert.equal(r.ok,true,r.error);
+});
+
+test('npm-installed Crush resolves the extracted binary instead of the .cmd shim',{skip:process.platform!=='win32'},async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'gs-crush-resolve-'));
+  assembleHarnessRuntime('crush',directory);
+  const {resolveExecutable}=await import(pathToFileURL(join(directory,'server.mjs')).href);
+  const shim=join(directory,'crush.cmd');writeFileSync(shim,'@echo off\r\n');
+  assert.throws(()=>resolveExecutable(shim),/Crush CLI was not found/);
+  const native=join(directory,'node_modules','@charmland','crush','bin','crush.exe');
+  mkdirSync(join(directory,'node_modules','@charmland','crush','bin'),{recursive:true});
+  writeFileSync(native,'');
+  assert.deepEqual(resolveExecutable(shim),{bin:native,prefix:[]});
 });
