@@ -27,3 +27,28 @@ Local verification (Windows, Cline 3.0.70):
 - Selected-free-model live acceptance passed: actual main.gd marker=37, successful headless startup, assistant streaming, conversation/backend reuse, explicit native history after reopening, approval held for 65 seconds, approved live reload, native Stop and follow-up on the same backend. Independently checked native session metadata provider=cline/model=cline-free/mimo-v2.6-flash, and added that check to the live runner. No native thought deltas were observed with this model; that is not evidence of reasoning text streaming.
 - Evidence logs: %TEMP%/gamesmith-cline-final-node.txt; gamesmith-cline-host-results.txt (initial failure); gamesmith-cline-remaining-host.txt; gamesmith-cline-acceptance-final.txt (live, lifecycle, 57/57 shutdown); gamesmith-cline-grant-final.txt (final active-turn grant and ownership checks). No remote CI claim.
 - Automatic CI remains disabled. Existing untracked screenshots are preserved and excluded from package/staging.
+
+Re-verification on Cline 3.0.73 (2026-10-29):
+
+- The live host runs with an isolated `HOME`, so the adapter resolved
+  `providers.json` inside the temp directory and every session aborted with
+  `Authentication required: Call authenticate before starting a session` even
+  though the profile was logged in. `liveEnvironment()` now passes
+  `CLINE_DIR` for Cline, the same way it already passes `COPILOT_HOME`,
+  `CRUSH_GLOBAL_*` and `PI_CODING_AGENT_DIR`; the isolated `CLINE_DATA_DIR`
+  still keeps session storage per game.
+- The CLI upgrades itself on startup with
+  `npm update --global cline --tag latest --min-release-age 0`, which bypasses
+  the 7-day release-age floor and moved this profile from 3.0.73 to 3.0.74 on
+  2026-10-29. The adapter now sets `CLINE_NO_AUTO_UPDATE=1` for its child so a
+  game session cannot rewrite the user's global install mid-run. Reinstalling
+  3.0.73 required `--force`: the running hub daemon held the 3.0.74 binary and
+  the plain install left it on disk while updating only the wrapper metadata.
+- The live runner asserted a `cline-free/` model prefix, which no longer
+  exists; the profile's current free tier id is `reflection/beam-free`. It now
+  compares the applied model against the profile's saved model instead of a
+  hardcoded prefix, so a future rename cannot fail the check.
+- Live acceptance on installed 3.0.73 (`cline --version` reports the binary,
+  not the npm wrapper): 19/19 assertions in 114.4 s, evidence
+  `%TEMP%/gamesmith-verify-bztEpn/results.json`. Version still 3.0.73 after the
+  run, i.e. the auto-update suppression held.

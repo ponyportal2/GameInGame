@@ -128,3 +128,40 @@ test('stale OpenCode session retires the backend and preserves its reference',{t
     assert.throws(()=>process.kill(backend.pid,0),{code:'ESRCH'});
   }finally{worker.stdin.end();await closed;}
 });
+
+async function contextFixture(workspace) {
+  const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
+  const config={workspace,bridge_dir:workspace,name:'Context fixture',session_file:join(workspace,'session.json'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:fixture}});
+  const records=[];createInterface({input:worker.stdout}).on('line',line=>records.push(JSON.parse(line)));
+  const turn=async message=>{
+    const before=records.filter(record=>record.type==='complete').length;
+    worker.stdin.write(JSON.stringify({id:'turn'+before,type:'prompt',message})+'\n');
+    for(;;){const done=records.filter(record=>record.type==='complete');if(done.length>before)return done[done.length-1];await new Promise(resolve=>setTimeout(resolve,10));}
+  };
+  const close=async()=>{worker.stdin.end();await once(worker,'close');};
+  return {records,turn,close};
+}
+
+test('context occupancy comes from usage_update and survives an unchanged measurement',{timeout:20000},async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-opencode-context-'));
+  const fixtureWorker=await contextFixture(workspace);
+  try {
+    assert.equal((await fixtureWorker.turn('one')).ok,true);
+    // The second turn reports the same 5120 while its prompt usage is 120.
+    assert.equal((await fixtureWorker.turn('two')).ok,true);
+    assert.deepEqual(fixtureWorker.records.filter(record=>record.type==='context').map(record=>record.tokens),[5120,5120]);
+    assert.equal(JSON.parse(await readFile(join(workspace,'session.json'),'utf8')).context_tokens,5120);
+  } finally {await fixtureWorker.close();}
+});
+
+test('a turn without a usage_update leaves context unknown instead of using prompt totals',{timeout:20000},async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-opencode-context-'));
+  const fixtureWorker=await contextFixture(workspace);
+  try {
+    assert.equal((await fixtureWorker.turn('context-missing')).ok,true);
+    assert.equal(fixtureWorker.records.some(record=>record.type==='context'),false);
+    assert.equal(JSON.parse(await readFile(join(workspace,'session.json'),'utf8')).context_tokens,null);
+  } finally {await fixtureWorker.close();}
+});

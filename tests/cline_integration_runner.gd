@@ -36,7 +36,13 @@ func run() -> void:
     var original = JsonStore.read_dict(session_file, {}).get("session", "")
     var backend = JsonStore.read_dict(directory.path_join("backend.json"), {}).get("pid")
     var native_settings = JsonStore.read_dict(directory.path_join("backend.json"), {})
-    check(str(native_settings.get("model", "")).begins_with("cline-free/"), "Cline inherits the selected native free model")
+    # The profile's saved choice is the source of truth. Free-tier ids get
+    # renamed, so compare against the profile instead of pinning a prefix.
+    var profile = OS.get_environment("CLINE_DIR")
+    if profile == "": profile = OS.get_environment("HOME").path_join(".cline")
+    var saved_providers = JsonStore.read_dict(profile.path_join("data/settings/providers.json"), {})
+    var saved_settings = saved_providers.get("providers", {}).get(saved_providers.get("lastUsedProvider", "cline"), {}).get("settings", {})
+    check(str(saved_settings.get("model", "")) != "" and native_settings.get("model") == saved_settings.get("model"), "Cline inherits the selected native free model")
     check(original != "", "native Cline thread is saved")
     var native_session = JsonStore.read_dict(directory.path_join("native/sessions").path_join(original).path_join(original + ".json"), {})
     check(native_session.get("model") == native_settings.get("model") and native_session.get("provider") == native_settings.get("provider"), "native Cline execution confirms the selected provider and model")

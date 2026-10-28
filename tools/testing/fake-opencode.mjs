@@ -105,8 +105,10 @@ async function run(prompt) {
     if (!reloaded.ok) throw new Error(reloaded.error);
   }
   update({sessionUpdate:'agent_message_chunk',messageId:'msg_fixture',content:{type:'text',text:'Fixture finished'}});
-  update({sessionUpdate:'usage_update',used:5120,size:200000,cost:{amount:0,currency:'USD'}});
-  return {stopReason:'end_turn',usage:{inputTokens:100,outputTokens:20,totalTokens:5120}};
+  // Context occupancy and per-call consumption are different measurements: a
+  // turn that adds 120 tokens to the prompt still leaves the context at 5120.
+  if (prompt!=='context-missing') update({sessionUpdate:'usage_update',used:5120,size:200000,cost:{amount:0,currency:'USD'}});
+  return {stopReason:'end_turn',usage:{inputTokens:100,outputTokens:20,totalTokens:120}};
 }
 const handlers={
   initialize:()=>({protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{embeddedContext:true,image:true}},agentInfo:{name:'fixture',version:'1.0.0'}}),

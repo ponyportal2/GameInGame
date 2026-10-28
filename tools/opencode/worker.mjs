@@ -91,11 +91,12 @@ async function prompt(request,operation) {
         emitRecords(normalizeUpdate(update),operation);
       });
       emit({type:'response',id:request.id,success:true});operation.accepted=true;
-      const before=contextTokens;
+      // usage_update is the only source of context occupancy. The prompt
+      // result's usage.totalTokens measures this call's consumption, not what
+      // the session now holds, so it is never substituted for a missing or
+      // unchanged measurement.
       const result=await server.request('session/prompt',{sessionId:session,prompt:[{type:'text',text:request.message}]});
       if (operation.cancelled) return;
-      const total=Number(result?.usage?.totalTokens) || 0;
-      if (contextTokens===before && total) {contextTokens=total;saveSession();emit({type:'context',tokens:total});}
       const ok=result?.stopReason==='end_turn' && !operation.error;
       emit({type:'complete',ok,text:operation.text,corrected:!!operation.corrected,error:operation.error || (ok ? '' : label+' ended without a completed response.')});
       return;

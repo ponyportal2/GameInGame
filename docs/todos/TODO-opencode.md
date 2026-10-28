@@ -20,3 +20,18 @@ Live acceptance on installed `opencode 2.1.2`:
 `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe opencode_integration_runner.gd`
 returned `{"passed":9,"failed":0}` in 113.1s (evidence
 `%TEMP%/gamesmith-verify-jAP6M4/results.json`).
+
+Context accounting (2026-10-29): the v2 worker used `session/prompt`'s
+`usage.totalTokens` as a fallback whenever a turn did not raise the measured
+context count. That number is the call's consumption (prompt + completion), not
+the occupancy of the session, so a turn that merely added 120 tokens could
+overwrite a real 5120 reading, and a turn with no `usage_update` at all
+reported a bogus occupancy instead of "unknown". `tools/opencode/worker.mjs`
+now takes the count only from `usage_update.used`; a repeated measurement is
+kept as-is and a missing one leaves the stored count untouched.
+`tools/testing/fake-opencode.mjs` had masked this by returning 5120 for both
+measurements; it now reports occupancy 5120 separately from consumption 120 and
+can omit the update (`context-missing`). Two regressions in
+`tests/opencode-server.test.mjs` cover the unchanged measurement and the missing
+update; both fail against the old worker (observed `[5120,5120,120]` and a
+non-null persisted count) and pass now. `tests/opencode*.test.mjs`: 20/20.

@@ -13,6 +13,9 @@ the installed version is supported.
   sessions use `session/new`/`session/load`, and Stop sends `session/cancel`.
   Kilo keeps the shared HTTP/SSE transport. 2.1.3 is 6.2 days old, 2.1.4 is
   5.3 and 2.2.0 is 1.4, so 2.1.2 is the newest release at or above the floor.
+  Context occupancy comes only from `usage_update.used`; the prompt response's
+  `usage.totalTokens` measures that call's consumption and is never substituted
+  for it, so a repeated or missing update leaves the count unchanged.
 - **Copilot** `1.0.105` — the installed CLI removed `--no-remote`, so every
   session exited with code 1. The adapter no longer passes that flag; remote
   access is off by default in 1.0.105. Live acceptance passed 36/36 assertions.
@@ -41,12 +44,28 @@ the installed version is supported.
   `C:\` path as a remote host ("Cannot connect to C: resolve failed"). Running
   the same update from PowerShell succeeds. The adapter has no version gate
   and live acceptance passed 2/2.
-- **Pi** stays `1.3.0` (12.9 days old). 1.4.0 (2026-10-21T22:48Z) is both inside
-  the 7-day floor (6.8 d) and regresses the diagnostics contract: two real-Pi
-  checks fail — "persisted reload diagnostics are acknowledged at the session
-  boundary" and "delivered diagnostic notice is not announced again". The
-  notice is appended to the branch but its receipt never commits, so the same
-  notice is announced twice.
+- **Pi** stays `1.3.0` (12.9 days old). 1.4.0 (2026-10-21T22:48Z) is inside the
+  7-day floor at 6.8 days, which on its own keeps the pin. The two real-Pi
+  checks that fail — "persisted reload diagnostics are acknowledged at the
+  session boundary" and "delivered diagnostic notice is not announced again" —
+  also fail on the 1.3.0 baseline, so they do not establish a 1.4-specific
+  regression. 1.3.0 stays because of the floor, not because of that evidence.
+- **Cline** `3.0.73` — stays on the floor-eligible release (3.0.74 is 2.6 days
+  old) and now passes live acceptance. Two adapter-side gaps had to be closed:
+  the live host ran with an isolated `HOME`, so the adapter looked for
+  `providers.json` in a temp directory and every session aborted with
+  "Call authenticate before starting a session" even though the profile was
+  logged in; `liveEnvironment()` now passes `CLINE_DIR` for Cline like it
+  already does for Copilot, Crush and OMP. Separately, the CLI upgrades its own
+  global install on startup with `npm update --global cline --tag latest
+  --min-release-age 0`, bypassing the release-age floor (it moved this profile
+  from 3.0.73 to 3.0.74 on 2026-10-29), so the adapter sets
+  `CLINE_NO_AUTO_UPDATE=1` for its child: a game session must not rewrite the
+  user's toolchain mid-run. Reinstalling 3.0.73 needed `--force` because the
+  running hub daemon kept the 3.0.74 binary on disk. The live runner also
+  asserted a stale `cline-free/` model prefix; the current free tier id is
+  `reflection/beam-free`, so it now compares against the profile's saved model
+  instead of a hardcoded prefix.
 
 - **Live acceptance on the new pins** — `command_code_integration_runner.gd`
   passed 14/14 assertions in 169.8 s against installed `command-code 1.86.3`
@@ -60,16 +79,18 @@ the installed version is supported.
   `crush_integration_runner.gd` passed 2/2 in 125.2 s against the freshly
   installed `crush 0.98.1` (`%TEMP%/gamesmith-verify-gJ3F4a/results.json`), and
   `kilo_integration_runner.gd` passed 2/2 in 149.6 s on the shared HTTP/SSE
-  transport (`%TEMP%/gamesmith-verify-ahzG33/results.json`). The first Kilo
-  attempt failed because the stealth model answered without calling any tool;
-  the identical rerun passed, so it is model variance, not the shared-module
-  refactor.
+  transport (`%TEMP%/gamesmith-verify-ahzG33/results.json`), and
+  `cline_integration_runner.gd` passed 19/19 assertions in 114.4 s against
+  installed `cline 3.0.73` (`%TEMP%/gamesmith-verify-bztEpn/results.json`).
+  The first Kilo attempt failed because the stealth model answered without
+  calling any tool. The identical rerun passing is consistent with model
+  variance, but one rerun cannot exclude an intermittent integration problem;
+  the initial failure stays on the record.
 
 ## Already current, no change
 
 | Harness | Installed | Newest at or above the 7-day floor |
 | --- | --- | --- |
-| Cline | 3.0.73 | 3.0.73; 3.0.74 is 2.6 days old |
 | Kilo | 7.8.15 | 7.8.15; 7.8.16 is 5.8 days old |
 | Cursor | 2026.10.22-27dcf5f | current |
 | Grok Build | 1.0.70 | current |
@@ -83,9 +104,14 @@ the installed version is supported.
   on the 1.3.0 baseline: `pi_integration_runner.gd` finishes 138 passed /
   2 failed. They are unrelated to the harness version work; the Pi sources are
   unchanged apart from the pinned install string.
-- **Cline live acceptance** cannot run in this profile: the installed
-  `cline 3.0.73` has no saved native login, so every session aborts with
-  `Authentication required: Call authenticate before starting a session` and
-  the write/stream/model assertions fail as a knock-on. The adapter itself is
-  on the floor-eligible version and its provider/model confirmation check
-  passes; re-run `cline_integration_runner.gd` after `cline auth` to close it.
+- **Cline self-updates past the floor.** The CLI runs
+  `npm update --global cline --tag latest --min-release-age 0` on startup, so
+  any ordinary `cline` invocation can move the install to a release younger
+  than 7 days. The adapter suppresses it for its own child
+  (`CLINE_NO_AUTO_UPDATE=1`), and 3.0.73 is installed, but a manual run outside
+  GameSmith can still bump the pin. Re-check `cline --version` before treating
+  the live evidence as current. A running hub daemon also holds the old binary,
+  so a downgrade needs `npm install -g cline@<version> --force` after it exits.
+- **Cline is tested on the binary the wrapper resolves.** `cline --version`
+  reports the platform binary, not the npm wrapper version; the two can diverge
+  when an update is interrupted, so compare both after any reinstall.
