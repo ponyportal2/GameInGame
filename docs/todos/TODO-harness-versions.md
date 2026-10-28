@@ -27,6 +27,15 @@ the installed version is supported.
   1.88.x are still inside it. `command-code acp` still has no root `--mod`
   option, so the inert loader is unchanged. The native provider-boundary suite
   passed 38/38 requests against the real CLI, and the ACP unit suites are 14/14.
+- **Codex** `0.165.0` — the stale standalone 0.164.0 that shadowed the npm
+  copy is updated in place, so `where codex` no longer resolves to an old
+  binary. `codex update` had been failing with "Downloaded Codex package
+  archive did not contain the expected package layout"; the cause is
+  environmental, not upstream: the standalone updater shells out to `tar`,
+  and under Git Bash that is MSYS `/usr/bin/tar`, which reads the archive's
+  `C:\` path as a remote host ("Cannot connect to C: resolve failed"). Running
+  the same update from PowerShell succeeds. The adapter has no version gate
+  and live acceptance passed 2/2.
 - **Pi** stays `1.3.0` (12.9 days old). 1.4.0 (2026-10-21T22:48Z) is both inside
   the 7-day floor (6.8 d) and regresses the diagnostics contract: two real-Pi
   checks fail — "persisted reload diagnostics are acknowledged at the session
@@ -36,9 +45,13 @@ the installed version is supported.
 
 - **Live acceptance on the new pins** — `command_code_integration_runner.gd`
   passed 14/14 assertions in 169.8 s against installed `command-code 1.86.3`
-  (evidence `%TEMP%/gamesmith-verify-9tqJWa/results.json`), and
+  (evidence `%TEMP%/gamesmith-verify-9tqJWa/results.json`),
   `opencode_integration_runner.gd` passed 9/9 assertions in 113.1 s against
-  installed `opencode 2.1.2` (evidence `%TEMP%/gamesmith-verify-jAP6M4/results.json`).
+  installed `opencode 2.1.2` (evidence `%TEMP%/gamesmith-verify-jAP6M4/results.json`),
+  `copilot_integration_runner.gd` passed 36/36 assertions in 151.6 s
+  (`%TEMP%/gamesmith-verify-EifdCH/results.json`), and
+  `codex_integration_runner.gd` passed 2/2 in 58.1 s against the updated
+  `codex 0.165.0` (`%TEMP%/gamesmith-verify-FKbRLu/results.json`).
 
 ## Already current, no change
 
@@ -54,11 +67,6 @@ the installed version is supported.
 
 ## Known blockers
 
-- **Codex** reports `0.164.0` from the standalone installer on `PATH`, while the
-  npm copy is `0.165.0` and is shadowed. `codex update` fails with "Downloaded
-  Codex package archive did not contain the expected package layout", so the
-  installed CLI stays at 0.164.0. The adapter has no version gate and is
-  unaffected.
 - **Pi diagnostics e2e** has two failures that predate this pass and reproduce
   on the 1.3.0 baseline: `pi_integration_runner.gd` finishes 138 passed /
   2 failed. They are unrelated to the harness version work; the Pi sources are
