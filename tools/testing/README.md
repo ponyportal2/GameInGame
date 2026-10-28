@@ -13,6 +13,24 @@ node tools/testing/verify.mjs --suite full --reuse C:/path/to/results.json
 
 `summary`, `errors`, and `full` execute the same selection and save the same complete evidence. Summary prints phases, failures, infrequent long-running notices and the final result. Errors adds bounded failure excerpts. Full streams child stdout/stderr. Expected `ERROR` diagnostics never determine pass/fail: child exit status and deadlines do. Failed entries link a bounded diagnostic JSON and full log. `results.json` is authoritative; atomic `progress.json` is only for checking an apparent stall. No continuous polling is needed.
 
+## Timing summary
+
+At the end of each run, the verifier prints a header in this form:
+
+```text
+Timing: <suite>, <n> selected, <n> entries; wall … (build …, setup …, tests …)
+```
+
+`selected` is the number of tests chosen; `entries` is the number of result entries, including build/setup entries. `wall` is total elapsed time; `build` and `setup` are the recorded durations for those entries; `tests` is the remaining wall time after subtracting build and setup.
+
+`Slowest:` ranks up to five executed test entries by duration. It includes only entries that ended `passed` or `failed` (not build/setup entries); reused and skipped entries never contribute, so timings from earlier runs cannot appear as stale rankings.
+
+`--report <results.json>` reprints the same summary from saved evidence without running anything:
+
+```bash
+node tools/testing/verify.mjs --report C:/path/to/results.json
+```
+
 `--rerun-failed` normally selects failed, interrupted or blocked tests. If the prior run reports `inputs_changed`, it reruns the entire original selection because that evidence was invalidated, even if every child test passed.
 
 Each run gets a new temporary artifact directory (printed at completion), or use `--artifacts <new-directory>`. All child logs, Godot engine logs and isolated application data remain available. `--jobs 4` bounds parallel Node files and explicitly audited host runners (`PARALLEL_SAFE_HOSTS` in `verification-plan.mjs`). Those host runners use separate application data and do not overlap serial runners. Package, native lifecycle and process suites stay serial; separate user data alone does not qualify a test for concurrency. `--jobs 1` provides a serial comparison. `--timeout <milliseconds>` is a test deadline, never a product/model timeout. A Godot script error inside the host project aborts the runner's coroutine, so the verifier kills that test immediately instead of waiting for the deadline; generated candidates under `user://` may fail parsing without being treated as a crash. Missing tools and setup failures fail the verification instead of quietly skipping required tests.
