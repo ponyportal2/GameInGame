@@ -65,6 +65,14 @@ test('--changed trims paths and drops empty entries before affected selection',(
  assert.deepEqual(options.changed,['tests/tool-output.test.mjs','tests/runtime_properties_runner.gd']);
  assert.deepEqual(selectTests(root,'affected',options.changed).map(t=>t.id).sort(),['host:runtime_properties','node:tool-output','node:verification']);
 });
+test('--list prints a focused selection without creating artifacts',t=>{
+ const dir=mkdtempSync(join(tmpdir(),'gs-verify-list-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const artifacts=join(dir,'artifacts');
+ const result=spawnSync(process.execPath,[resolve('tools/testing/verify.mjs'),'--suite','affected','--changed','tests/verification.test.mjs','--artifacts',artifacts,'--list'],{cwd:root,encoding:'utf8',windowsHide:true});
+ assert.equal(result.status,0,result.stderr);
+ assert.equal(result.stdout,'node:verification\n');
+ assert.equal(existsSync(artifacts),false,'listing must not create the artifact directory');
+});
 test('affected selection enumerates known consumers and isolates test edits',()=>{
  const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();
  const check=(paths,expected)=>assert.deepEqual(ids(paths),expected.sort(),paths.join(', '));

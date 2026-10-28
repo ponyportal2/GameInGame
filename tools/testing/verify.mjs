@@ -15,6 +15,7 @@ export function parseArgs(args){
   for(let i=0;i<args.length;i++){
     const key=args[i].replace(/^--/,'');
     if(key==='help'){options.help=true;continue;}
+    if(key==='list'){options.list=true;continue;}
     if(key==='build-package'){options.build=true;continue;}
     if(!args[i].startsWith('--')||!values.has(key)||args[i+1]===undefined)throw new Error('Unknown/missing option: '+args[i]);
     const value=args[++i];if(key==='changed')options.changed.push(...value.split(',').map(path=>path.trim()).filter(Boolean));else options[key]=value;
@@ -25,12 +26,7 @@ export function parseArgs(args){
   return options;
 }
 
-export async function runVerification(options,root=ROOT){
-  const started=Date.now(),directory=options.artifacts?resolve(options.artifacts):mkdtempSync(join(tmpdir(),'gamesmith-verify-'));
-  mkdirSync(directory,{recursive:true});
-  const resultsPath=join(directory,'results.json');
-  if(existsSync(resultsPath))throw new Error('Artifact directory already contains results.json; use a new directory');
-  const godot=resolve(options.godot||process.env.GODOT_BIN||join(root,'GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe'));
+export function resolveSelection(options,root=ROOT){
   // `--since <ref>` adds the branch diff against its base, so a committed branch
   // still selects what it changed. Uncommitted and untracked work is always
   // included: a verifier that only sees commits can silently select nothing.
@@ -53,6 +49,17 @@ export async function runVerification(options,root=ROOT){
     if(options.live==='codex'&&!process.env.GAMESMITH_CODEX_BIN?.includes('codex-luna-launcher'))throw new Error('Codex live tests require GAMESMITH_CODEX_BIN pointing at tools/testing/codex-luna-launcher.mjs (explicit gpt-6-luna flag).');
     tests=[{id:'live:'+options.live,phase:'host',file:'tests/'+id+'_integration_runner.gd'}];
   }
+  return {tests,changed};
+}
+
+export async function runVerification(options,root=ROOT){
+  const started=Date.now(),directory=options.artifacts?resolve(options.artifacts):mkdtempSync(join(tmpdir(),'gamesmith-verify-'));
+  mkdirSync(directory,{recursive:true});
+  const resultsPath=join(directory,'results.json');
+  if(existsSync(resultsPath))throw new Error('Artifact directory already contains results.json; use a new directory');
+  const godot=resolve(options.godot||process.env.GODOT_BIN||join(root,'GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe'));
+  const {tests:selected,changed}=resolveSelection(options,root);
+  let tests=selected;
   // The packaged tests read the tracked PCK, not the working tree. The export
   // preset packs src/, tools/ and project.godot, and enumerating that list here
   // would just be another stale boundary; rebuilding is cheaper than a package
@@ -168,8 +175,9 @@ export async function runVerification(options,root=ROOT){
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--live harness] [--report results.json]');
+  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--list] [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--live harness] [--report results.json]');
   else if(options.report)console.log(timingSummary(JSON.parse(readFileSync(resolve(options.report),'utf8'))));
+  else if(options.list){const ids=resolveSelection(options).tests.map(test=>test.id).sort();if(ids.length)process.stdout.write(ids.join('\n')+'\n');}
   else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
   catch(error){console.error(error.message);process.exitCode=2;}
 }
