@@ -47,6 +47,14 @@ test('timing summary ranks executed tests and separates setup from test time',()
  assert(!summary.includes('host:c'),'reused tests do not claim a current duration');
  assert(!summary.includes('host:d'),'skipped tests have no duration to rank');
 });
+test('timing summary clamps test time when result duration is missing',()=>{
+ const summary=timingSummary({suite:'affected',selection:['host:a'],tests:[
+  {id:'setup:godot',status:'passed',duration_ms:1000},
+  {id:'build:package',status:'passed',duration_ms:2000},
+  {id:'host:a',status:'passed',duration_ms:3000},
+ ]});
+ assert.match(summary,/tests 0\.0s\)/);
+});
 test('parallel-safe hosts are the audited set',async()=>{
  const {PARALLEL_SAFE_HOSTS}=await import('../tools/testing/verification-plan.mjs');
  assert.deepEqual([...PARALLEL_SAFE_HOSTS].sort(),['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:harness_assembly','host:pi_controller','host:prompt_contract','host:reliability','host:reload_preflight','host:runtime_children','host:runtime_node_lifecycle','host:runtime_properties','host:script_load_policy','host:test_process','host:workspace_ops','host:workspace_store'].sort());
