@@ -4,12 +4,15 @@ The default is a compact, portable verification command:
 
 ```powershell
 node tools/testing/verify.mjs --suite affected
+node tools/testing/verify.mjs --suite affected --since main --list
 node tools/testing/verify.mjs --suite full --output summary
 node tools/testing/verify.mjs --suite copilot --output errors
 node tools/testing/verify.mjs --suite release --output full
 node tools/testing/verify.mjs --rerun-failed C:/path/to/results.json
 node tools/testing/verify.mjs --suite full --reuse C:/path/to/results.json
 ```
+
+`--list` prints the selected test IDs, sorted one per line, without running tests or creating artifacts. It honors the normal selection options, including `--suite`, `--changed`, `--since`, `--test`, and `--rerun-failed`.
 
 `summary`, `errors`, and `full` execute the same selection and save the same complete evidence. Summary prints phases, failures, infrequent long-running notices and the final result. Errors adds bounded failure excerpts. Full streams child stdout/stderr. Expected `ERROR` diagnostics never determine pass/fail: child exit status and deadlines do. Failed entries link a bounded diagnostic JSON and full log. `results.json` is authoritative; atomic `progress.json` is only for checking an apparent stall. No continuous polling is needed.
 
