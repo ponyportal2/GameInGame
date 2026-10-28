@@ -17,7 +17,7 @@ export function nativeSettings(env=process.env) {
 }
 const allowed=new Set(toolSpecs().map(t=>t.name.replace('gamesmith_','gamesmith__')));
 function callName(call) {
-  // Cline 3.0.70 omits ACP's optional name. Its native translator uses
+  // Cline may omit ACP's optional name. Its native translator uses
   // buildToolTitle(toolName, input) and maps MCP tools to kind=other.
   // Never override a supplied programmatic identity with a display title.
   return call.name ?? (call.title || '').split(':')[0];

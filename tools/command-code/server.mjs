@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {killProcessTree} from './process-tree.mjs';
 import {validReady} from './policy.mjs';
 
-// ACP 1.82.1 still skips root CLI --mod options. Native user-mod discovery is
+// ACP 1.86.3 still skips root CLI --mod options. Native user-mod discovery is
 // supported. This inert loader never changes terminal sessions or native settings.
 export const LOADER = `export default async function(cmd) {
   if(process.env.GAMESMITH_COMMAND_ACP !== 'v1' || !process.env.GAMESMITH_POLICY_NONCE || !process.env.GAMESMITH_POLICY_MOD) return;
@@ -20,7 +20,7 @@ export function executable() {
   if(existsSync(bin) && /\.(mjs|js)$/i.test(bin))return {bin:process.execPath,prefix:[resolve(bin)]};
   if(process.platform!=='win32')return {bin,prefix:[]};
   const found=existsSync(bin)?resolve(bin):spawnSync('where.exe',[bin],{encoding:'utf8',windowsHide:true}).stdout?.trim().split(/\r?\n/).find(p=>/\.(cmd|exe)$/i.test(p));
-  if(!found)throw new Error('Command-code executable was not found. Install command-code@1.82.1 or set GAMESMITH_COMMAND_CODE_BIN.');
+  if(!found)throw new Error('Command-code executable was not found. Install command-code@1.86.3 or set GAMESMITH_COMMAND_CODE_BIN.');
   if(/\.exe$/i.test(found))return {bin:found,prefix:[]};
   const entry=join(dirname(found),'node_modules','command-code','dist','index.mjs');
   if(!existsSync(entry))throw new Error('Could not resolve Command-code npm entry point. Set GAMESMITH_COMMAND_CODE_BIN to dist/index.mjs.');
@@ -49,8 +49,8 @@ export class CommandServer {
       else if(r.method)this.onEvent(r.method,r.params || {});
     });
     const result=await this.request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'gamesmith',version:'1'}});
-    if(result.agentInfo?.name!=='Command Code' || result.agentInfo.version!=='1.82.1')throw new Error('GameSmith ACP requires tested command-code@1.82.1. Run npm install -g command-code@1.82.1.');
-    if(!result.agentCapabilities?.loadSession)throw new Error('Command-code must support resumable ACP sessions. Use tested version 1.82.1.');
+    if(result.agentInfo?.name!=='Command Code' || result.agentInfo.version!=='1.86.3')throw new Error('GameSmith ACP requires tested command-code@1.86.3. Run npm install -g command-code@1.86.3.');
+    if(!result.agentCapabilities?.loadSession)throw new Error('Command-code must support resumable ACP sessions. Use tested version 1.86.3.');
     await this.waitReady('loaded');return result;
   }
   async waitReady(phase){for(;;){if(this.closing)throw new Error('Command-code policy readiness was cancelled.');try{if(validReady(JSON.parse(readFileSync(this.readyFile,'utf8')),this.nonce,phase))return;}catch(error){if(error.code!=='ENOENT' && !(error instanceof SyntaxError))throw error;}await new Promise(r=>setTimeout(r,20));}}

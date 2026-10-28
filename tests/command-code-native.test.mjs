@@ -41,7 +41,7 @@ test('native ACP provider boundary, persistent history, compaction and guard fai
  t.after(()=>child?.stdin.end());
  const command=(type,message)=>new Promise(r=>{const id=String(++serial);pending.set(id,r);child.stdin.write(JSON.stringify({id,type,message})+'\n');});
  const prompt=async message=>{records=[];const r=await command('prompt',message);assert.equal(r.success,true,JSON.stringify(r)+' '+errors);for(let i=0;i<1000;i++){const c=records.find(r=>r.type==='complete');if(c)return c;await new Promise(r=>setTimeout(r,10));}throw new Error('No native completion '+errors);};
- // Native 1.82.1 leaves a disabled-tool catalog in its prompt. We accept that
+ // Command-code leaves a disabled-tool catalog in its prompt. We accept that
  // documented limitation; schemas and execution must still enforce our policy.
  const assertBoundary=()=>{for(const r of requests){assert.equal(r.model,'policy','native configured model remains inherited');const names=(r.tools || []).map(t=>t.function.name);assert.ok(names.every(n=>TOOL_NAMES.includes(n)),JSON.stringify(names));if(names.length){assert.deepEqual([...names].sort(),[...TOOL_NAMES].sort());assert.ok(JSON.stringify(r.messages).includes('GAMESMITH_NATIVE_POLICY_MARKER'));}}};
  start();assert.equal((await prompt('first ordinary turn')).ok,true);assert.ok(requests.length>0);assertBoundary();
@@ -79,7 +79,7 @@ test('native ACP provider boundary, persistent history, compaction and guard fai
  nextTool={name:'write_file',input:{file_path:join(root,'escape.txt'),content:'must never exist'}};
  await prompt('path rejection');assert.equal(existsSync(join(root,'escape.txt')),false);assertBoundary();
  // Fault-inject the validator used by the production hook. Native hook exceptions
- // are fail-open in 1.82.1, so our complete hook must catch unexpected failures.
+ // are fail-open, so our complete hook must catch unexpected failures.
  writeFileSync(join(root,'workspace-paths.mjs'),`import {workspacePath as real} from ${JSON.stringify(pathToFileURL(resolve('tools/pi/workspace-paths.mjs')).href)}; export async function workspacePath(root,path,options){if(path.endsWith('throw.txt'))throw new Error('DELIBERATE_VALIDATOR_CRASH'); return real(root,path,options);}`);
  await command('cancel');child.stdin.end();await new Promise(r=>child.once('close',r));start();
  assert.equal((await prompt('after explicit load')).ok,true);assertBoundary();assert.equal(JSON.parse(readFileSync(join(root,'session.json'))).session,id);

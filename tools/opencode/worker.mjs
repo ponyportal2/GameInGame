@@ -1,24 +1,28 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { buildConfig, normalizeFrame } from './protocol.mjs';
-import { OpenCodeServer } from './server.mjs';
-import { createEventNormalizer } from './events.mjs';
+import { buildConfig, mergeConfig, normalizeFrame } from './protocol.mjs';
+import { OpenCodeAcpServer, OpenCodeServer } from './server.mjs';
+import { createAcpNormalizer, createEventNormalizer } from './events.mjs';
 
 const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
-const harness=config.harness || 'opencode', label=harness==='kilo' ? 'Kilo' : 'OpenCode', prefix=harness==='kilo' ? 'KILO' : 'OPENCODE';
+const harness=config.harness || 'opencode', acp=harness!=='kilo';
+const label=acp ? 'OpenCode' : 'Kilo', prefix=acp ? 'OPENCODE' : 'KILO';
 const emit=record=>process.stdout.write(JSON.stringify(record)+'\n');
-let session=config.session || '', contextTokens=config.context_tokens ?? null;
+let session=config.session || '', contextTokens=config.context_tokens ?? null, backendModel='';
 let active, initializing, cancelling=false, stopping=false;
 function saveSession() {
   if (!session) return;
   writeFileSync(config.session_file+'.tmp',JSON.stringify({session,context_tokens:contextTokens}));
   renameSync(config.session_file+'.tmp',config.session_file);
 }
-const existing=JSON.parse(process.env[prefix+'_CONFIG_CONTENT'] || '{}'), host=buildConfig(config);
-const inline={...existing,...host,plugin:[...(existing.plugin || []),...host.plugin],instructions:[...(existing.instructions || []),...host.instructions],mcp:{...existing.mcp,...host.mcp}};
-const server=new OpenCodeServer({workspace:config.workspace,harness,env:{...process.env,[prefix+'_CONFIG_CONTENT']:JSON.stringify(inline),GAMESMITH_HOST_BRIDGE_DIR:config.bridge_dir},
-  onStderr:line=>process.stderr.write(line+'\n'),onExit:error=>{if (!stopping) emit({type:'integration_error',error:error.message});}});
+function writeBackend(extra={}) {
+  writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,...(backendModel ? {model:backendModel} : {}),...extra}));
+}
+const inline=mergeConfig(JSON.parse(process.env[prefix+'_CONFIG_CONTENT'] || '{}'),buildConfig(config),harness);
+const shared={workspace:config.workspace,env:{...process.env,[prefix+'_CONFIG_CONTENT']:JSON.stringify(inline),GAMESMITH_HOST_BRIDGE_DIR:config.bridge_dir},
+  onStderr:line=>process.stderr.write(line+'\n'),onExit:error=>{if (!stopping) emit({type:'integration_error',error:error.message});}};
+const server=acp ? new OpenCodeAcpServer(shared) : new OpenCodeServer({...shared,harness});
 function emitRecords(records,operation) {
   for (const record of records) {
     if (record.session) {session=record.session;saveSession();}
@@ -30,22 +34,49 @@ function emitRecords(records,operation) {
   }
 }
 function records(frame,operation) {emitRecords(normalizeFrame(frame,label),operation);}
+async function adoptOptions(result) {
+  const options=result?.configOptions || [];
+  const model=options.find(option=>option.id==='model');
+  if (model?.currentValue) backendModel=model.currentValue;
+  const mode=options.find(option=>option.id==='mode');
+  // A resumed session keeps the agent it was created with, and a player-wide
+  // default agent would bypass the confined rule set. Pin the confined agent.
+  if (mode && mode.currentValue!=='build') {
+    const updated=await server.request('session/set_config_option',{sessionId:session,configId:'mode',value:'build'});
+    const next=(updated?.configOptions || []).find(option=>option.id==='model');
+    if (next?.currentValue) backendModel=next.currentValue;
+  }
+}
 function ready() {
   return initializing ||= (async()=>{
     await server.start();
-    writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,url:server.url}));
-    if (session) {
-      try {await server.request('/session/'+session);}
-      catch(error) {
-        if(harness==='kilo')error.message='Kilo session could not be resumed: '+error.message+'. Start a new Kilo session in Settings. The previous session reference and chat are kept.';
-        throw error;
+    writeBackend(acp ? {} : {url:server.url});
+    if (acp) {
+      if (session) {
+        let loaded;
+        try {loaded=await server.request('session/load',{sessionId:session,cwd:config.workspace,mcpServers:[]});}
+        catch(error) {error.message='OpenCode session could not be resumed: '+error.message+'. Start a new OpenCode session in Settings. The previous session reference and chat are kept.';throw error;}
+        await adoptOptions(loaded);
+      } else {
+        const created=await server.request('session/new',{cwd:config.workspace,mcpServers:[]});
+        session=created.sessionId;
+        await adoptOptions(created);
       }
+      writeBackend();
+    } else {
+      if (session) {
+        try {await server.request('/session/'+session);}
+        catch(error) {
+          error.message='Kilo session could not be resumed: '+error.message+'. Start a new Kilo session in Settings. The previous session reference and chat are kept.';
+          throw error;
+        }
+      }
+      else session=(await server.request('/session','POST',{title:config.name})).id;
     }
-    else session=(await server.request('/session','POST',{title:config.name})).id;
     saveSession();emit({type:'session',session});
   })().catch(async error=>{
     error.initializationFailed=true;
-    if(harness==='kilo'){stopping=true;await server.close();}
+    stopping=true;await server.close();
     throw error;
   });
 }
@@ -53,6 +84,22 @@ async function prompt(request,operation) {
   let unsubscribe;
   try {
     await ready();if (operation.cancelled) return;
+    if (acp) {
+      const normalizeUpdate=createAcpNormalizer(label);
+      unsubscribe=server.onUpdate(update=>{
+        if (active!==operation || operation.cancelled) return;
+        emitRecords(normalizeUpdate(update),operation);
+      });
+      emit({type:'response',id:request.id,success:true});operation.accepted=true;
+      const before=contextTokens;
+      const result=await server.request('session/prompt',{sessionId:session,prompt:[{type:'text',text:request.message}]});
+      if (operation.cancelled) return;
+      const total=Number(result?.usage?.totalTokens) || 0;
+      if (contextTokens===before && total) {contextTokens=total;saveSession();emit({type:'context',tokens:total});}
+      const ok=result?.stopReason==='end_turn' && !operation.error;
+      emit({type:'complete',ok,text:operation.text,corrected:!!operation.corrected,error:operation.error || (ok ? '' : label+' ended without a completed response.')});
+      return;
+    }
     const status=await server.request('/session/status');
     if (status[session]?.type && status[session].type!=='idle') throw new Error(label+' session is already busy.');
     const normalizeEvent=createEventNormalizer(session,label);
@@ -68,7 +115,10 @@ async function prompt(request,operation) {
     emit({type:'response',id:request.id,success:true});operation.accepted=true;
     const result=await server.request('/session/'+session+'/message','POST',{parts:[{type:'text',text:request.message}]});
     if (operation.cancelled) return;
-    if (result.info?.modelID) writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,url:server.url,model:result.info.providerID+'/'+result.info.modelID,variant:result.info.variant}));
+    if (result.info?.modelID) {
+      backendModel=result.info.providerID+'/'+result.info.modelID;
+      writeBackend({url:server.url,model:backendModel,variant:result.info.variant});
+    }
     if (result.info?.error) operation.error=result.info.error.data?.message || result.info.error.message || result.info.error.name;
     emitRecords(normalizeEvent.reconcile(result),operation);
     records({type:'step_finish',part:{tokens:result.info?.tokens}},operation);
@@ -84,7 +134,8 @@ async function cancel(request) {
   cancelling=true;const operation=active;if (operation) operation.cancelled=true;
   try {
     if (initializing) await initializing;
-    if (session && server.url) await server.request('/session/'+session+'/abort','POST');
+    if (acp) {if (session && server.running) server.notify('session/cancel',{sessionId:session});}
+    else if (session && server.url) await server.request('/session/'+session+'/abort','POST');
     await operation?.done;
     emit({type:'response',id:request.id,success:true});
   } catch(error) {emit({type:'response',id:request.id,success:false,error:error.message});}

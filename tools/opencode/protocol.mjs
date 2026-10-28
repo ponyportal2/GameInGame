@@ -1,5 +1,11 @@
 import { pathToFileURL } from 'node:url';
 
+// OpenCode 2 exposes far more capability than GameSmith allows. The confined
+// agent names the tools it may use and denies everything else, so a tool added
+// by a later OpenCode release stays invisible until it is reviewed here.
+const ALLOWED_ACTIONS = ['read','glob','grep','edit','write','skill'];
+const RESERVED_PATHS = ['.git/*','*/.git/*'];
+
 export function buildArguments(config, prompt) {
   const args = ['run', '--format', 'json', '--thinking', '--auto', '--title', config.name];
   if (config.session) args.push('--session', config.session);
@@ -8,14 +14,49 @@ export function buildArguments(config, prompt) {
 }
 
 export function buildConfig(config) {
+  return config.harness === 'kilo' ? kiloConfig(config) : opencodeConfig(config);
+}
+
+function kiloConfig(config) {
   return {
     plugin: [pathToFileURL(config.plugin).href],
     instructions: [config.prompt_path],
-    permission: {'*':config.harness==='kilo' ? 'deny' : 'ask',read:'allow',write:'allow',edit:'allow',glob:'allow',grep:'allow',list:'allow',
-      ...(config.harness==='kilo' ? {apply_patch:'allow'} : {}),
-      bash:config.harness==='kilo' ? 'deny' : 'ask',external_directory:'deny', 'gamesmith_*':'allow'},
+    permission: {'*':'deny',read:'allow',write:'allow',edit:'allow',glob:'allow',grep:'allow',list:'allow',apply_patch:'allow',bash:'deny',external_directory:'deny', 'gamesmith_*':'allow'},
     mcp: {gamesmith: {type:'local',command:[process.execPath, config.mcp],enabled:true}},
   };
+}
+
+// OpenCode 2 applies agent permissions as an ordered rule list: the last rule
+// matching an action and resource wins, and a `deny` on resource `*` also hides
+// the tool from the model. The default-deny rule comes first, then the native
+// file tools and the GameSmith MCP are allowed back, and the reserved-path rules
+// run last so no allow can reopen the repository metadata. The MCP child inherits
+// the adapter environment, which already carries the bridge directory and the
+// Blender switch.
+function opencodeConfig(config) {
+  const allow = action => ({action,resource:'*',effect:'allow'});
+  return {
+    default_agent: 'build',
+    agents: {build: {permissions: [
+      {action:'*',resource:'*',effect:'deny'},
+      ...ALLOWED_ACTIONS.map(allow),
+      ...RESERVED_PATHS.flatMap(resource => [{action:'edit',resource,effect:'deny'},{action:'write',resource,effect:'deny'}]),
+      {action:'gamesmith_*',resource:'*',effect:'allow'},
+    ]}},
+    instructions: [config.prompt_path],
+    mcp: {servers: {gamesmith: {type:'local',command:[process.execPath,config.mcp],codemode:false}}},
+  };
+}
+
+export function mergeConfig(existing, host, harness) {
+  if (harness === 'kilo') return {...existing,...host,
+    plugin: [...(existing.plugin || []),...host.plugin],
+    instructions: [...(existing.instructions || []),...host.instructions],
+    mcp: {...existing.mcp,...host.mcp}};
+  return {...existing,...host,
+    agents: {...existing.agents,build: {...existing.agents?.build,...host.agents.build}},
+    instructions: [...(existing.instructions || []),...host.instructions],
+    mcp: {...existing.mcp,...host.mcp,servers: {...existing.mcp?.servers,...host.mcp.servers}}};
 }
 
 export function normalizeFrame(frame, label='OpenCode') {

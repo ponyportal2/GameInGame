@@ -20,10 +20,16 @@ function saveSession(){
 const server=new KiroServer(config,{
   onStderr:line=>process.stderr.write(line+'\n'),
   onEvent:(method,p)=>{
-    if(method==='_kiro.dev/metadata' && p.sessionId===session){for(const r of normalizeUpdate(p,method))emit(r);return;}
-    if(method!=='session/update' || !active || !active.accepted || active.cancelled || p.sessionId!==session)return;
-    active.calls.update(p.update);
-    for(const r of normalizeUpdate(p.update)){saveSession();if(r.type==='delta' && r.kind==='assistant')active.text+=r.text;emit(r);}
+    if(method!=='session/update')return;
+    const update=p.update || {};
+    // Context usage is native session state, not part of the turn transcript.
+    if(update.sessionUpdate==='session_info_update'){
+      if(p.sessionId===session)for(const r of normalizeUpdate(update))emit(r);
+      return;
+    }
+    if(!active || !active.accepted || active.cancelled || p.sessionId!==session)return;
+    active.calls.update(update);
+    for(const r of normalizeUpdate(update)){saveSession();if(r.type==='delta' && r.kind==='assistant')active.text+=r.text;emit(r);}
   },
   onRequest:async(method,p)=>{
     if(method==='session/request_permission'){
@@ -43,13 +49,19 @@ const server=new KiroServer(config,{
 function ready(){return initializing ||= (async()=>{
   await server.start();
   const params=server.sessionParams();let result;
-  try {result=await server.request(session ? 'session/load' : 'session/new',session ? {...params,sessionId:session,_meta:{'_kiro.dev/session_file':server.nativeSessionFile(session)}} : params);}
+  try {result=await server.request(session ? 'session/load' : 'session/new',session ? {...params,sessionId:session} : params);}
   catch(error){if(session)error.message='Kiro session could not be resumed: '+error.message+'. Start a new Kiro session in Settings. The previous session reference and chat are kept.';throw error;}
   if(session && result.sessionId && result.sessionId!==session)throw new Error('Kiro resumed a different session. Start a new Kiro session in Settings; the previous reference is kept.');
-  if(result.modes?.currentModeId!=='gamesmith')throw new Error('Kiro did not load the restricted GameSmith agent profile. Update Kiro CLI.');
   session=result.sessionId || session;
   if(!session)throw new Error('Kiro returned no session ID.');
-  writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,model:result.configOptions?.find(o=>o.id==='model')?.currentValue || result.models?.currentModelId}));
+  // V3 has no --agent flag; the restricted agent is a session mode. Autopilot
+  // defaults to on and would run tools without the per-call consent below.
+  await server.request('session/set_mode',{sessionId:session,modeId:'gamesmith'});
+  const configured=await server.request('session/set_config_option',{sessionId:session,configId:'autopilot',value:'off'});
+  const options=configured.configOptions || [];
+  if(options.find(o=>o.id==='mode')?.currentValue!=='gamesmith')throw new Error('Kiro did not load the restricted GameSmith agent profile. Update Kiro CLI.');
+  if(options.find(o=>o.id==='autopilot')?.currentValue!=='off')throw new Error('Kiro did not disable autopilot for the GameSmith session. Update Kiro CLI.');
+  writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,model:options.find(o=>o.id==='model')?.currentValue || ''}));
 })().catch(error=>{stopping=true;server.close();error.initializationFailed=true;throw error;});}
 async function prompt(request,operation){
   try {

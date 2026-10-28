@@ -58,7 +58,7 @@ const server=http.createServer(async(req,res)=>{
     const phase=pathname.endsWith('/agent/init')?'agent/init':pathname.includes('/sessions/') && !pathname.endsWith('/messages')?'sessions/load':pathname;
     if(phase===process.env.GAMESMITH_CRUSH_FAIL_METHOD)return reply({message:'Fixture readiness failure: '+phase},500);
     if(pathname==='/v1/health')return reply({status:'ok'});
-    if(pathname==='/v1/version')return reply({version:process.env.GAMESMITH_CRUSH_WRONG_VERSION?'99.0.0':'v0.96.1'});
+    if(pathname==='/v1/version')return reply({version:process.env.GAMESMITH_CRUSH_WRONG_VERSION?'99.0.0':'v0.98.1'});
     if(pathname==='/v1/config')return reply({mcp:{external:{type:'stdio',command:'bad'}}});
     if(pathname==='/v1/workspaces' && req.method==='POST'){
       if(params.yolo!==false)throw new Error('YOLO must be disabled');

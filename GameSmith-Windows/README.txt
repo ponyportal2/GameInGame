@@ -25,7 +25,7 @@ For Crush games:
 
   winget install charmbracelet.crush
 
-The GameSmith adapter supports Crush CLI 0.96.1. Configure its model/provider in
+The GameSmith adapter supports Crush CLI 0.98.1. Configure its model/provider in
 Crush; GameSmith inherits that selection and leaves reasoning and compaction to
 Crush. Node.js must be on PATH. Restart GameSmith after installation. Set
 GAMESMITH_CRUSH_BIN for a custom crush.exe location. Each game has a private
@@ -34,14 +34,14 @@ Settings > Start new Crush session confirms and archives an unusable reference.
 Headless testing and manual/automatic reload approval remain GameSmith settings.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
-  npm install -g @earendil-works/pi-coding-agent@1.0.0
+  npm install -g @earendil-works/pi-coding-agent@1.3.0
 
 After installation, restart GameSmith. If Pi is installed somewhere that is not on PATH,
 set the GAMESMITH_PI_BIN environment variable to the full Pi executable path (for example pi.cmd).
 
 For Command-code games:
 
-  npm install -g command-code@1.82.1
+  npm install -g command-code@1.86.3
 
 Configure your model and provider in the Command-code CLI. GameSmith uses one
 persistent ACP backend and the native session for streaming turns and /compact.
@@ -50,7 +50,7 @@ threshold, Compact now, rendered-test permission and reload approval remain avai
 Node.js must be on PATH. GAMESMITH_COMMAND_CODE_BIN accepts the npm shim or dist/index.mjs.
 Mod and session readiness are verified before inference (20-second startup deadline).
 Model requests have no general timeout. Stop preserves the explicit native session.
-Known 1.82.1 limitation: its system prompt still describes disabled native tools.
+Known limitation: its system prompt still describes disabled native tools.
 Those tools are absent from callable schemas and remain blocked, but their descriptions
 may confuse the model. There is no supported option to suppress that catalog.
 Native history is workspace-bound: confirm Start new Command-code session in Settings
@@ -145,7 +145,9 @@ For Kiro CLI games:
 Install native Kiro CLI: https://kiro.dev/docs/cli/
 Choose Kiro CLI in GameSmith. The standard %LOCALAPPDATA%/Kiro-Cli/kiro-cli.exe
 installation is detected without PATH; GAMESMITH_KIRO_BIN selects another binary.
-Kiro CLI 2.30.0 is tested using its V2 ACP engine. Node.js is required.
+Kiro CLI 2.35.1 is tested using its V3 ACP engine (acp --agent-engine v3).
+GameSmith selects its restricted custom agent mode and turns native autopilot off
+for its own sessions. Node.js is required.
 Kiro owns model/provider/reasoning/compaction. Save a model as Kiro's default with
 /model set-current-as-default or kiro-cli settings chat.defaultModel <model-id>.
 Without a saved native default, this installation uses Auto. GameSmith does not
@@ -155,7 +157,7 @@ ID. Reload waits for GameSmith approval unless automatic approval is enabled.
 Start new Kiro session in Settings archives the reference without deleting history.
 Host headless tests, reload approval and automatic reload approval remain available.
 
-For GitHub Copilot CLI games (tested with Copilot CLI 1.0.96, ACP preview):
+For GitHub Copilot CLI games (tested with Copilot CLI 1.0.105, ACP preview):
   npm install -g @github/copilot
 Sign in through Copilot and select Copilot CLI in GameSmith. Node.js is required.
 GAMESMITH_COPILOT_BIN selects an alternate executable or JavaScript entry point.

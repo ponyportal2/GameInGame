@@ -1,7 +1,8 @@
 import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OpenCodeServer, resolveExecutable } from '../tools/opencode/server.mjs';
+import { OpenCodeAcpServer, resolveExecutable } from '../tools/opencode/server.mjs';
+import { buildConfig } from '../tools/opencode/protocol.mjs';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,9 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
+
+const fixture=join(process.cwd(),'tools/testing/fake-opencode.mjs');
+const mcp=join(process.cwd(),'tools/opencode/mcp.mjs');
 
 test('Chocolatey launcher resolves to the native executable without a transient shim parent', async () => {
   const root=await mkdtemp(join(tmpdir(),'opencode-shim-'));
@@ -19,10 +23,19 @@ test('Chocolatey launcher resolves to the native executable without a transient 
   assert.equal(resolveExecutable(shim,'win32').bin,native);
 });
 
+test('OpenCode 2 npm launcher resolves to the packaged single-file binary', async () => {
+  const root=await mkdtemp(join(tmpdir(),'opencode-npm-'));
+  const shim=join(root,'opencode.cmd');
+  const native=join(root,'node_modules','@opencode','cli','bin','opencode.exe');
+  await mkdir(join(root,'node_modules','@opencode','cli','bin'),{recursive:true});
+  await writeFile(shim,'shim');await writeFile(native,'native');
+  assert.equal(resolveExecutable(shim,'win32').bin,native);
+});
+
 test('OpenCode startup rejection is explicitly initialization failure, not a failed model turn', {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-opencode-init-'));
   const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
-  const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));
   const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(workspace,'missing-opencode.exe')}});
   const closed=once(worker,'close');
@@ -39,9 +52,9 @@ test('OpenCode startup rejection is explicitly initialization failure, not a fai
 test('adapter streams before completion, rejects overlapping prompts during Stop and cleans up on EOF', {timeout:10000}, async () => {
   const workspace=await mkdtemp(join(tmpdir(),'gamesmith-worker-'));
   const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
-  const config={workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const config={workspace,bridge_dir:workspace,name:'Stop fixture',session_file:join(workspace,'session.json'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:fixture}});
   const responses=new Map(), records=[];let serial=0;
   const closed=once(worker,'close');
   createInterface({input:worker.stdout}).on('line',line=>{
@@ -58,6 +71,7 @@ test('adapter streams before completion, rejects overlapping prompts during Stop
     assert.equal(records.some(record=>record.type==='complete'),false);
     assert.equal(records.find(record=>record.type==='delta').text,'Fixture is thinking before completion');
     const backend=JSON.parse(await readFile(join(workspace,'backend.json'),'utf8'));
+    assert.equal(backend.model,'fixture/model');
     const cancel=send('cancel');const overlap=send('prompt','follow up');
     assert.equal((await overlap).success,false);
     assert.equal((await cancel).success,true);
@@ -65,74 +79,52 @@ test('adapter streams before completion, rejects overlapping prompts during Stop
     while (!records.some(record=>record.type==='complete')) await new Promise(resolve=>setTimeout(resolve,10));
     assert.equal(records.filter(record=>record.type==='complete').length,1);
     assert.equal(records.find(record=>record.type==='complete').ok,true);
+    assert.equal(records.find(record=>record.type==='complete').text,'Fixture finished');
+    assert.equal(records.find(record=>record.type==='context').tokens,5120);
     assert.equal(JSON.parse(await readFile(join(workspace,'backend.json'),'utf8')).pid,backend.pid);
+    assert.equal(JSON.parse(await readFile(config.session_file,'utf8')).session,'ses_fixture');
     process.kill(backend.pid,0);
     worker.stdin.end();await closed;
     assert.throws(()=>process.kill(backend.pid,0),{code:'ESRCH'});
   } finally {if (worker.exitCode===null) {worker.stdin.end();await closed;}}
 });
 
-test('persistent transport retains one server and native Stop aborts before another prompt starts', async () => {
-  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-server-'));
-  const server=new OpenCodeServer({workspace,executable:join(process.cwd(),'tools/testing/fake-opencode.mjs'),env:{...process.env,OPENCODE_CONFIG_CONTENT:JSON.stringify({plugin:[],mcp:{}})}});
+test('persistent ACP transport keeps one backend across Stop and refuses an unknown session', async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-acp-'));
+  const server=new OpenCodeAcpServer({workspace,executable:fixture,env:{...process.env,OPENCODE_CONFIG_CONTENT:JSON.stringify(buildConfig({mcp,prompt_path:join(workspace,'prompt.md')}))}});
   try {
     await server.start();const pid=server.pid;
-    const session=await server.request('/session','POST',{title:'Fixture'});
-    const first=await server.request(`/session/${session.id}/message`,'POST',{parts:[{type:'text',text:'follow up'}]});
-    assert.equal(first.info.finish,'stop');
-    const pending=server.request(`/session/${session.id}/message`,'POST',{parts:[{type:'text',text:'wait'}]});
-    await server.request(`/session/${session.id}/abort`,'POST');
-    assert.equal((await pending).info.error.name,'MessageAbortedError');
+    const session=await server.request('session/new',{cwd:workspace,mcpServers:[]});
+    assert.equal(session.sessionId,'ses_fixture');
+    assert.equal(session.configOptions.find(option=>option.id==='mode').currentValue,'build');
+    const first=await server.request('session/prompt',{sessionId:session.sessionId,prompt:[{type:'text',text:'follow up'}]});
+    assert.equal(first.stopReason,'end_turn');
+    const pending=server.request('session/prompt',{sessionId:session.sessionId,prompt:[{type:'text',text:'wait'}]});
+    server.notify('session/cancel',{sessionId:session.sessionId});
+    assert.equal((await pending).stopReason,'cancelled');
     assert.equal(server.pid,pid);
-    const next=await server.request(`/session/${session.id}/message`,'POST',{parts:[{type:'text',text:'follow up'}]});
-    assert.equal(next.info.finish,'stop');
+    const next=await server.request('session/prompt',{sessionId:session.sessionId,prompt:[{type:'text',text:'follow up'}]});
+    assert.equal(next.stopReason,'end_turn');
     assert.equal(server.pid,pid);
+    await assert.rejects(server.request('session/load',{sessionId:'ses_missing',cwd:workspace,mcpServers:[]}),/session not found/);
   } finally {await server.close();}
 });
 
-for (const message of ['partial-stream','lost-stream']) test(`HTTP final answer repairs ${message}`, {timeout:10000}, async () => {
-  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-final-'));
+test('stale OpenCode session retires the backend and preserves its reference',{timeout:10000},async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-opencode-stale-'));
   const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
-  const config={workspace,bridge_dir:workspace,name:'Final fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const config={session:'ses_missing',workspace,bridge_dir:workspace,name:'Stale fixture',session_file:join(workspace,'session.json'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
   const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
-  const records=[]; const closed=once(worker,'close');
-  const completion=new Promise(resolve=>createInterface({input:worker.stdout}).on('line',line=>{const record=JSON.parse(line);records.push(record);if(record.type==='complete') resolve(record);}));
+  await writeFile(config.session_file,JSON.stringify({session:config.session}));
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:fixture}});
+  const closed=once(worker,'close');
+  const response=new Promise(resolve=>createInterface({input:worker.stdout}).on('line',line=>{const r=JSON.parse(line);if(r.type==='response')resolve(r);}));
   try {
-    worker.stdin.write(JSON.stringify({id:'final',type:'prompt',message})+'\n');
-    const result=await completion;
-    assert.equal(result.ok,true);
-    assert.equal(result.text,'I changed the player movement and fixed collisions.');
-    assert.equal(records.filter(r=>r.type==='delta' && r.kind==='assistant').map(r=>r.text).join(''),result.text);
-  } finally {worker.stdin.end();await closed;}
-});
-
-// Native owns history selection/compaction. This fixture tests our production
-// worker across that event boundary, not OpenCode's summarizer or provider.
-test('native compaction event preserves the current request, constraints and unfinished action through the adapter', {timeout:15000}, async()=>{
-  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-compact-boundary-'));
-  const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
-  const config={workspace,bridge_dir:workspace,name:'Boundary fixture',session_file:join(workspace,'session.json'),plugin:join(runtime,'gamesmith.mjs'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
-  const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
-  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:join(process.cwd(),'tools/testing/fake-opencode.mjs')}});
-  const records=[];const closed=once(worker,'close');
-  createInterface({input:worker.stdout}).on('line',line=>records.push(JSON.parse(line)));
-  const wait=async predicate=>{const deadline=Date.now()+10000;while(!predicate()){assert(Date.now()<deadline,'boundary deadline');await new Promise(r=>setTimeout(r,10));}};
-  const taskB='Task B: add grenade on middle mouse; do not reload; pending action grenade-17';
-  try {
-    worker.stdin.write(JSON.stringify({id:'A',type:'prompt',message:'boundary-task-a'})+'\n');
-    await wait(()=>records.filter(r=>r.type==='complete').length===1);
+    worker.stdin.write(JSON.stringify({id:'stale',type:'prompt',message:'hello'})+'\n');
+    const result=await response;
+    assert.equal(result.success,false);assert.equal(result.initialization_failed,true);assert.match(result.error,/Start a new OpenCode session/);
+    assert.equal(JSON.parse(await readFile(config.session_file,'utf8')).session,'ses_missing');
     const backend=JSON.parse(await readFile(join(workspace,'backend.json'),'utf8'));
-    worker.stdin.write(JSON.stringify({id:'B',type:'prompt',message:taskB})+'\n');
-    await wait(()=>records.filter(r=>r.type==='complete').length===2);
-    const evidence=JSON.parse(await readFile(join(workspace,'.opencode-fixture-boundary.json'),'utf8'));
-    assert.deepEqual(evidence.received,['boundary-task-a',taskB]);
-    assert.equal(evidence.context[1].text,taskB);
-    assert.equal(evidence.context[2].action_id,'grenade-17');
-    const completions=records.filter(r=>r.type==='complete');
-    assert(completions.every(r=>r.ok));
-    assert.match(completions[1].text,/Task B grenade completed without reload/);
-    assert.equal(JSON.parse(await readFile(join(workspace,'backend.json'),'utf8')).pid,backend.pid);
-    assert.equal(JSON.parse(await readFile(config.session_file,'utf8')).session,'ses_fixture');
-  } finally {worker.stdin.end();await closed;}
+    assert.throws(()=>process.kill(backend.pid,0),{code:'ESRCH'});
+  }finally{worker.stdin.end();await closed;}
 });

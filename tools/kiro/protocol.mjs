@@ -5,8 +5,16 @@ export function permissionResult(params,permitted){
  const option=params.options?.find(o=>o.kind===(permitted?'allow_once':'reject_once'));
  return {outcome:option?{outcome:'selected',optionId:option.optionId}:{outcome:'cancelled'}};
 }
-// Kiro V2 announces host-resolved MCP identity on tool_call and repeats it
-// on request_permission. Display titles and early tool_call_chunk are ignored.
+// Kiro V3 announces a GameSmith tool as serverName plus a namespaced tool_id.
+// The permission request repeats the same identity and the call ID; display
+// titles and early tool_call_chunk are ignored.
+function announced(u={}){
+ const server=u._meta?.kiro?.serverName,id=u.rawInput?.tool_id;
+ if(typeof server!=='string' || !server)return;
+ if(typeof id!=='string')return {server,name:''};
+ const parts=id.split('::');
+ return parts.length===2 && parts[0]===server && parts[1] ? {server,name:parts[1]} : {server,name:''};
+}
 export class PermissionCalls {
  constructor(seen=new Set()){this.seen=seen;this.calls=new Map();}
  update(u={}){
@@ -15,11 +23,11 @@ export class PermissionCalls {
   if(!c){
    if(u.sessionUpdate!=='tool_call' || this.seen.has(u.toolCallId))return;
    this.seen.add(u.toolCallId);
-   const identity=u._meta?.kiro;
-   c={server:identity?.mcpServerName,name:identity?.toolName,kind:u.kind,input:structuredClone(u.rawInput),status:u.status || 'pending'};this.calls.set(u.toolCallId,c);
+   const identity=announced(u);
+   c={server:identity?.server,name:identity?.name,kind:u.kind,input:structuredClone(u.rawInput),status:u.status || 'pending'};this.calls.set(u.toolCallId,c);
   }
-  const identity=u._meta?.kiro;
-  if(identity && (identity.mcpServerName!==c.server || identity.toolName!==c.name))c.invalid=true;
+  const identity=announced(u);
+  if(identity && (identity.server!==c.server || identity.name!==c.name))c.invalid=true;
   if(u.rawInput!=null && !isDeepStrictEqual(u.rawInput,c.input))c.invalid=true;
   if(u.kind!=null && c.kind!=null && u.kind!==c.kind)c.invalid=true;
   if(u.status!=null)c.status=u.status;
@@ -28,14 +36,18 @@ export class PermissionCalls {
  take(p={}){
   const call=p.toolCall || {},c=this.calls.get(call.toolCallId);
   if(!c || c.used)return false;c.used=true;
-  const identity=p._meta?.mcpToolIdentity;
-  return !c.invalid && c.server==='gamesmith' && allowed.has(c.name) && identity?.serverName===c.server && identity.toolName===c.name &&
-   (call.kind==null || call.kind===c.kind) && (call.status==null || call.status==='pending') && isDeepStrictEqual(call.rawInput,c.input);
+  const kiro=p._meta?.kiro,identity=kiro?.mcpTool?.identity;
+  return !c.invalid && c.server==='gamesmith' && allowed.has(c.name) && typeof kiro?.toolId==='string' &&
+   identity?.serverName===c.server && identity.toolName===c.name &&
+   (call.kind==null || call.kind===c.kind) && (call.status==null || call.status==='pending') && (call.rawInput==null || isDeepStrictEqual(call.rawInput,c.input));
  }
 }
-export function normalizeUpdate(u={},method='session/update'){
- if(method==='_kiro.dev/metadata')return Number.isFinite(u.contextUsagePercentage) && u.contextUsagePercentage>=0 && u.contextUsagePercentage<=100 ? [{type:'context',percent:u.contextUsagePercentage}] : [];
+export function normalizeUpdate(u={}){
+ if(u.sessionUpdate==='session_info_update'){
+  const kiro=u._meta?.kiro,percent=kiro?.usagePercentage;
+  return kiro?.kind==='context_usage' && Number.isFinite(percent) && percent>=0 && percent<=100 ? [{type:'context',percent}] : [];
+ }
  if(['agent_message_chunk','agent_thought_chunk'].includes(u.sessionUpdate) && u.content?.type==='text')return [{type:'delta',kind:u.sessionUpdate==='agent_message_chunk'?'assistant':'thinking',text:u.content.text}];
- if(u.sessionUpdate==='tool_call')return [{type:'tool',name:u._meta?.kiro?.toolName || 'MCP tool',description:u.title || ''}];
+ if(u.sessionUpdate==='tool_call')return [{type:'tool',name:announced(u)?.name || 'MCP tool',description:u.title || ''}];
  return [];
 }

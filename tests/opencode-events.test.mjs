@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createEventNormalizer } from '../tools/opencode/events.mjs';
+import { createAcpNormalizer, createEventNormalizer } from '../tools/opencode/events.mjs';
 
 const event=(type,properties)=>({type,properties});
 const part=(type,id='p',extra={})=>({sessionID:'s',messageID:'m',id,type,...extra});
@@ -50,4 +50,26 @@ test('a divergent final snapshot requests a canonical transcript refresh rather 
   const result={info:{id:'m'},parts:[part('text','final',{text:'Correct answer.'})]};
   assert.deepEqual(normalize.reconcile(result),[{type:'transcript_reconcile'}]);
   assert.deepEqual(normalize.reconcile(result),[]);
+});
+
+test('ACP text, thinking and tool updates reach the player without repeating activity',()=>{
+  const normalize=createAcpNormalizer('OpenCode');
+  assert.deepEqual(normalize({sessionUpdate:'agent_message_chunk',messageId:'m',content:{type:'text',text:'Hello'}}),[{type:'delta',kind:'assistant',text:'Hello'},{type:'assistant_text',text:'Hello'}]);
+  assert.deepEqual(normalize({sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Thinking'}}),[{type:'delta',kind:'thinking',text:'Thinking'}]);
+  const call={sessionUpdate:'tool_call',toolCallId:'call_1',name:'gamesmith_reload_game',title:'gamesmith_reload_game',status:'pending',rawInput:{}};
+  const started=normalize(call);
+  assert.deepEqual(started[0],{type:'tool',name:'gamesmith_reload_game',description:'gamesmith_reload_game'});
+  assert.equal(started[1].type,'status');
+  assert.deepEqual(normalize(call),[]);
+  const finished=normalize({sessionUpdate:'tool_call_update',toolCallId:'call_1',status:'completed'});
+  assert.deepEqual(finished[0],{type:'tool',name:'gamesmith_reload_game',description:'completed'});
+  assert.equal(finished[1].type,'status');
+  assert.deepEqual(normalize({sessionUpdate:'available_commands_update',availableCommands:[]}),[]);
+});
+
+test('ACP usage reports the live context size once per change',()=>{
+  const normalize=createAcpNormalizer('OpenCode');
+  assert.deepEqual(normalize({sessionUpdate:'usage_update',used:5120,size:200000}),[{type:'context',tokens:5120}]);
+  assert.deepEqual(normalize({sessionUpdate:'usage_update',used:5120,size:200000}),[]);
+  assert.deepEqual(normalize({sessionUpdate:'usage_update',used:6400,size:200000}),[{type:'context',tokens:6400}]);
 });

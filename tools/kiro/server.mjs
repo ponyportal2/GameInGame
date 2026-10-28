@@ -23,14 +23,17 @@ export class KiroServer {
   async start(){
     const exe=resolveExecutable();
     mkdirSync(join(this.cwd,'.kiro','agents'),{recursive:true});
-    // V2 profile selectors enforce the executable tool boundary before consent.
+    // V3 profile selectors enforce the executable tool boundary before consent.
     // No global MCP, native tools, model/provider/reasoning or auth overrides.
+    // V3 only discovers a workspace agent when the file is in its universal
+    // shape, so the empty rule list is required even though it grants nothing.
     const profile={name:'gamesmith',description:'GameSmith game editing',prompt:readFileSync(this.config.prompt_path,'utf8'),
-      tools:toolSpecs().map(t=>'@gamesmith/'+t.name.slice(10)),allowedTools:[],includeMcpJson:false,
+      tools:toolSpecs().map(t=>'@gamesmith/'+t.name.slice(10)),allowedTools:[],includeMcpJson:false,permissions:{rules:[]},
       mcpServers:{gamesmith:{command:process.execPath,args:[this.config.mcp,this.config.config_path],timeout:2147483647}}};
     writeFileSync(join(this.cwd,'.kiro','agents','gamesmith.json'),JSON.stringify(profile));
     const options={cwd:this.cwd,env:{...process.env},windowsHide:true,stdio:['pipe','pipe','pipe']};
-    this.child=spawn(exe.bin,[...exe.prefix,'acp','--agent-engine','v2','--agent','gamesmith'],options);
+    // V3 selects the custom agent as a session mode and rejects --agent.
+    this.child=spawn(exe.bin,[...exe.prefix,'acp','--agent-engine','v3'],options);
     const fail=error=>{for(const p of this.pending.values())p.reject(error);this.pending.clear();if(!this.closing)this.onExit(error);};
     this.child.stdin.on('error',()=>{});
     this.child.once('error',fail);this.child.once('exit',code=>fail(new Error(`Kiro ACP exited with code ${code}.`)));
@@ -43,13 +46,13 @@ export class KiroServer {
     });
     try{
       const result=await this.request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'gamesmith',version:'1.0.0'}});
-      if(result.agentInfo?.name!=='Kiro CLI Agent')throw new Error('The selected executable is not Kiro CLI Agent. Set GAMESMITH_KIRO_BIN to Kiro CLI.');
+      // V3 omits agentInfo; its extension list is the engine-specific marker.
+      if(result.agentInfo?.name!=='Kiro CLI Agent' && !Array.isArray(result.agentCapabilities?._meta?.kiro?.extensionMethods))throw new Error('The selected executable is not Kiro CLI Agent. Set GAMESMITH_KIRO_BIN to Kiro CLI.');
       if(!result.agentCapabilities?.loadSession)throw new Error('This Kiro CLI Agent cannot resume ACP sessions. Update Kiro CLI.');
       // Login and selected model stay in Kiro's native configuration.
     }catch(error){this.close();throw error;}
   }
   sessionParams(){return {cwd:this.cwd,mcpServers:[]};}
-  nativeSessionFile(session){if(!/^[a-zA-Z0-9_-]+$/.test(session))throw new Error('Invalid Kiro session ID.');return join(process.env.KIRO_HOME || join(homedir(),'.kiro'),'sessions','cli',session+'.json');}
   send(record){if(this.child?.stdin.writable)this.child.stdin.write(JSON.stringify({jsonrpc:'2.0',...record})+'\n');}
   request(method,params={}){
     if(this.closing || !this.child || this.child.exitCode!==null)return Promise.reject(new Error('Kiro ACP is unavailable.'));

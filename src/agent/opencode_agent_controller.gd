@@ -104,6 +104,9 @@ func _retire_after_cancel() -> bool:
     return false
 
 func _native_prompt() -> String:
-    var prompt = GamePromptScript.build(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", _harness_name() + "'s read/edit/write/grep/glob/list").replace("Pi's", _harness_name() + "'s").replace("Pi process", _harness_name() + " process")
-    prompt += "\nGameSmith tools are exposed by native MCP with the gamesmith_ prefix (for example gamesmith_start_test_game and gamesmith_reload_game). Use those tools for game testing, reload, and Git. Shell and delegation are unavailable; use native read/write/edit/apply_patch tools for files. If native OpenCode says a GameSmith result was saved outside the workspace, do not use Task or attempt to read that path. Retry the GameSmith operation with narrower filters, fewer requested properties, a smaller limit and its pagination; do not repeat an already-applied mutation blindly.\n"
+    var confined := _harness_id() == "opencode"
+    var native_tools := "read/edit/write/grep/glob" if confined else "read/edit/write/grep/glob/list/apply_patch"
+    var unavailable := "Shell, delegation, web access and file patches are unavailable; use the native read, glob, grep, write and edit tools for files." if confined else "Shell, delegation and web access are unavailable; use native read/write/edit/apply_patch tools for files."
+    var prompt = GamePromptScript.build(_blender_enabled()).replace("Pi's read/edit/write/grep/find/ls", _harness_name() + "'s " + native_tools).replace("Pi's", _harness_name() + "'s").replace("Pi process", _harness_name() + " process")
+    prompt += "\nGameSmith tools are exposed by native MCP with the gamesmith_ prefix (for example gamesmith_start_test_game and gamesmith_reload_game). Use those tools for game testing, reload, and Git. " + unavailable + " If " + _harness_name() + " says a GameSmith result was saved outside the workspace, do not attempt to read that path. Retry the GameSmith operation with narrower filters, fewer requested properties, a smaller limit and its pagination; do not repeat an already-applied mutation blindly.\n"
     return prompt

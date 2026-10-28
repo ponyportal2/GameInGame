@@ -14,7 +14,7 @@ await writeFile('backend.json',JSON.stringify({pid:process.pid}));
 createInterface({input:process.stdin}).on('line',async line=>{
  const r=JSON.parse(line),reply=result=>emit({id:r.id,result});
  if(!r.method){pending.get(r.id)?.(r);pending.delete(r.id);return;}
- if(r.method==='initialize'){reply({agentInfo:{name:'Command Code',version:'1.82.1'},agentCapabilities:{loadSession:true}});return;}
+ if(r.method==='initialize'){reply({agentInfo:{name:'Command Code',version:'1.86.3'},agentCapabilities:{loadSession:true}});return;}
  if(r.method==='session/list'){reply({sessions:mode==='load-failed'?[]:[{sessionId:'fixture-session'}]});return;}
  if(['session/new','session/load'].includes(r.method)){
    if(mode==='load-failed'){emit({id:r.id,error:{message:'Native conversation not found'}});return;}

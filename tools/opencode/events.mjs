@@ -1,5 +1,37 @@
 import { normalizeFrame } from './protocol.mjs';
 
+// OpenCode 2 reports ACP session updates instead of native SSE events. Text
+// arrives as deltas, so there is no snapshot to reconcile at the end of a turn.
+export function createAcpNormalizer(label='OpenCode') {
+  const names=new Map(), seen=new Set();
+  let used=0;
+  return update=>{
+    if (!update) return [];
+    const records=[];
+    if (update.sessionUpdate==='agent_message_chunk') {
+      const text=update.content?.type==='text' ? update.content.text : '';
+      if (text) records.push({type:'delta',kind:'assistant',text},{type:'assistant_text',text});
+    } else if (update.sessionUpdate==='agent_thought_chunk') {
+      const text=update.content?.type==='text' ? update.content.text : '';
+      if (text) records.push({type:'delta',kind:'thinking',text});
+    } else if (update.sessionUpdate==='tool_call' || update.sessionUpdate==='tool_call_update') {
+      const id=update.toolCallId || '';
+      const name=update.name || names.get(id) || update.title || '';
+      if (name) names.set(id,name);
+      const status=update.status || '';
+      const key=id+':'+status;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      records.push({type:'tool',name,description:update.title || status});
+      records.push({type:'status',text:label+' is working...'});
+    } else if (update.sessionUpdate==='usage_update') {
+      const tokens=Number(update.used) || 0;
+      if (tokens && tokens!==used) {used=tokens;records.push({type:'context',tokens});}
+    }
+    return records;
+  };
+}
+
 // Native SSE sends text separately from part snapshots. Keep per-part cursors
 // so final snapshots fill missing text without replaying streamed content.
 export function createEventNormalizer(session, label='OpenCode') {

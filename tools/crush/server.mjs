@@ -53,7 +53,7 @@ export class CrushServer {
       // Agents.AllowedTools is deliberately omitted from native JSON. The
       // exact tested version plus resolved disabled_tools verifies its fixed
       // built-in registry; unknown versions cannot silently add native tools.
-      if(!/^v?0\.96\.1$/.test(this.version || ''))throw new Error('This GameSmith adapter supports Crush CLI 0.96.1. The installed version is '+this.version+'. Update the adapter before using a different Crush version.');
+      if(!/^v?0\.98\.1$/.test(this.version || ''))throw new Error('This GameSmith adapter supports Crush CLI 0.98.1. The installed version is '+this.version+'. Update the adapter before using a different Crush version.');
       const global=await this.request('/v1/config'),overlay=policy(this.config,global);
       // Data overrides have highest priority. Crush concatenates arrays when
       // merging scopes: install policy once, without copying credentials.

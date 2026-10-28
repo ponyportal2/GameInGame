@@ -38,7 +38,7 @@ func run() -> void:
     app.agent.llm_stream_delta.connect(func(kind, _text):
         if kind == "assistant": assistant_deltas += 1
         if kind == "thinking": thinking_deltas += 1)
-    await request("Create a minimal main.gd extending Node with var acceptance_marker = 37. Use @gamesmith/write with relative path main.gd. Then use @gamesmith/start_test_game in headless mode, inspect @gamesmith/read_test_log: state=running and load_result.ok=true means startup succeeded. Stop that run with @gamesmith/stop_test_game; do not poll for a running test to exit by itself. Do not reload for this request. Finish with ACCEPTANCE_CREATED. Use only GameSmith tools; no shell or delegation.")
+    await request("Create a minimal main.gd extending Node with var acceptance_marker = 37. Use the gamesmith::write tool with relative path main.gd. Then use gamesmith::start_test_game in headless mode, inspect gamesmith::read_test_log: state=running and load_result.ok=true means startup succeeded. Stop that run with gamesmith::stop_test_game; do not poll for a running test to exit by itself. Do not reload for this request. Finish with ACCEPTANCE_CREATED. Use only GameSmith tools; no shell or delegation.")
     if app.agent.last_error != "":
         app.queue_free()
         await process_frame

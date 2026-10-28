@@ -1,4 +1,4 @@
-// Crush 0.96.1 emits message snapshots; only run_complete ends an agent turn.
+// Crush 0.98.1 emits message snapshots; only run_complete ends an agent turn.
 export class CrushStream {
   constructor(session,run,previous=[]){this.session=session;this.run=run;this.previous=new Set(previous);this.cursors=new Map();this.texts=new Map();this.tools=new Set();}
   message(message){

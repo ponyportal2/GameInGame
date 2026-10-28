@@ -7,17 +7,40 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { readdir, readFile, rename } from 'node:fs/promises';
-import { buildArguments, buildConfig, normalizeFrame } from '../tools/opencode/protocol.mjs';
-import plugin from '../tools/opencode/gamesmith.mjs';
+import { buildArguments, buildConfig, mergeConfig, normalizeFrame } from '../tools/opencode/protocol.mjs';
 
 test('OpenCode resumes only the explicit game session and receives no model/compaction overrides', () => {
   const args = buildArguments({session:'ses_game',name:'Fixture'}, 'literal $prompt & "quoted"');
   assert.deepEqual(args, ['run','--format','json','--thinking','--auto','--title','Fixture','--session','ses_game','--','literal $prompt & "quoted"']);
-  const config = buildConfig({plugin:'C:/fixture/gamesmith.mjs',mcp:'C:/fixture/mcp.mjs',prompt_path:'C:/fixture/prompt.md'});
+  const config = buildConfig({mcp:'C:/fixture/mcp.mjs',prompt_path:'C:/fixture/prompt.md'});
   for (const key of ['model','provider','compaction','small_model']) assert.equal(config[key], undefined);
-  assert.equal(config.permission.bash,'ask');
-  assert.equal(config.permission.read,'allow');
-  assert.equal(config.permission['gamesmith_*'],'allow');
+  assert.equal(config.permission, undefined, 'OpenCode 2 replaced the v1 permission map');
+  assert.equal(config.plugin, undefined, 'the v1 plugin hook no longer enforces anything');
+});
+
+test('OpenCode 2 confines the build agent to workspace tools and GameSmith MCP', () => {
+  const config = buildConfig({mcp:'C:/fixture/mcp.mjs',prompt_path:'C:/fixture/prompt.md'});
+  assert.equal(config.default_agent,'build');
+  const rules = config.agents.build.permissions;
+  assert.deepEqual(rules[0], {action:'*',resource:'*',effect:'deny'}, 'unknown tools stay hidden until the surface names them');
+  assert.deepEqual(rules.filter(rule=>rule.resource==='*' && rule.effect==='allow').map(rule=>rule.action), ['read','glob','grep','edit','write','skill','gamesmith_*']);
+  for (const [action,resource] of [['edit','.git/*'],['edit','*/.git/*'],['write','.git/*'],['write','*/.git/*']]) assert.ok(rules.some(rule=>rule.action===action && rule.resource===resource && rule.effect==='deny'), action+' '+resource);
+  assert.deepEqual(rules.at(-1), {action:'gamesmith_*',resource:'*',effect:'allow'});
+  assert.deepEqual(config.instructions, ['C:/fixture/prompt.md']);
+  assert.deepEqual(config.mcp.servers.gamesmith, {type:'local',command:[process.execPath,'C:/fixture/mcp.mjs'],codemode:false});
+  assert.equal(config.mcp.servers.gamesmith.environment, undefined, 'the MCP child inherits the adapter environment instead of copying it into the config');
+});
+
+test('OpenCode 2 keeps player settings while replacing the confined agent rules', () => {
+  const existing = {model:'fixture/model',instructions:['global.md'],mcp:{timeout:{startup:5},servers:{other:{type:'local',command:['x']}}},agents:{plan:{permissions:[]}}};
+  const merged = mergeConfig(existing,buildConfig({mcp:'C:/fixture/mcp.mjs',prompt_path:'C:/fixture/prompt.md'}),'opencode');
+  assert.equal(merged.model,'fixture/model');
+  assert.equal(merged.default_agent,'build');
+  assert.deepEqual(merged.instructions,['global.md','C:/fixture/prompt.md']);
+  assert.deepEqual(Object.keys(merged.mcp.servers).sort(),['gamesmith','other']);
+  assert.equal(merged.mcp.timeout.startup,5);
+  assert.deepEqual(merged.agents.plan,{permissions:[]});
+  assert.equal(merged.agents.build.permissions.at(-1).action,'gamesmith_*');
 });
 
 test('native JSON events preserve text, thinking, tool errors and current context including cache', () => {
@@ -30,23 +53,6 @@ test('native JSON events preserve text, thinking, tool errors and current contex
   assert.equal(end.find(e=>e.type==='context').tokens,335);
   assert.equal(end.some(e=>e.type==='complete'),false,'a tool round must not finish the player request');
   assert.equal(normalizeFrame({type:'error',error:{name:'APIError',data:{message:'provider failed'}}})[0].error,'provider failed');
-});
-
-test('plugin permits workspace tools and host tools but rejects shell, outside paths and .git writes', async () => {
-  const dir = await mkdtemp(join(tmpdir(),'gamesmith-opencode-policy-'));
-  const workspace = join(dir,'game'); await mkdir(workspace); await writeFile(join(workspace,'main.gd'),'extends Node');
-  const hooks = await plugin({directory:workspace});
-  const before = hooks['tool.execute.before'];
-  await before({tool:'read'},{args:{filePath:join(workspace,'main.gd')}});
-  await before({tool:'gamesmith_reload_game'},{args:{}});
-  await before({tool:'gamesmith_test_game_action'},{args:{action:'inspect',path:'/root/Main'}});
-  await assert.rejects(before({tool:'read'},{args:{filePath:join(dir,'outside')}}),/escapes/);
-  await assert.rejects(before({tool:'write'},{args:{filePath:join(workspace,'.git','config')}}),/reserves/);
-  await assert.rejects(before({tool:'bash'},{args:{command:'echo hi'}}),/unavailable/);
-  await before({tool:'apply_patch'},{args:{patchText:'*** Begin Patch\n*** Add File: inside.gd\n+extends Node\n*** End Patch'}});
-  await assert.rejects(before({tool:'apply_patch'},{args:{patchText:'*** Begin Patch\n*** Add File: ../outside.gd\n+bad\n*** End Patch'}}),/escapes/);
-  await assert.rejects(before({tool:'apply_patch'},{args:{patchText:'*** Begin Patch\n*** Update File: .git/config\n+bad\n*** End Patch'}}),/reserves/);
-  await assert.rejects(before({tool:'apply_patch'},{args:{patchText:'*** Begin Patch\n*** Update File: main.gd\n*** Move to: ../moved.gd\n*** End Patch'}}),/escapes/);
 });
 
 test('MCP approval waits send progress and preserve structured host failures as native tool errors', async () => {

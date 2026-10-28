@@ -49,7 +49,8 @@ test('private profile restricts executable tools without changing native model c
  const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
  const profile=JSON.parse(readFileSync(join(f.directory,'native-workspace','.kiro/agents/gamesmith.json'),'utf8'));
  assert(profile.tools.includes('@gamesmith/write'));assert.equal(profile.tools.some(t=>!t.startsWith('@gamesmith/')),false);assert.equal(profile.includeMcpJson,false);assert.deepEqual(profile.allowedTools,[]);assert.equal(profile.model,undefined);
- const argv=JSON.parse(readFileSync(join(f.directory,'native-workspace','.kiro-fixture-argv.json')));assert.deepEqual(argv,['acp','--agent-engine','v2','--agent','gamesmith']);
+ assert.deepEqual(profile.permissions,{rules:[]},'V3 only discovers a workspace agent written in its universal shape');
+ const argv=JSON.parse(readFileSync(join(f.directory,'native-workspace','.kiro-fixture-argv.json')));assert.deepEqual(argv,['acp','--agent-engine','v3']);
  const requests=readFileSync(join(f.directory,'native-workspace','.kiro-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
  assert.equal(requests.some(r=>r.method==='session/set_model' || r.method==='authenticate'),false);
  assert.equal(JSON.parse(readFileSync(join(f.directory,'backend.json'))).model,'fixture-native-model');
@@ -70,26 +71,32 @@ test('resume cannot silently substitute another native conversation',{timeout:15
  assert.equal(JSON.parse(readFileSync(join(f.directory,'session.json'))).session,'kiro-fixture-session');
 });
 
-test('native load may omit ID but must receive the explicit session file', {timeout:15000},async t=>{
+test('native load reuses the saved session ID', {timeout:15000},async t=>{
  const f=fixture(t,{GAMESMITH_KIRO_LOAD_NO_ID:'1'},'kiro-fixture-session');f.send({type:'prompt',id:'one',message:'hello'});
  assert((await f.until(r=>r.type==='complete')).ok);
  const requests=readFileSync(join(f.directory,'native-workspace','.kiro-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
- const load=requests.find(r=>r.method==='session/load');assert.equal(load.params.sessionId,'kiro-fixture-session');
- assert.match(load.params._meta['_kiro.dev/session_file'],/[\\/]\.kiro[\\/]sessions[\\/]cli[\\/]kiro-fixture-session\.json$/);
+ const load=requests.find(r=>r.method==='session/load');assert.equal(load.params.sessionId,'kiro-fixture-session');assert.equal(load.params._meta,undefined);
  assert.equal(JSON.parse(readFileSync(join(f.directory,'session.json'))).session,'kiro-fixture-session');
+});
+test('restricted mode and supervised autonomy are selected before inference',{timeout:15000},async t=>{
+ const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
+ const requests=readFileSync(join(f.directory,'native-workspace','.kiro-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+ const mode=requests.findIndex(r=>r.method==='session/set_mode'),autopilot=requests.findIndex(r=>r.method==='session/set_config_option'),prompt=requests.findIndex(r=>r.method==='session/prompt');
+ assert(mode>=0 && autopilot>mode && prompt>autopilot,'mode and autonomy are set before the first prompt');
+ assert.equal(requests[mode].params.modeId,'gamesmith');
+ assert.deepEqual(requests[autopilot].params,{sessionId:'kiro-fixture-session',configId:'autopilot',value:'off'});
+});
+test('native autopilot staying on fails closed before inference',{timeout:15000},async t=>{
+ const f=fixture(t,{GAMESMITH_KIRO_AUTOPILOT_STUCK:'1'});f.send({type:'prompt',id:'one',message:'hello'});
+ const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);assert.match(result.error,/autopilot/);
+ const requests=readFileSync(join(f.directory,'native-workspace','.kiro-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+ assert.equal(requests.some(r=>r.method==='session/prompt'),false);
 });
 test('a native fallback to unrestricted default mode fails closed',{timeout:15000},async t=>{
  const f=fixture(t,{GAMESMITH_KIRO_WRONG_MODE:'1'});f.send({type:'prompt',id:'one',message:'hello'});
  const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);assert.match(result.error,/restricted GameSmith/);
 });
 
-test('custom KIRO_HOME controls explicit native resume path',{timeout:15000},async t=>{
- const home=mkdtempSync(join(tmpdir(),'gs-custom-kiro-home-'));
- const f=fixture(t,{KIRO_HOME:home},'kiro-fixture-session');
- f.send({type:'prompt',id:'one',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
- const requests=readFileSync(join(f.directory,'native-workspace','.kiro-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
- assert.equal(requests.find(r=>r.method==='session/load').params._meta['_kiro.dev/session_file'],join(home,'sessions','cli','kiro-fixture-session.json'));
-});
 
 test('persistent turns keep profile instructions out of user history',{timeout:15000},async t=>{
  const f=fixture(t);f.send({type:'prompt',id:'one',message:'first player message'});assert((await f.until(r=>r.type==='complete')).ok);

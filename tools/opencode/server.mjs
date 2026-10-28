@@ -12,12 +12,110 @@ export function resolveExecutable(bin, platform=process.platform, harness='openc
   if (platform!=='win32') return {bin,prefix:[]};
   let found=existsSync(bin) ? resolve(bin) : spawnSync('where.exe',[bin],{encoding:'utf8',windowsHide:true}).stdout?.trim().split(/\r?\n/).find(p=>/\.(exe|cmd)$/i.test(p));
   if (!found) throw new Error(label+' executable was not found.');
-  const native=join(dirname(found),'..','lib','opencode','tools','opencode.exe');
-  if (harness==='opencode' && basename(found).toLowerCase()==='opencode.exe' && basename(dirname(found)).toLowerCase()==='bin' && existsSync(native)) found=resolve(native);
+  const directory=dirname(found);
+  // The npm launcher is a batch shim in front of a native single-file binary.
+  // Spawning the shim would leave a transient cmd.exe parent in the tree.
+  const native=harness==='opencode' ? [
+    join(directory,'node_modules','@opencode','cli','bin','opencode.exe'),
+    join(directory,'..','lib','opencode','tools','opencode.exe'),
+  ].find(candidate=>existsSync(candidate)) : undefined;
+  if (native) found=resolve(native);
   if (/\.exe$/i.test(found)) return {bin:found,prefix:[]};
-  const entry=harness==='kilo' ? join(dirname(found),'node_modules','@kilocode','cli','bin','kilo') : join(dirname(found),'node_modules','opencode-ai','bin','opencode');
-  if (!existsSync(entry)) throw new Error('Could not resolve '+label+' npm entry point.');
-  return {bin:process.execPath,prefix:[entry]};
+  if (harness==='kilo') {
+    const entry=join(directory,'node_modules','@kilocode','cli','bin','kilo');
+    if (existsSync(entry)) return {bin:process.execPath,prefix:[entry]};
+    throw new Error('Could not resolve Kilo npm entry point.');
+  }
+  throw new Error('Could not resolve OpenCode 2 executable. Install the OpenCode 2 CLI or set GAMESMITH_OPENCODE_BIN to its native binary.');
+}
+
+const ACP_INITIALIZE={protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'gamesmith',version:'1.0.0'}};
+
+// OpenCode 2 speaks ACP over newline-delimited JSON-RPC on stdio. There is no
+// HTTP listener, so the session, the cancel path and the event stream all live
+// on the same child process.
+export class OpenCodeAcpServer {
+  constructor({workspace,executable,env=process.env,onStderr=()=>{},onExit=()=>{}}) {
+    Object.assign(this,{workspace,executable,env,onStderr,onExit});
+    this.label='OpenCode';this.pending=new Map();this.listeners=new Set();this.serial=0;this.stopping=false;
+  }
+  get pid() {return this.child?.pid;}
+  get running() {return !!this.child && this.child.exitCode===null;}
+  start() {
+    if (this.starting) return this.starting;
+    return this.starting=new Promise((resolveStart,reject)=>{
+      let exe;
+      try {exe=resolveExecutable(this.executable,process.platform,'opencode');}
+      catch (error) {reject(error);return;}
+      this.child=spawn(exe.bin,[...exe.prefix,'acp'],{cwd:this.workspace,windowsHide:true,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],env:this.env});
+      this.child.once('error',error=>{this.rejectPending(error);reject(error);});
+      createInterface({input:this.child.stdout}).on('line',line=>this.receive(line));
+      createInterface({input:this.child.stderr}).on('line',this.onStderr);
+      this.child.once('exit',code=>{
+        const error=new Error(`${this.label} backend exited with code ${code}.`);
+        this.rejectPending(error);
+        if (!this.stopping) this.onExit(error);
+      });
+      this.request('initialize',ACP_INITIALIZE).then(result=>{
+        this.capabilities=result?.agentCapabilities || {};
+        resolveStart(this);
+      },reject);
+    });
+  }
+  receive(line) {
+    let message;
+    try {message=JSON.parse(line);} catch {return;}
+    if (message.method && message.id!==undefined) {this.respond(message);return;}
+    if (message.id!==undefined) {
+      const pending=this.pending.get(message.id);
+      if (!pending) return;
+      this.pending.delete(message.id);
+      if (message.error) pending.reject(new Error(message.error.message || this.label+' request failed.'));
+      else pending.resolve(message.result);
+      return;
+    }
+    if (message.method==='session/update') {
+      const params=message.params || {};
+      for (const listener of this.listeners) listener(params.update || {},params);
+    }
+  }
+  respond(message) {
+    // GameSmith only grants what its configuration already allowed. An
+    // unexpected prompt is refused rather than approved on the player's behalf.
+    const result=message.method==='session/request_permission' ? {outcome:{outcome:'cancelled'}} : undefined;
+    const payload=result
+      ? {jsonrpc:'2.0',id:message.id,result}
+      : {jsonrpc:'2.0',id:message.id,error:{code:-32601,message:'Method not supported: '+message.method}};
+    this.child?.stdin.write(JSON.stringify(payload)+'\n');
+  }
+  request(method,params) {
+    return new Promise((resolveResult,reject)=>{
+      if (!this.running) {reject(new Error(this.label+' backend is not running.'));return;}
+      const id=++this.serial;
+      this.pending.set(id,{resolve:resolveResult,reject});
+      this.child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');
+    });
+  }
+  notify(method,params) {
+    if (this.running) this.child.stdin.write(JSON.stringify({jsonrpc:'2.0',method,params})+'\n');
+  }
+  onUpdate(listener) {
+    this.listeners.add(listener);
+    return ()=>this.listeners.delete(listener);
+  }
+  rejectPending(error) {
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
+  }
+  async close() {
+    this.stopping=true;
+    try {this.child?.stdin.end();} catch {}
+    if (this.child?.pid) {
+      if (process.platform==='win32') spawnSync('taskkill.exe',['/PID',String(this.child.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});
+      else {try {process.kill(-this.child.pid,'SIGTERM');} catch {}}
+    }
+    this.rejectPending(new Error(this.label+' backend closed.'));
+  }
 }
 
 export class OpenCodeServer {

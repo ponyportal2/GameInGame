@@ -35,7 +35,7 @@ export class CopilotServer {
     const mcpPath=join(dirname(this.config.session_file),'mcp-config.json');
     writeFileSync(mcpPath,JSON.stringify({mcpServers:{gamesmith:{type:'local',command:process.execPath,args:[this.config.mcp,this.config.config_path],tools:['*'],timeout:2147483647}}}));
     const options={cwd:this.cwd,env:{...process.env},windowsHide:true,stdio:['pipe','pipe','pipe']};
-    this.child=spawn(exe.bin,[...exe.prefix,'--acp','--stdio','--disable-builtin-mcps','--no-auto-update','--no-ask-user','--no-remote',
+    this.child=spawn(exe.bin,[...exe.prefix,'--acp','--stdio','--disable-builtin-mcps','--no-auto-update','--no-ask-user',
       '--available-tools='+names.map(n=>'mcp:'+n).join(','),'--allow-tool=gamesmith','--additional-mcp-config=@'+mcpPath],options);
     const fail=error=>{for(const p of this.pending.values())p.reject(error);this.pending.clear();if(!this.closing)this.onExit(error);};
     this.child.stdin.on('error',()=>{});

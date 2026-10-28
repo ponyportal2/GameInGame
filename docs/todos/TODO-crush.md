@@ -1,6 +1,6 @@
 # Crush CLI integration
 
-- [x] Inspect installed Crush 0.96.1 server API, native configuration, sessions and tool policy.
+- [x] Inspect installed Crush 0.98.1 server API, native configuration, sessions and tool policy.
 - [x] Add failing transport/protocol regressions, then implement the adapter.
 - [x] Add harness selection/switching, recovery, launcher and packaging support.
 - [x] Run deterministic host/Node suites and real selected-model acceptance.
@@ -11,7 +11,7 @@ headless testing, reload approval, Stop fallback and per-game native continuity.
 
 ## Decisions and verification
 
-- Tested native version: Crush v0.96.1, tagged source `17a62b72549d60ac732a0a744382925467d5cfe7`. Use a persistent private HTTP server/workspace/database and explicit session IDs, not repeated one-shot runs or reconstructed chat.
+- Tested native version: Crush v0.98.1, tagged source `8b1824282eccc78cc62c188c245cf375230a18ce` (previously v0.96.1, `17a62b72549d60ac732a0a744382925467d5cfe7`). The 0.98.1 `internal/agent/tools` registry is byte-for-byte the same file set as 0.96.1, so the disabled-tool list is unchanged; only the pinned version moved. Use a persistent private HTTP server/workspace/database and explicit session IDs, not repeated one-shot runs or reconstructed chat.
 - Crush omits its resolved agent tool registry from JSON. Pin the adapter to this verified version and validate the merged disabled-tools/MCP policy before inference. Unknown versions fail closed. Reuse the existing bounded Kiro MCP implementation and Cline lifecycle/support modules; Node tests assemble the exact eight runtime files selected by the controller.
 - Native config arrays concatenate. Install the private policy only in the highest-priority native data directory; inherit native model, credentials, reasoning, compaction and cache without copying credential configuration. Reject a conflicting merged gamesmith MCP command, arguments or tool list.
 - TDD: protocol imports initially failed before implementation. A delayed-MCP fixture reproduced updating the native agent before MCP discovery finished; the regression passes after readiness waits for MCP connection. A conflicting merged MCP-arguments fixture also failed before validation was added. Red evidence: `%TEMP%/gamesmith-crush-red-mcp.log` and `gamesmith-crush-red-merge.log`.

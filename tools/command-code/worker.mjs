@@ -46,7 +46,7 @@ async function ready(){
       }});
     server=runtime;
     let timer;
-    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Command-code GameSmith integration did not become ready. Use tested version 1.82.1; no model request was sent.')),config.startup_timeout_ms || 20000);});
+    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Command-code GameSmith integration did not become ready. Use tested version 1.86.3; no model request was sent.')),config.startup_timeout_ms || 20000);});
     try{await Promise.race([(async()=>{
       await runtime.start();
       if(session){

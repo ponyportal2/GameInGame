@@ -1,124 +1,135 @@
-import { writeFile, readFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 
-import http from 'node:http';
-let currentResponse;
-const subscribers=new Set();
-const parts=[];
-let partId=0;
-let waiting;
-let aborted=false;
-const boundaryHistory=[];
-const session='ses_fixture';
-const emit=frame=>{
- const type={step_start:'step-start',step_finish:'step-finish',tool_use:'tool',text:'text',reasoning:'reasoning'}[frame.type];
- if (!type) return;
- const part={...frame.part,id:String(++partId),sessionID:session,type,time:{end:Date.now()}};parts.push(part);
- for (const response of subscribers) response.write('data: '+JSON.stringify({type:'message.part.updated',properties:{part}})+'\n\n');
-};
-const config=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT);
-const hooks=config.plugin[0] ? await (await import(config.plugin[0])).default({directory:process.cwd()}) : {'tool.execute.before':async()=>{}};
-const mcp=config.mcp.gamesmith ? spawn(config.mcp.gamesmith.command[0],config.mcp.gamesmith.command.slice(1),{windowsHide:true,stdio:['pipe','pipe','pipe'],env:process.env}) : null;
-await writeFile('.opencode-fixture-pids.json',JSON.stringify({cli:process.pid,mcp:mcp?.pid}));
-const pending=new Map();let id=0;
-if (mcp) createInterface({input:mcp.stdout}).on('line',line=>{
-  const frame=JSON.parse(line);
-  if (pending.has(frame.id)) {pending.get(frame.id)(frame);pending.delete(frame.id);}
-});
-mcp?.stderr.pipe(process.stderr);
-function request(method,params) {
-  const next=++id;
-  const result=new Promise(resolve=>pending.set(next,resolve));
-  mcp.stdin.write(JSON.stringify({jsonrpc:'2.0',id:next,method,params})+'\n');return result;
+const config=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}');
+const permissions=config.agents?.build?.permissions || [];
+const allows=action=>permissions.some(rule=>rule.action===action && rule.resource==='*' && rule.effect==='allow');
+// The fixture fails loudly when the adapter stops confining the agent, so the
+// policy cannot silently regress behind a green lifecycle run.
+if (config.default_agent!=='build') throw new Error('Fixture requires the confined build agent');
+if (!permissions.some(rule=>rule.action==='*' && rule.resource==='*' && rule.effect==='deny')) throw new Error('Fixture requires the default-deny rule');
+for (const action of ['read','write','edit','glob','grep','skill','gamesmith_*']) if (!allows(action)) throw new Error('Fixture requires the '+action+' allow rule');
+for (const action of ['shell','execute','subagent','question','webfetch','external_directory']) if (allows(action)) throw new Error('Fixture must not allow '+action);
+if (!(config.instructions || []).length) throw new Error('Fixture requires the game instructions');
+
+const sessionId='ses_fixture';
+let model='fixture/model', mode='build', serial=0, callSerial=0, cancelled=false, resolveStall=null, cancelSettles=true;
+
+const send=message=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...message})+'\n');
+const update=value=>send({method:'session/update',params:{sessionId,update:value}});
+function options() {
+  return [
+    {id:'model',category:'model',type:'select',currentValue:model,options:[{value:'fixture/model',name:'Fixture model'}]},
+    {id:'mode',category:'mode',type:'select',currentValue:mode,options:[{value:'build',name:'Build'},{value:'plan',name:'Plan'}]},
+  ];
 }
-if (mcp) {await request('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'fixture',version:'1'}});
-const listed=await request('tools/list',{});
-if (!listed.result.tools.find(t=>t.name==='reload_game')) throw new Error('MCP missing host tools');}
+function rpcError(code,message) {const error=new Error(message);error.code=code;return error;}
+
+const mcpConfig=config.mcp?.servers?.gamesmith;
+const mcp=mcpConfig ? spawn(mcpConfig.command[0],mcpConfig.command.slice(1),{windowsHide:true,stdio:['pipe','pipe','pipe'],env:process.env}) : null;
+await writeFile('.opencode-fixture-pids.json',JSON.stringify({cli:process.pid,mcp:mcp?.pid}));
+const pending=new Map();let mcpId=0;
+if (mcp) {
+  createInterface({input:mcp.stdout}).on('line',line=>{
+    const frame=JSON.parse(line);
+    if (pending.has(frame.id)) {pending.get(frame.id)(frame);pending.delete(frame.id);}
+  });
+  mcp.stderr.pipe(process.stderr);
+}
+function request(method,params) {
+  const next=++mcpId;
+  const result=new Promise(resolve=>pending.set(next,resolve));
+  mcp.stdin.write(JSON.stringify({jsonrpc:'2.0',id:next,method,params})+'\n');
+  return result;
+}
+if (mcp) {
+  await request('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'fixture',version:'1'}});
+  const listed=await request('tools/list',{});
+  if (!listed.result.tools.find(tool=>tool.name==='reload_game')) throw new Error('MCP missing host tools');
+}
 async function host(name,args={}) {
-  await hooks['tool.execute.before']({tool:'gamesmith_'+name},{args});
-  const frame=await request('tools/call',{name,arguments:args,_meta:{progressToken:String(id+1)}});
-  emit({type:'tool_use',part:{tool:'gamesmith_'+name,state:{status:frame.result.isError?'error':'completed'}}});
+  const id='call_'+(++callSerial);
+  update({sessionUpdate:'tool_call',toolCallId:id,name:'gamesmith_'+name,title:'gamesmith_'+name,kind:'other',status:'in_progress',rawInput:args,locations:[]});
+  const frame=await request('tools/call',{name,arguments:args,_meta:{progressToken:id}});
+  const failed=frame.result.isError===true;
+  update({sessionUpdate:'tool_call_update',toolCallId:id,status:failed ? 'failed' : 'completed',content:frame.result.content,rawOutput:frame.result.content?.[0]?.text,locations:[]});
   return JSON.parse(frame.result.content[0].text);
 }
+function stall() {return cancelled && cancelSettles ? Promise.resolve() : new Promise(resolve=>{resolveStall=resolve;});}
+function cancelTurn() {
+  cancelled=true;
+  if (!cancelSettles) return;
+  resolveStall?.();resolveStall=null;
+}
 async function run(prompt) {
- parts.length=0;aborted=false;
- await writeFile('.opencode-fixture-busy.json',JSON.stringify({prompt}));
- emit({type:'step_start',part:{}});
- if (prompt==='boundary-task-a' || prompt==='Task B: add grenade on middle mouse; do not reload; pending action grenade-17') {
-   boundaryHistory.push(prompt);
-   const context=prompt==='boundary-task-a'
-     ? [{role:'user',text:prompt},{role:'assistant',text:'Task A completed'}]
-     : [{role:'assistant',text:'Compacted summary: Task A completed'}, {role:'user',text:prompt}, {role:'tool',action_id:'grenade-17',pending:true}];
-   if (context.length===3) {
-     for (const response of subscribers) response.write('data: '+JSON.stringify({type:'session.compacted',properties:{sessionID:session}})+'\n\n');
-     emit({type:'tool_use',part:{tool:'gamesmith_test_game_action',state:{status:'completed',input:{action:'poll',action_id:'grenade-17'},output:'{"ok":true,"pending":false}'}}});
-   }
-   await writeFile('.opencode-fixture-boundary.json',JSON.stringify({received:boundaryHistory,context}));
-   const text=context.length===3 ? 'Task B grenade completed without reload; grenade-17 resolved' : 'Task A completed';
-   emit({type:'text',part:{text}});
-   return {info:{finish:'stop'},parts:[...parts]};
- }
- if (prompt==='wait') {
-   const reasoning={id:'live-reasoning',sessionID:session,messageID:'live-assistant',type:'reasoning',text:'',time:{start:Date.now()}};
-   for (const response of subscribers) {
-     response.write('data: '+JSON.stringify({type:'message.part.updated',properties:{part:reasoning}})+'\n\n');
-     response.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:session,partID:reasoning.id,field:'text',delta:'Fixture is thinking before completion'}})+'\n\n');
-   }
-   return await new Promise(resolve=>waiting=resolve);
- }
- if (prompt==='partial-stream' || prompt==='lost-stream') {
-   emit({type:'text',part:{text:'I changed the player'}});
-   if (prompt==='lost-stream') for (const response of subscribers) response.destroy();
-   return {info:{finish:'stop'},parts:[{id:String(partId),sessionID:session,type:'text',text:'I changed the player movement and fixed collisions.'}]};
- }
- if (prompt==='stuck-abort' || prompt==='settle-stall') return await new Promise(()=>{});
- if (prompt==='provider-error') return {info:{error:{data:{message:'Fixture provider error'}}},parts:[]};
- if (prompt==='incomplete') return {info:{},parts:[]};
- if (prompt==='tool-round-only') return {info:{finish:'tool-calls'},parts:[]};
-if (prompt==='reload') {
-  await writeFile('main.gd','extends Node\n');
-  const result=await host('reload_game');if (!result.ok) throw new Error(result.error);
+  cancelled=false;resolveStall=null;
+  cancelSettles=process.env.GAMESMITH_FIXTURE_STUCK_ABORT!=='1' && process.env.GAMESMITH_FIXTURE_STUCK_SETTLE!=='1';
+  await writeFile('.opencode-fixture-busy.json',JSON.stringify({prompt}));
+  if (prompt==='wait') {
+    update({sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Fixture is thinking before completion'}});
+    await stall();
+    if (cancelled) return {stopReason:'cancelled'};
+    return {stopReason:'end_turn'};
+  }
+  if (prompt==='stuck-abort' || prompt==='settle-stall') {
+    await stall();
+    return {stopReason:'cancelled'};
+  }
+  if (prompt==='provider-error') throw rpcError(-32603,'Fixture provider error');
+  if (prompt==='incomplete') return {stopReason:'max_tokens'};
+  if (prompt==='tool-round-only') return {stopReason:'max_turn_requests'};
+  if (prompt==='reload') {
+    await writeFile('main.gd','extends Node\n');
+    const result=await host('reload_game');
+    if (cancelled) return {stopReason:'cancelled'};
+    if (!result.ok) throw new Error(result.error);
+  }
+  if (prompt==='test') {
+    await writeFile('main.gd','extends Node\n');
+    const result=await host('start_test_game',{mode:'headless'});
+    if (!result.ok) throw new Error(result.error);
+    const stopped=await host('stop_test_game',{run_id:result.run_id});
+    if (stopped.state!=='exited') throw new Error('Test did not exit');
+  }
+  if (prompt==='repair-reload') {
+    await writeFile('main.gd','extends Node\nfunc broken(:\n');
+    const failed=await host('reload_game');
+    if (failed.ok || !failed.diagnostics) throw new Error('Missing reload diagnostics');
+    await writeFile('main.gd','extends Node\nvar repaired = true\n');
+    const tested=await host('start_test_game',{mode:'headless'});
+    if (!tested.ok) throw new Error(tested.error);
+    await host('read_test_log',{run_id:tested.run_id});
+    await host('stop_test_game',{run_id:tested.run_id});
+    const reloaded=await host('reload_game');
+    if (!reloaded.ok) throw new Error(reloaded.error);
+  }
+  update({sessionUpdate:'agent_message_chunk',messageId:'msg_fixture',content:{type:'text',text:'Fixture finished'}});
+  update({sessionUpdate:'usage_update',used:5120,size:200000,cost:{amount:0,currency:'USD'}});
+  return {stopReason:'end_turn',usage:{inputTokens:100,outputTokens:20,totalTokens:5120}};
 }
-if (prompt==='test') {
-  await writeFile('main.gd','extends Node\n');
-  const result=await host('start_test_game',{mode:'headless'});if (!result.ok) throw new Error(result.error);
-  const stopped=await host('stop_test_game',{run_id:result.run_id});if (stopped.state!=='exited') throw new Error('Test did not exit');
-}
-if (prompt==='repair-reload') {
-  await writeFile('main.gd','extends Node\nfunc broken(:\n');
-  const failed=await host('reload_game');if (failed.ok || !failed.diagnostics) throw new Error('Missing reload diagnostics');
-  await writeFile('main.gd','extends Node\nvar repaired = true\n');
-  const tested=await host('start_test_game',{mode:'headless'});if (!tested.ok) throw new Error(tested.error);
-  await host('read_test_log',{run_id:tested.run_id});await host('stop_test_game',{run_id:tested.run_id});
-  const reloaded=await host('reload_game');if (!reloaded.ok) throw new Error(reloaded.error);
-}
-emit({type:'text',part:{text:'Fixture finished'}});
-emit({type:'step_finish',part:{reason:'stop',tokens:{total:5120,input:100,output:20,cache:{read:5000,write:0}}}});
-return {info:{finish:'stop',tokens:{total:5120,input:100,output:20,cache:{read:5000,write:0}}},parts:[...parts]};
-}
-const server=http.createServer(async(req,res)=>{
- let body='';for await (const chunk of req) body+=chunk;
- if (req.url==='/event') {res.writeHead(200,{'content-type':'text/event-stream'});res.write('data: {}\n\n');subscribers.add(res);res.on('close',()=>subscribers.delete(res));return;}
- const reply=value=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(value));};
- if (req.url==='/session/status') return reply({[session]:{type:currentResponse?'busy':'idle'}});
- if (req.url.endsWith('/abort')) {
-   if (process.env.GAMESMITH_FIXTURE_STUCK_ABORT==='1') return;
-   if (process.env.GAMESMITH_FIXTURE_STUCK_SETTLE==='1') return reply(true);
-   aborted=true;
-   const result={info:{error:{name:'MessageAbortedError'}},parts:[]};
-   waiting?.(result);waiting=undefined;
-   if (currentResponse) {currentResponse.end(JSON.stringify(result));currentResponse=undefined;}
-   return reply(true);
- }
- if (req.url.endsWith('/message')) {
-   currentResponse=res;
-   try {const result=await run(JSON.parse(body).parts[0].text);if (!res.writableEnded) reply(result);}
-   catch(error) {if (!res.writableEnded) reply({info:{error:{message:error.message}},parts:[]});}
-   finally {if (currentResponse===res) currentResponse=undefined;}
-   return;
- }
- reply({id:session});
+const handlers={
+  initialize:()=>({protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{embeddedContext:true,image:true}},agentInfo:{name:'fixture',version:'1.0.0'}}),
+  'session/new':()=>({sessionId,configOptions:options()}),
+  'session/load':params=>{
+    if (params.sessionId!==sessionId) throw rpcError(-32602,'Invalid params: session not found: '+params.sessionId);
+    return {configOptions:options()};
+  },
+  'session/set_config_option':params=>{
+    if (params.configId==='model') model=params.value;
+    if (params.configId==='mode') mode=params.value;
+    return {configOptions:options()};
+  },
+  'session/prompt':params=>run(params.prompt?.[0]?.text || ''),
+};
+createInterface({input:process.stdin}).on('line',async line=>{
+  let message;
+  try {message=JSON.parse(line);} catch {return;}
+  if (message.method==='session/cancel') {cancelTurn();return;}
+  if (message.method==='session/update') return;
+  if (message.method==='initialize' && process.env.GAMESMITH_FIXTURE_STUCK_START==='1') return;
+  const handler=handlers[message.method];
+  if (!handler) {send({id:message.id,error:{code:-32601,message:'Method not found: '+message.method}});return;}
+  try {send({id:message.id,result:await handler(message.params || {})});}
+  catch(error) {send({id:message.id,error:{code:error.code || -32603,message:error.message}});}
 });
-server.listen(0,'127.0.0.1',()=>{if (process.env.GAMESMITH_FIXTURE_STUCK_START!=='1') console.log('opencode server listening on http://127.0.0.1:'+server.address().port);});

@@ -12,6 +12,14 @@ reload approval, Stop fallback and explicit per-game session continuity.
 
 ## Implementation
 
+Tested installed GitHub Copilot CLI 1.0.105, using its preview ACP stdio server.
+Copilot 1.0.105 removed the `--no-remote` flag (`error: --no-remote was removed`),
+which made every GameSmith Copilot session exit with code 1; the adapter no
+longer passes it, and remote access stays off by default. Live acceptance on
+2026-10-29: `copilot_integration_runner.gd` passed 36/36 assertions in 151.6 s
+against installed 1.0.105 (evidence
+`%TEMP%/gamesmith-verify-EifdCH/results.json`). Earlier 1.0.96 evidence follows.
+
 Tested installed GitHub Copilot CLI 1.0.96, using its preview ACP stdio server.
 Executable discovery is independent of Cursor/Grok's `agent`; Windows npm shims
 resolve to the GitHub npm loader through Node. Native credentials and
