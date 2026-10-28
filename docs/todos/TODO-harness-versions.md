@@ -58,7 +58,12 @@ the installed version is supported.
   `codex_integration_runner.gd` passed 2/2 in 58.1 s against the updated
   `codex 0.165.0` (`%TEMP%/gamesmith-verify-FKbRLu/results.json`), and
   `crush_integration_runner.gd` passed 2/2 in 125.2 s against the freshly
-  installed `crush 0.98.1` (`%TEMP%/gamesmith-verify-gJ3F4a/results.json`).
+  installed `crush 0.98.1` (`%TEMP%/gamesmith-verify-gJ3F4a/results.json`), and
+  `kilo_integration_runner.gd` passed 2/2 in 149.6 s on the shared HTTP/SSE
+  transport (`%TEMP%/gamesmith-verify-ahzG33/results.json`). The first Kilo
+  attempt failed because the stealth model answered without calling any tool;
+  the identical rerun passed, so it is model variance, not the shared-module
+  refactor.
 
 ## Already current, no change
 

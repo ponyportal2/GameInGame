@@ -53,3 +53,17 @@ supported workspace tools and GameSmith MCP remain available. The first packaged
 fixture attempt exposed a Windows slash-comparison bug in the fixture; corrected
 the fixture and reran successfully. No global native settings or credentials were
 changed, and no GitHub CI workflow was started.
+
+## Kilo 7.8.15 stays; shared transport re-verified (2026-10-29)
+
+Kilo is on the newest release at or above the 7-day floor: 7.8.15 is 8.8 days
+old while 7.8.16 (5.8 d) through 7.8.23 (0.1 d) are inside it. Kilo keeps the
+pre-v2 HTTP/SSE transport while OpenCode moved to ACP, so the shared
+`tools/opencode` modules now branch on `config.harness === 'kilo'`.
+
+Live acceptance re-ran on the shared code: 2/2 in 149.6 s
+(`%TEMP%/gamesmith-verify-ahzG33/results.json`), covering the write/tool path,
+the headless test bridge, native model reporting, history reuse, reopen,
+rename rejection, reload approval and Stop/resume. The first attempt failed
+only because the stealth model returned prose without calling any tool; the
+identical rerun passed. Kilo unit and server suites pass.
