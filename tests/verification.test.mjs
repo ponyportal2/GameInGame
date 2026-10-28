@@ -65,6 +65,10 @@ test('--changed trims paths and drops empty entries before affected selection',(
  assert.deepEqual(options.changed,['tests/tool-output.test.mjs','tests/runtime_properties_runner.gd']);
  assert.deepEqual(selectTests(root,'affected',options.changed).map(t=>t.id).sort(),['host:runtime_properties','node:tool-output','node:verification']);
 });
+test('--list is documented beside the verifier examples',()=>{
+ const readme=readFileSync('tools/testing/README.md','utf8');
+ assert(readme.includes('node tools/testing/verify.mjs --suite affected --since main --list'));
+});
 test('--list prints a focused selection without creating artifacts',t=>{
  const dir=mkdtempSync(join(tmpdir(),'gs-verify-list-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const artifacts=join(dir,'artifacts');
