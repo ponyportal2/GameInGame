@@ -38,6 +38,22 @@ machine.
 budget) exactly like the agent, so the assertion checks the finished action on
 any machine.
 
+## 3. The same signature again (2026-10-28)
+
+The SoftFac gate hit it once more, on a loaded machine. Two holes remained:
+
+- The poll bound was attempts-based (`attempts < 200` at 50 ms), and on timeout
+  `_bridge_action` returned the still-`pending` answer. The runner then
+  dispatched the next action, which the supervisor rejected with
+  `A test action is already pending.` — blaming the action after the one that
+  actually stalled.
+- The runner discarded the `release` result, so a stall in `press` only showed
+  up two calls later.
+
+`_bridge_action` now polls to the deadline and returns
+`{"ok": false, "timed_out": true, "action_id": ...}` naming the action, and the
+runner asserts `release` like the others.
+
 ## Evidence
 
 ```

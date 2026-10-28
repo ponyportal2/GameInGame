@@ -179,10 +179,10 @@ func _run() -> void:
     while tools.tests().status(test_id).get("state") == "starting" and Time.get_ticks_msec() < deadline: await process_frame
     var injected = await _bridge_action(controller, "injection", {"run_id": test_id, "action": "inject_child", "candidate_path": ".", "name": "MouseAbility", "script_path": "mouse_ability.gd"})
     var pressed = await _bridge_action(controller, "press", {"run_id": test_id, "action": "mouse_button", "button_index": 3, "pressed": true})
-    await _bridge_action(controller, "release", {"run_id": test_id, "action": "mouse_button", "button_index": 3, "pressed": false})
+    var released = await _bridge_action(controller, "release", {"run_id": test_id, "action": "mouse_button", "button_index": 3, "pressed": false})
     var mouse_inspected = await _bridge_action(controller, "inspect", {"run_id": test_id, "action": "inspect", "path": "MouseAbility", "properties": ["pressed_count"]})
-    if not injected.get("ok", false) or injected.get("pending", true) or injected.get("physics_ticks_completed", 0) < 3 or not pressed.get("ok", false) or mouse_inspected.get("properties", {}).get("pressed_count") != "1" or runner.active_game.has_node("MouseAbility"):
-        push_error("FAIL: packaged detached injection/mouse/completion: " + str([injected, pressed, mouse_inspected]))
+    if not injected.get("ok", false) or injected.get("pending", true) or injected.get("physics_ticks_completed", 0) < 3 or not pressed.get("ok", false) or not released.get("ok", false) or mouse_inspected.get("properties", {}).get("pressed_count") != "1" or runner.active_game.has_node("MouseAbility"):
+        push_error("FAIL: packaged detached injection/mouse/completion: " + str([injected, pressed, released, mouse_inspected]))
         tools.execute("stop_test_game", {"run_id": test_id})
         quit(1)
         return
@@ -206,12 +206,18 @@ func _bridge_action(controller: Node, id: String, args: Dictionary) -> Dictionar
     # caller polls with the returned action_id exactly like the agent does. A
     # single call only proves the same-call fast path on an idle machine.
     var result: Dictionary = await _bridge_call(controller, id, args)
+    var action_id := str(result.get("action_id", ""))
     var attempts := 0
     var deadline = Time.get_ticks_msec() + 15000
-    while result.get("pending", false) and attempts < 200 and Time.get_ticks_msec() < deadline:
+    while result.get("pending", false) and Time.get_ticks_msec() < deadline:
         attempts += 1
         await create_timer(0.05).timeout
-        result = await _bridge_call(controller, "%s-poll-%d" % [id, attempts], {"run_id": args.get("run_id", ""), "action": "poll", "action_id": result.get("action_id", "")})
+        result = await _bridge_call(controller, "%s-poll-%d" % [id, attempts], {"run_id": args.get("run_id", ""), "action": "poll", "action_id": action_id})
+    if result.get("pending", false):
+        # Returning the pending answer let the next dispatch fail with "A test
+        # action is already pending", which blamed an action that had not run
+        # yet. Name the one that actually stalled instead.
+        return {"ok": false, "action_id": action_id, "timed_out": true, "error": "Test action '%s' did not finish within 15s (action_id %s)." % [id, action_id]}
     return result
 
 func _bridge_call(controller: Node, id: String, args: Dictionary) -> Dictionary:
