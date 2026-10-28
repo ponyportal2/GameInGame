@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {packageChanged,parseArgs,runVerification} from '../tools/testing/verify.mjs';
 import {fingerprint,reusedTests,assertionCounts,failureExcerpt,fatalScriptError,timingSummary} from '../tools/testing/verification-evidence.mjs';
-import {selectTests,inventory,resolveTest} from '../tools/testing/verification-plan.mjs';
+import {selectTests,inventory,resolveTest,packedInPackage} from '../tools/testing/verification-plan.mjs';
 import {generatedLauncher,exportFilter} from '../tools/testing/generate-harness-inventory.mjs';
 import {atomicSaveSession,failureRecord} from '../tools/agent/session-state.mjs';
 test('host scheduling bounds audited concurrency and keeps serial barriers',async()=>{
@@ -102,11 +102,17 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  // audited consumer list is narrower; a verifier-only file must not.
  for(const path of ['src/agent/pi_agent_controller.gd','src/agent/codex_agent_controller.gd','tools/codex/worker.mjs','tests/runtime_wall_response.gd'])
   assert(ids([path]).includes('package:contents'),path);
+ // The root scene is shipped but sits outside every recognized root, so the
+ // classifier must name it; otherwise a future narrow mapping would silently
+ // drop the package rebuild. Extension matching is anchored, not any character.
+ assert(packedInPackage('main.tscn'));
+ assert(packedInPackage('tests/scene.tscn')&&packedInPackage('tests/data.tres'));
+ assert(!packedInPackage('tests/fixture_xgd'));
  assert(!ids(['tests/verification.test.mjs']).includes('package:contents'));
  // An unmapped path is exhaustive, never zero and never a guess: an unknown
  // shared file can change behavior in any harness, so narrowing it would let a
  // run pass without the suite that would have caught the change.
- for(const path of ['src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','tools/testing/assembled-runtime.mjs','src/pi/pi_runtime_config.gd','src/ui/app.gd'])
+ for(const path of ['export_presets.cfg','src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','tools/testing/assembled-runtime.mjs','src/pi/pi_runtime_config.gd','src/ui/app.gd'])
   assert.deepEqual(ids([path]),selectTests(root,'full').map(t=>t.id).sort(),path);
 });
 test('host failures are counted and excerpted from Godot error output',()=>{
