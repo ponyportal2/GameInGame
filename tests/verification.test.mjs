@@ -72,6 +72,10 @@ test('--list prints a focused selection without creating artifacts',t=>{
  assert.equal(result.status,0,result.stderr);
  assert.equal(result.stdout,'node:verification\n');
  assert.equal(existsSync(artifacts),false,'listing must not create the artifact directory');
+ const empty=spawnSync(process.execPath,[resolve('tools/testing/verify.mjs'),'--suite','affected','--changed','README.md','--list'],{cwd:root,encoding:'utf8',windowsHide:true});
+ assert.equal(empty.status,0,empty.stderr);
+ assert.equal(empty.stdout,'');
+ assert.equal(empty.stderr,'no tests selected\n');
 });
 test('affected selection enumerates known consumers and isolates test edits',()=>{
  const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();

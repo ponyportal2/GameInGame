@@ -177,7 +177,7 @@ export async function runVerification(options,root=ROOT){
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--list] [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--live harness] [--report results.json]');
   else if(options.report)console.log(timingSummary(JSON.parse(readFileSync(resolve(options.report),'utf8'))));
-  else if(options.list){const ids=resolveSelection(options).tests.map(test=>test.id).sort();if(ids.length)process.stdout.write(ids.join('\n')+'\n');}
+  else if(options.list){const ids=resolveSelection(options).tests.map(test=>test.id).sort();if(ids.length)process.stdout.write(ids.join('\n')+'\n');else console.error('no tests selected');}
   else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}
   catch(error){console.error(error.message);process.exitCode=2;}
 }
