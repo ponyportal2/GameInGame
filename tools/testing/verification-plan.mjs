@@ -10,6 +10,18 @@ export function inventory(root) {
 // implementation shared and takes the harness as an argument, so a change that
 // only concerns one harness no longer executes the other twelve.
 export const RECOVERY_HARNESSES = ['command-code','opencode','codex','cline','cursor','grok-build','agy','kimi','kiro','kilo','copilot','crush','omp'];
+// The export preset packs every resource under src/ and tests/ plus the
+// allowlisted tools/ modules; tools/testing is verifier-only. A change to any
+// packed file makes the tracked PCK stale, so the package must be rebuilt and
+// its committed bytes checked even when the audited consumers are narrower.
+export function packedInPackage(path){
+  const source=path.endsWith('.gd.uid')?path.slice(0,-4):path;
+  if(source==='project.godot')return true;
+  if(source.startsWith('src/'))return true;
+  if(source.startsWith('tests/'))return /.(gd|tscn|tres)$/.test(source);
+  if(source.startsWith('tools/'))return !source.startsWith('tools/testing/');
+  return false;
+}
 export function allTests(root) {
   const node = readdirSync(resolve(root,'tests')).filter(f=>f.endsWith('.test.mjs')).sort().map(file=>({id:'node:'+file.replace('.test.mjs',''),phase:'node',file:'tests/'+file}));
   const recovery = RECOVERY_HARNESSES.map(h=>({id:'host:native_recovery_'+h.replaceAll('-','_'),phase:'host',file:'tests/native_recovery_runner.gd',args:[h],owner:h}));
@@ -139,5 +151,9 @@ export function selectTests(root,suite='full',changed=[]) {
     const subset=inherited||!consumers.length?tests:consumers.flatMap(h=>selectTests(root,h.id));
     for(const t of subset)selected.set(t.id,t);
   }
+  // A change to packed sources makes the tracked PCK stale even when the
+  // audited consumers are narrower. The package test rebuilds and compares the
+  // committed bytes, so it must run whenever anything shipped changed.
+  if(changed.some(packedInPackage)){const pkg=tests.find(t=>t.id==='package:contents');selected.set(pkg.id,pkg);}
   return [...selected.values()];
 }

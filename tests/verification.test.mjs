@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync} from
 import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
-import {parseArgs,runVerification} from '../tools/testing/verify.mjs';
+import {packageChanged,parseArgs,runVerification} from '../tools/testing/verify.mjs';
 import {fingerprint,reusedTests,assertionCounts,failureExcerpt,fatalScriptError,timingSummary} from '../tools/testing/verification-evidence.mjs';
 import {selectTests,inventory,resolveTest} from '../tools/testing/verification-plan.mjs';
 import {generatedLauncher,exportFilter} from '../tools/testing/generate-harness-inventory.mjs';
@@ -63,7 +63,7 @@ const root=resolve('.');
 test('--changed trims paths and drops empty entries before affected selection',()=>{
  const options=parseArgs(['--changed','tests/tool-output.test.mjs, tests/runtime_properties_runner.gd, ,']);
  assert.deepEqual(options.changed,['tests/tool-output.test.mjs','tests/runtime_properties_runner.gd']);
- assert.deepEqual(selectTests(root,'affected',options.changed).map(t=>t.id).sort(),['host:runtime_properties','node:tool-output','node:verification']);
+ assert.deepEqual(selectTests(root,'affected',options.changed).map(t=>t.id).sort(),['host:runtime_properties','node:tool-output','node:verification','package:contents']);
 });
 test('--list is documented beside the verifier examples',()=>{
  const readme=readFileSync('tools/testing/README.md','utf8');
@@ -84,20 +84,25 @@ test('--list prints a focused selection without creating artifacts',t=>{
 test('affected selection enumerates known consumers and isolates test edits',()=>{
  const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();
  const check=(paths,expected)=>assert.deepEqual(ids(paths),expected.sort(),paths.join(', '));
- check(['tests/runtime_properties_runner.gd'],['host:runtime_properties','node:verification']);
- check(['tests/runtime_node_lifecycle_runner.gd.uid'],['host:runtime_node_lifecycle','node:verification']);
+ check(['tests/runtime_properties_runner.gd'],['host:runtime_properties','node:verification','package:contents']);
+ check(['tests/runtime_node_lifecycle_runner.gd.uid'],['host:runtime_node_lifecycle','node:verification','package:contents']);
  check(['tests/tool-output.test.mjs'],['node:tool-output','node:verification']);
  check(['tests/package_contents_runner.gd'],['package:contents','node:verification']);
- check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly']);
- check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification']);
+ check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly','package:contents']);
+ check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification','package:contents']);
  check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:game_assets','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
  check(['src/core/game_tools.gd'],['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:workspace_ops','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);
  // Pi is no longer a parent controller: its transport edit selects its own
  // consumers instead of every harness, while the shared base stays exhaustive.
- check(['src/agent/pi_agent_controller.gd'],['host:pi_controller','host:turn_recovery','host:reliability','host:test','host:harness','host:library_actions','host:reload_settings','host:ui_layout','host:blender','host:review_stop','host:chat_history','host:prompt_contract','host:bridge_claim','host:chat_test_process','host:maintenance','host:test_process','node:verification']);
+ check(['src/agent/pi_agent_controller.gd'],['host:pi_controller','host:turn_recovery','host:reliability','host:test','host:harness','host:library_actions','host:reload_settings','host:ui_layout','host:blender','host:review_stop','host:chat_history','host:prompt_contract','host:bridge_claim','host:chat_test_process','host:maintenance','host:test_process','node:verification','package:contents']);
  assert.equal(selectTests(root,'affected',['src/agent/agent_controller_base.gd']).length,selectTests(root,'all').length,'the shared controller base must stay exhaustive');
  check(['src/core/workspace_ops.gd'],['host:workspace_ops','host:runtime_properties','host:reliability','host:blender','package:contents','node:verification']);
- check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification']);
+ check(['tests/runtime_properties_runner.gd','tests/runtime_properties_runner.gd.uid','tests/verification.test.mjs'],['host:runtime_properties','node:verification','package:contents']);
+ // Anything shipped in the PCK forces the package rebuild even when the
+ // audited consumer list is narrower; a verifier-only file must not.
+ for(const path of ['src/agent/pi_agent_controller.gd','src/agent/codex_agent_controller.gd','tools/codex/worker.mjs','tests/runtime_wall_response.gd'])
+  assert(ids([path]).includes('package:contents'),path);
+ assert(!ids(['tests/verification.test.mjs']).includes('package:contents'));
  // An unmapped path is exhaustive, never zero and never a guess: an unknown
  // shared file can change behavior in any harness, so narrowing it would let a
  // run pass without the suite that would have caught the change.
@@ -230,6 +235,15 @@ test('changes during a run invalidate the evidence',async t=>{
  assert.deepEqual(rerun.selection,['node:mutate']);assert.equal(rerun.tests[0].status,'passed');assert.equal(rerun.status,'passed');
 });
 
+test('a rebuilt package only counts when it matches HEAD',t=>{
+ const dir=repository(t),pck='GameSmith-Windows/GameSmith.pck';
+ mkdirSync(join(dir,'GameSmith-Windows'));
+ writeFileSync(join(dir,pck),'pck-v1');
+ for(const args of [['add','.'],['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','package']])assert.equal(spawnSync('git',args,{cwd:dir,windowsHide:true}).status,0);
+ assert.equal(packageChanged(dir),false);
+ writeFileSync(join(dir,pck),'pck-v2');
+ assert.equal(packageChanged(dir),true);
+});
 test('missing runtime records setup failure and blocked selections for a focused rerun',async t=>{
  const dir=repository(t),args=['--test','host:test','--godot',join(dir,'missing-godot.exe')];
  const first=await runVerification(parseArgs(args),dir);

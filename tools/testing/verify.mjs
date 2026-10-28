@@ -52,6 +52,13 @@ export function resolveSelection(options,root=ROOT){
   return {tests,changed};
 }
 
+// The package test runs from the working tree, but the factory merges commits.
+// A rebuilt PCK that HEAD does not contain verifies bytes that would never
+// ship, so the build is only usable once it is committed.
+export function packageChanged(root,path='GameSmith-Windows/GameSmith.pck'){
+  return git(root,['status','--porcelain','--',path])!=='';
+}
+
 export async function runVerification(options,root=ROOT){
   const started=Date.now(),directory=options.artifacts?resolve(options.artifacts):mkdtempSync(join(tmpdir(),'gamesmith-verify-'));
   mkdirSync(directory,{recursive:true});
@@ -122,7 +129,19 @@ export async function runVerification(options,root=ROOT){
     let reused=[];
     if(options.reuse&&!options.live&&!options.build&&!tests.some(t=>t.phase==='acceptance')){const prior=JSON.parse(readFileSync(resolve(options.reuse),'utf8'));reused=reusedTests(prior,tests,evidence.fingerprint);result.tests.push(...reused);progress.completed=reused.length;persist();}
     tests=tests.filter(t=>!reused.some(r=>r.id===t.id));
-    if(options.build){phase('build-package');const r=await run({id:'build:package',phase:'build'},godot,['--headless','--path',root,'--export-pack','Linux Pack',join(root,'GameSmith-Windows/GameSmith.pck')]);if(r.status!=='passed')throw new Error('Package build failed');Object.assign(result,fingerprint(root,selectedTests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]));}
+    if(options.build){
+      phase('build-package');
+      const r=await run({id:'build:package',phase:'build'},godot,['--headless','--path',root,'--export-pack','Linux Pack',join(root,'GameSmith-Windows/GameSmith.pck')]);
+      if(r.status!=='passed')throw new Error('Package build failed');
+      // Re-fingerprint after the build so the rebuilt bytes are the baseline:
+      // a committed package is the only state that can finish this run.
+      Object.assign(result,fingerprint(root,selectedTests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]));
+      if(packageChanged(root)){
+        const reason='GameSmith-Windows/GameSmith.pck was rebuilt but does not match HEAD. Commit the rebuilt package with the source change; the factory merges commits, not working-tree files.';
+        await run({id:'build:package-committed',phase:'build'},process.execPath,['-e',`console.error(${JSON.stringify(reason)});process.exit(1);`]);
+        throw new Error(reason);
+      }
+    }
     let imported;
     if(needsGodot&&tests.length){phase('godot-import');imported=await run({id:'setup:godot',phase:'setup'},godot,['--headless','--path',root,'--editor','--quit'],{APPDATA:join(directory,'import-data'),HOME:join(directory,'import-data'),XDG_DATA_HOME:join(directory,'import-data/data')});}
     const node=tests.filter(t=>t.phase==='node');
