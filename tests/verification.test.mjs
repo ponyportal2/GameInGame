@@ -60,6 +60,11 @@ test('parallel-safe hosts are the audited set',async()=>{
  assert.deepEqual([...PARALLEL_SAFE_HOSTS].sort(),['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:harness_assembly','host:pi_controller','host:prompt_contract','host:reliability','host:reload_preflight','host:runtime_children','host:runtime_node_lifecycle','host:runtime_properties','host:script_load_policy','host:test_process','host:workspace_ops','host:workspace_store'].sort());
 });
 const root=resolve('.');
+test('--changed trims paths and drops empty entries before affected selection',()=>{
+ const options=parseArgs(['--changed','tests/tool-output.test.mjs, tests/runtime_properties_runner.gd, ,']);
+ assert.deepEqual(options.changed,['tests/tool-output.test.mjs','tests/runtime_properties_runner.gd']);
+ assert.deepEqual(selectTests(root,'affected',options.changed).map(t=>t.id).sort(),['host:runtime_properties','node:tool-output','node:verification']);
+});
 test('affected selection enumerates known consumers and isolates test edits',()=>{
  const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();
  const check=(paths,expected)=>assert.deepEqual(ids(paths),expected.sort(),paths.join(', '));

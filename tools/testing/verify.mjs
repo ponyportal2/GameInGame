@@ -17,7 +17,7 @@ export function parseArgs(args){
     if(key==='help'){options.help=true;continue;}
     if(key==='build-package'){options.build=true;continue;}
     if(!args[i].startsWith('--')||!values.has(key)||args[i+1]===undefined)throw new Error('Unknown/missing option: '+args[i]);
-    const value=args[++i];if(key==='changed')options.changed.push(...value.split(','));else options[key]=value;
+    const value=args[++i];if(key==='changed')options.changed.push(...value.split(',').map(path=>path.trim()).filter(Boolean));else options[key]=value;
   }
   for(const key of ['jobs','timeout','stall']){options[key]=Number(options[key]);if(!Number.isInteger(options[key])||options[key]<1)throw new Error('Invalid '+key);}
   if(!['summary','errors','full'].includes(options.output))throw new Error('Output must be summary, errors or full');
