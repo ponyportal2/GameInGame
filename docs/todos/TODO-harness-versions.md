@@ -81,7 +81,15 @@ the installed version is supported.
   `kilo_integration_runner.gd` passed 2/2 in 149.6 s on the shared HTTP/SSE
   transport (`%TEMP%/gamesmith-verify-ahzG33/results.json`), and
   `cline_integration_runner.gd` passed 19/19 assertions in 114.4 s against
-  installed `cline 3.0.73` (`%TEMP%/gamesmith-verify-bztEpn/results.json`).
+  installed `cline 3.0.73` (`%TEMP%/gamesmith-verify-bztEpn/results.json`), and
+  `omp_integration_runner.gd` passed 2/2 in 182.1 s against installed
+  `OMP 18.12.5` (`%TEMP%/gamesmith-verify-0tyVbx/results.json`). The OMP
+  runner itself was stale: it required `GAMESMITH_TEST_OMP_MODEL` instead of
+  treating it as optional, and it pinned the host tool count at 18 while
+  GameSmith now exposes 23. Both are fixed; the surface check now asserts that
+  only `gamesmith_*` tools reach the model and that the core set is present,
+  so it cannot rot again. The first OMP attempt failed only on those two stale
+  expectations (`%TEMP%/gamesmith-verify-2N0nVI/results.json`).
   The first Kilo attempt failed because the stealth model answered without
   calling any tool. The identical rerun passing is consistent with model
   variance, but one rerun cannot exclude an intermittent integration problem;
@@ -109,7 +117,7 @@ the installed version is supported.
 | Grok Build | 1.0.70 | current |
 | AGY | 1.4.9 | current |
 | Kimi | 2.4.0 | current |
-| OMP | 18.12.5 | current |
+| OMP | 18.12.5 | current; live acceptance re-run on it |
 
 ## Known blockers
 

@@ -13,7 +13,7 @@ For OMP (Oh My Pi) games:
 
   https://github.com/can1357/oh-my-pi
 
-Tested with OMP 18.10.3. Select your model/provider in OMP. GameSmith uses a
+Tested with OMP 18.12.5. Select your model/provider in OMP. GameSmith uses a
 persistent RPC process and explicit native history; reopen, rename and Stop
 preserve the conversation. OMP owns model, reasoning and compaction settings.
 Node.js must be on PATH. Restart GameSmith after installation. Set
@@ -58,7 +58,7 @@ before renaming. Reset archives its reference and keeps chat/game files.
 
 For OpenCode games:
 
-  npm install -g opencode-ai
+  npm install -g @opencode/cli@2.1.2
 
 Configure your model/provider in the OpenCode CLI. GameSmith leaves all model,
 provider and compaction settings to OpenCode. Testing and automatic reload approval

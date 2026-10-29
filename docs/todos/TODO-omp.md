@@ -43,3 +43,27 @@ Do not assume OMP's diverged extension API is interchangeable with Pi's extensio
   processes may start; restrictions govern tool invocation, not process isolation.
   Tests verify native active tools and execution policy, not captured provider
   request schemas. Generated GDScript is not sandboxed.
+
+## OMP 18.12.5 live re-verification (2026-10-29)
+
+The installed CLI had moved from the 18.10.3 recorded above to 18.12.5, so the
+live runner was re-run against it. The first attempt failed four assertions,
+both of them in the runner rather than in the adapter:
+
+- It compared the native model against `GAMESMITH_TEST_OMP_MODEL` even when
+  that variable was unset, so an empty expectation could never match. It now
+  treats the variable as optional, like the other live runners, and otherwise
+  requires a non-empty reported model.
+- It pinned the GameSmith host tool surface at 18 tools. The surface has since
+  grown to 23 `gamesmith_*` tools, so the constant was stale. The check now
+  asserts that no non-GameSmith tool reached the model and that the core set
+  (read/write/edit/search/list, the test bridge, runtime inspection, property
+  and reload tools, git commit) is present, which is the property that
+  matters and does not rot with every new tool.
+
+Re-run on 18.12.5: 2/2 in 182.1 s
+(`%TEMP%/gamesmith-verify-0tyVbx/results.json`), 20 assertions, covering the
+RPC turn, workspace writes, the headless test bridge, streaming, model
+reporting, tool surface, thread reuse, reopen, rename/reopen and the reload
+approval path. The failed first attempt is kept at
+`%TEMP%/gamesmith-verify-2N0nVI/results.json`.
