@@ -79,10 +79,13 @@ session reference, readable chat and game files are kept. Restart GameSmith afte
 updating the package.
 
 For Cline games:
-  npm install -g cline
+  npm install -g cline@3.0.73
+(add --force if a running Cline process keeps the previous binary)
 Sign in and select a model in Cline, then choose Cline for a new game or in
 Settings > This game > Coding harness. Cline owns provider/model/reasoning and
-compaction; GameSmith's testing and reload preferences remain available. Native
+compaction; GameSmith's testing and reload preferences remain available.
+GameSmith sets CLINE_NO_AUTO_UPDATE=1 for its sessions, so a game never upgrades
+the CLI mid-run; running cline yourself can still update it. Native
 ACP sessions persist per game and resume when reopening or switching back.
 Reload approval waits without a timer. Stop retains a healthy backend; stalled
 cancellation force-stops it after five seconds. A failed resume can be recovered
