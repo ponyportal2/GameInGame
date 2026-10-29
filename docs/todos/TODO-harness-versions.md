@@ -86,12 +86,25 @@ the installed version is supported.
   calling any tool. The identical rerun passing is consistent with model
   variance, but one rerun cannot exclude an intermittent integration problem;
   the initial failure stays on the record.
+- **Kilo self-updates from the TUI.** An interactive `kilo` run moved the
+  install from 7.8.15 to 7.8.18 at 2026-10-28T18:57Z; the CLI logged
+  `upgraded method=npm target=7.8.18` and the npm cache shows that tarball
+  fetched at the same moment. 7.8.18 is 3.3 days old, so the upgrade bypassed
+  the floor. `kilo serve` — the path GameSmith runs — does not check for
+  updates: two 75-second probes produced no update activity, and the live run
+  left the version unchanged. Injecting `update:"disable"` (current schema
+  key) or `autoupdate:false` (deprecated) through `KILO_CONFIG_CONTENT` did
+  not stop a 60-second TUI run from reaching 7.8.18, so the adapter cannot
+  hold the pin; only the player's global Kilo config can. 7.8.15 was
+  reinstalled and live acceptance repeated: 2/2 in 158.0 s
+  (`%TEMP%/gamesmith-verify-cW8L9R/results.json`), version still 7.8.15
+  afterwards.
 
 ## Already current, no change
 
 | Harness | Installed | Newest at or above the 7-day floor |
 | --- | --- | --- |
-| Kilo | 7.8.15 | 7.8.15; 7.8.16 is 5.8 days old |
+| Kilo | 7.8.15 | 7.8.15; 7.8.16 is 6.7 days old |
 | Cursor | 2026.10.22-27dcf5f | current |
 | Grok Build | 1.0.70 | current |
 | AGY | 1.4.9 | current |

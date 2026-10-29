@@ -67,3 +67,29 @@ the headless test bridge, native model reporting, history reuse, reopen,
 rename rejection, reload approval and Stop/resume. The first attempt failed
 only because the stealth model returned prose without calling any tool; the
 identical rerun passed. Kilo unit and server suites pass.
+
+## Kilo's TUI upgrades itself past the floor (2026-10-29)
+
+The installed 7.8.15 moved to 7.8.18 on its own at 2026-10-28T18:57Z. The CLI
+logged `message=upgraded method=npm target=7.8.18` after an interactive
+`kilo` run started in the home directory, and the npm cache shows the 7.8.18
+tarball fetched at that moment. 7.8.18 is 3.3 days old, so that upgrade
+bypassed the 7-day floor.
+
+- `kilo serve`, the only path GameSmith uses, does not check for or install
+  updates: two 75-second probes produced no update activity and no log entry,
+  and the live acceptance below left the install on 7.8.15.
+- `KILO_CONFIG_CONTENT` does not stop the TUI upgrade. Injecting
+  `{"update":"disable"}` (the current schema key) and the deprecated
+  `{"autoupdate":false}` both still ended on 7.8.18 after a 60-second TUI run,
+  so the adapter has no lever here: a player who runs `kilo` interactively can
+  move the install off the pinned version. Re-check `kilo --version` before
+  treating live evidence as current.
+- The global config file is the only documented switch; GameSmith deliberately
+  does not write the player's Kilo configuration.
+
+After restoring 7.8.15, live acceptance passed 2/2 in 158.0 s
+(`%TEMP%/gamesmith-verify-cW8L9R/results.json`), covering the write/tool path,
+the headless test bridge, native model reporting, history reuse, reopen,
+rename rejection, reload approval and Stop/resume. `kilo --version` still
+reported 7.8.15 after the run. `tests/kilo*.test.mjs`: 8/8.

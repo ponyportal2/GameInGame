@@ -171,8 +171,11 @@ asks for confirmation and archives the reference while keeping files/chat.
 Only GameSmith MCP tools can be invoked. Reload uses host approval or the
 player's auto-approve setting. Stop has a five-second forced process-tree fallback.
 
-For Kilo games (tested with Kilo CLI 7.8.8; other releases unverified):
-  npm install -g @kilocode/cli@7.8.8
+For Kilo games (tested with Kilo CLI 7.8.15; other releases unverified):
+  npm install -g @kilocode/cli@7.8.15
+The interactive Kilo TUI upgrades its own global install to the latest release,
+so re-check kilo --version if it starts behaving differently. GameSmith runs
+kilo serve, which does not update.
 Sign in and select your model/provider through Kilo, then choose Kilo in GameSmith.
 Model, reasoning, provider and compaction remain Kilo-owned. Node.js must be on
 PATH. GAMESMITH_KILO_BIN can point to a custom executable, npm shim or wrapper.
