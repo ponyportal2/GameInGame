@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const HOST_SCRIPTS = ['test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','workspace_ops','image_generation','turn_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','kilo_stop','agent_shutdown','harness_assembly','pi_controller'];
+export const HOST_SCRIPTS = ['native_controller','native_reset','test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','workspace_ops','image_generation','turn_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','kilo_stop','agent_shutdown','harness_assembly','pi_controller'];
 
 export function inventory(root) {
   return JSON.parse(readFileSync(resolve(root,'tools/agent/harnesses.json'),'utf8')).harnesses;
@@ -13,8 +13,8 @@ export const RECOVERY_HARNESSES = ['command-code','opencode','codex','cline','cu
 // The export ships project.godot, main.tscn, scripts and scenes under src/ and
 // tests/, plus the allowlisted tools/ modules; tools/testing is verifier-only.
 // This is a conservative model of the preset, not a parser: a change to any of
-// these bytes makes the tracked PCK stale, so the package must be rebuilt and
-// its committed bytes checked even when the audited consumers are narrower.
+// these bytes makes the tracked PCK stale, so the package must be rebuilt even
+// when the audited consumers are narrower. Commitment is a delivery-only gate.
 export function packedInPackage(path){
   const source=path.endsWith('.gd.uid')?path.slice(0,-4):path;
   if(source==='project.godot'||source==='main.tscn')return true;
@@ -50,6 +50,12 @@ export const INPUT_CONSUMERS = {
   // Pi is no longer a parent controller, so its affected set is audited by
   // behavior: every suite that instantiates it or drives the default app agent.
   'src/agent/pi_agent_controller.gd': ['host:pi_controller','host:turn_recovery','host:reliability','host:test','host:harness','host:library_actions','host:reload_settings','host:ui_layout','host:blender','host:review_stop','host:chat_history','host:prompt_contract','host:bridge_claim','host:chat_test_process','host:maintenance','host:test_process','node:verification'],
+  // Command-code is now a concrete sibling of OpenCode. Retain its native IPC,
+  // recovery and compaction plus shared tests that instantiate it (UI/reset,
+  // ownership, approvals, tools and prompts). A named harness suite alone omits
+  // these consumers. NativeAgentController and the remaining inherited parents
+  // deliberately retain the exhaustive fallback.
+  'src/agent/command_code_agent_controller.gd': ['node:command-code-acp','node:command-code-native','node:command-code','host:command_code_lifecycle','host:command_code_compaction','host:native_recovery_command_code','host:native_reset','host:native_controller','host:harness','host:harness_assembly','host:prompt_contract','host:review_ownership','host:reload_settings','host:runtime_properties','host:runtime_children','host:blender','host:turn_recovery','node:verification','package:contents'],
   'src/core/game_tools.gd': ['host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:workspace_ops','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification'],
   'src/core/workspace_ops.gd': ['host:workspace_ops','host:runtime_properties','host:reliability','host:blender','package:contents','node:verification'],
 };
@@ -97,6 +103,7 @@ export async function runHostTests(tests,jobs,run,stopped=()=>false) {
 export const RELEASE_TESTS=[{id:'acceptance:pi-emulator',phase:'acceptance',file:'tools/testing/run-pi-e2e.mjs'},{id:'acceptance:migration',phase:'acceptance',file:'tools/testing/verify-migration.mjs'},{id:'acceptance:windowed',phase:'acceptance',file:'tests/windowed_input_runner.gd'}];
 
 export function resolveTest(root,id) {
+  if(id==='acceptance:opencode-permissions')return {id,phase:'acceptance',file:'tools/testing/verify-opencode-permissions.mjs'};
   const known=[...allTests(root),...RELEASE_TESTS].find(t=>t.id===id);
   if(known)return known;
   // Preserve the old host entrypoint's explicit auxiliary-runner support.
@@ -141,10 +148,10 @@ export function selectTests(root,suite='full',changed=[]) {
     }
     const consumers=harnesses.filter(h=>path.startsWith('tools/'+h.id+'/')||path===h.controller||h.modules.some(([,source])=>path==='tools/'+source));
     // Only controllers that other controllers extend escalate to the whole
-    // inventory: a change there reaches every subclass. Pi stopped being a
-    // parent when AgentControllerBase was extracted; its consumers are audited
-    // in INPUT_CONSUMERS instead.
-    const inherited=['command_code','opencode','cline'].some(id=>path==='src/agent/'+id+'_agent_controller.gd');
+    // inventory: a change there reaches every subclass. Pi and Command-code
+    // are concrete siblings of the native/OpenCode branches; their consumers
+    // are audited in INPUT_CONSUMERS instead.
+    const inherited=['opencode','cline'].some(id=>source==='src/agent/'+id+'_agent_controller.gd');
     // A changed shared module or inherited controller keeps every consumer. An
     // unmapped path is exhaustive: an unknown shared file can change behavior in
     // any harness, and a narrower guess would let SoftFac pass without running

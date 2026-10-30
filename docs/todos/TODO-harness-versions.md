@@ -147,11 +147,11 @@ error per split — 854 of them in one run. The session now buffers
 
 ## Known blockers
 
-- **Cline and Kilo update themselves.** Both CLIs upgrade their own global
-  install on their own schedule (Cline on startup with
-  `--min-release-age 0`, Kilo from its interactive TUI). GameSmith does not
-  suppress that: the adapter targets the ACP/HTTP surface, not one release, and
-  the installed version is what gets verified. Re-check `cline --version` /
+- **Native versions can change outside GameSmith.** The Cline adapter sets
+  `CLINE_NO_AUTO_UPDATE=1` for its child, suppressing Cline's startup updater.
+  That does not pin the global installation or affect separately launched CLIs.
+  Kilo can still update from its interactive TUI. The installed version is
+  what gets verified. Re-check `cline --version` /
   `kilo --version` before treating live evidence as current. A running Cline
   hub daemon holds the old binary, so a downgrade needs
   `npm install -g cline@<version> --force` after it exits.

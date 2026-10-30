@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { writeFile, realpath } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { spawn } from 'node:child_process';
 
@@ -14,7 +14,11 @@ for (const action of ['shell','execute','subagent','question','webfetch','extern
 if (!(config.instructions || []).length) throw new Error('Fixture requires the game instructions');
 
 const sessionId='ses_fixture';
-let model='fixture/model', mode='build', serial=0, callSerial=0, cancelled=false, resolveStall=null, cancelSettles=true;
+// Emulates native plugin acknowledgement, not native permission enforcement.
+// Actual enforcement is covered by verify-opencode-permissions.mjs.
+const guard=JSON.parse(process.env.GAMESMITH_OPENCODE_GUARD || 'null');
+if (guard && process.env.GAMESMITH_FIXTURE_NO_GUARD!=='1') await writeFile(guard.path,JSON.stringify({token:guard.token,pid:process.pid,directory:await realpath(process.cwd())}));
+let model='fixture/model', mode=process.env.GAMESMITH_FIXTURE_REFUSE_MODE==='1' ? 'plan' : 'build', serial=0, callSerial=0, cancelled=false, resolveStall=null, cancelSettles=true;
 
 const send=message=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...message})+'\n');
 const update=value=>send({method:'session/update',params:{sessionId,update:value}});
@@ -22,7 +26,7 @@ function options() {
   return [
     {id:'model',category:'model',type:'select',currentValue:model,options:[{value:'fixture/model',name:'Fixture model'}]},
     {id:'mode',category:'mode',type:'select',currentValue:mode,options:[{value:'build',name:'Build'},{value:'plan',name:'Plan'}]},
-  ];
+  ].filter(option=>option.id!=='mode' || process.env.GAMESMITH_FIXTURE_MISSING_MODE!=='1');
 }
 function rpcError(code,message) {const error=new Error(message);error.code=code;return error;}
 
@@ -119,7 +123,7 @@ const handlers={
   },
   'session/set_config_option':params=>{
     if (params.configId==='model') model=params.value;
-    if (params.configId==='mode') mode=params.value;
+    if (params.configId==='mode' && process.env.GAMESMITH_FIXTURE_REFUSE_MODE!=='1') mode=params.value;
     return {configOptions:options()};
   },
   'session/prompt':params=>run(params.prompt?.[0]?.text || ''),

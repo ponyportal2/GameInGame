@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OpenCodeAcpServer, resolveExecutable } from '../tools/opencode/server.mjs';
 import { buildConfig } from '../tools/opencode/protocol.mjs';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -46,6 +46,32 @@ test('OpenCode startup rejection is explicitly initialization failure, not a fai
   try {
     worker.stdin.write(JSON.stringify({id:'init',type:'prompt',message:'hello'})+'\n');
     const result=await response;assert.equal(result.success,false);assert.equal(result.initialization_failed,true);
+  } finally {worker.stdin.end();await closed;}
+});
+
+for (const [flag,diagnostic] of [
+  ['NO_GUARD',/workspace guard was not loaded/],
+  ['MISSING_MODE',/did not report its active agent/],
+  ['REFUSE_MODE',/did not activate the confined build agent/],
+]) test('OpenCode refuses prompts with '+flag.toLowerCase(), {timeout:10000}, async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'gamesmith-opencode-confined-'));
+  const runtime=assembleHarnessRuntime('opencode',join(workspace,'adapter'));
+  const config={workspace,bridge_dir:workspace,session_file:join(workspace,'session.json'),mcp:join(runtime,'mcp.mjs'),prompt_path:join(workspace,'prompt.md')};
+  const configPath=join(workspace,'runtime.json');await writeFile(configPath,JSON.stringify(config));await writeFile(config.prompt_path,'Fixture');
+  const worker=spawn(process.execPath,[join(runtime,'worker.mjs'),configPath],{windowsHide:true,env:{...process.env,GAMESMITH_OPENCODE_BIN:fixture,['GAMESMITH_FIXTURE_'+flag]:'1'}});
+  const closed=once(worker,'close');
+  const response=new Promise((resolve,reject)=>{
+    worker.once('error',reject);worker.once('exit',code=>reject(new Error('Worker exited before response: '+code)));
+    createInterface({input:worker.stdout}).on('line',line=>{const record=JSON.parse(line);if(record.type==='response')resolve(record);});
+  });
+  try {
+    worker.stdin.write(JSON.stringify({id:'confined',type:'prompt',message:'hello'})+'\n');
+    const result=await response;
+    assert.equal(result.success,false);assert.equal(result.initialization_failed,true);assert.match(result.error,diagnostic);
+    assert.equal((await readdir(workspace)).some(name=>name.startsWith('guard-')),false);
+    await assert.rejects(readFile(join(workspace,'.opencode-fixture-busy.json')), {code:'ENOENT'});
+    const backend=JSON.parse(await readFile(join(workspace,'backend.json'),'utf8'));
+    assert.throws(()=>process.kill(backend.pid,0),{code:'ESRCH'});
   } finally {worker.stdin.end();await closed;}
 });
 

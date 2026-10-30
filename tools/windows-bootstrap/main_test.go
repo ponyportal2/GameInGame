@@ -17,6 +17,15 @@ import (
 	"testing"
 )
 
+func TestMissingHarnessInstallGuidance(t *testing.T) {
+	if !strings.Contains(missingHarnessWarning, "OpenCode: npm install -g @opencode/cli@2.1.2") {
+		t.Fatal("OpenCode guidance must install the supported v2 CLI")
+	}
+	if strings.Contains(missingHarnessWarning, "opencode-ai") {
+		t.Fatal("legacy OpenCode package is incompatible with the v2 adapter")
+	}
+}
+
 func TestEitherHarnessAvailable(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 	t.Setenv("USERPROFILE", t.TempDir())

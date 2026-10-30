@@ -17,6 +17,7 @@ export function parseArgs(args){
     if(key==='help'){options.help=true;continue;}
     if(key==='list'){options.list=true;continue;}
     if(key==='build-package'){options.build=true;continue;}
+    if(key==='require-committed-package'){options.requireCommittedPackage=true;continue;}
     if(!args[i].startsWith('--')||!values.has(key)||args[i+1]===undefined)throw new Error('Unknown/missing option: '+args[i]);
     const value=args[++i];if(key==='changed')options.changed.push(...value.split(',').map(path=>path.trim()).filter(Boolean));else options[key]=value;
   }
@@ -36,6 +37,7 @@ export function resolveSelection(options,root=ROOT){
   let tests=options.test||options['rerun-failed']||options.live?[]:selectTests(root,options.suite,changed);
   if(options['rerun-failed']){
     const prior=JSON.parse(readFileSync(resolve(options['rerun-failed']),'utf8'));
+    if(prior.require_committed_package)options.requireCommittedPackage=true;
     // Invalidated evidence proves none of the original selection against the
     // current inputs, even when every individual process exited successfully.
     const failed=prior.inputs_changed?prior.selection:prior.tests.filter(t=>['failed','interrupted','blocked'].includes(t.status)&&!t.id.startsWith('setup:')&&!t.id.startsWith('build:')).map(t=>t.id);
@@ -52,9 +54,8 @@ export function resolveSelection(options,root=ROOT){
   return {tests,changed};
 }
 
-// The package test runs from the working tree, but the factory merges commits.
-// A rebuilt PCK that HEAD does not contain verifies bytes that would never
-// ship, so the build is only usable once it is committed.
+// Development tests verify working-tree bytes. Delivery can separately require
+// those bytes to be committed, because the factory merges commits.
 export function packageChanged(root,path='GameSmith-Windows/GameSmith.pck'){
   return git(root,['status','--porcelain','--',path])!=='';
 }
@@ -87,7 +88,7 @@ export async function runVerification(options,root=ROOT){
   // An explicit list or failed-only rerun is not the suite it borrowed the
   // default from; the timing summary must not label it affected/core/full.
   const suite=options.test||options['rerun-failed']||options.live?'explicit':options.suite;
-  const result={...evidence,results_path:resultsPath,started_at:new Date(started).toISOString(),suite,jobs:options.jobs,status:'running',duration_ms:0,tests:[],selection:tests.map(t=>t.id),changed};
+  const result={...evidence,results_path:resultsPath,started_at:new Date(started).toISOString(),suite,jobs:options.jobs,require_committed_package:!!options.requireCommittedPackage,status:'running',duration_ms:0,tests:[],selection:tests.map(t=>t.id),changed};
   const progress={phase:'starting',completed:0,total:tests.length,running:[],last_progress_at:new Date().toISOString()};
   const persist=()=>{result.duration_ms=Date.now()-started;atomicJson(resultsPath,result);atomicJson(join(directory,'progress.json'),progress);};
   let interrupted=false;
@@ -133,14 +134,8 @@ export async function runVerification(options,root=ROOT){
       phase('build-package');
       const r=await run({id:'build:package',phase:'build'},godot,['--headless','--path',root,'--export-pack','Linux Pack',join(root,'GameSmith-Windows/GameSmith.pck')]);
       if(r.status!=='passed')throw new Error('Package build failed');
-      // Re-fingerprint after the build so the rebuilt bytes are the baseline:
-      // a committed package is the only state that can finish this run.
+      // Re-fingerprint after the build so the tested bytes are the baseline.
       Object.assign(result,fingerprint(root,selectedTests,runtimes,process.env,[relative(root,directory).replaceAll('\\','/')]));
-      if(packageChanged(root)){
-        const reason='GameSmith-Windows/GameSmith.pck was rebuilt but does not match HEAD. Commit the rebuilt package with the source change; the factory merges commits, not working-tree files.';
-        await run({id:'build:package-committed',phase:'build'},process.execPath,['-e',`console.error(${JSON.stringify(reason)});process.exit(1);`]);
-        throw new Error(reason);
-      }
     }
     let imported;
     if(needsGodot&&tests.length){phase('godot-import');imported=await run({id:'setup:godot',phase:'setup'},godot,['--headless','--path',root,'--editor','--quit'],{APPDATA:join(directory,'import-data'),HOME:join(directory,'import-data'),XDG_DATA_HOME:join(directory,'import-data/data')});}
@@ -180,11 +175,17 @@ export async function runVerification(options,root=ROOT){
     const acceptance=tests.filter(t=>t.phase==='acceptance');
     if(acceptance.length){phase('acceptance');for(const test of acceptance){
       if(test.id==='acceptance:pi-emulator')await run(test,process.execPath,[test.file,godot]);
-      else if(test.id==='acceptance:migration')await run(test,process.execPath,[test.file,godot]);
+      else if(test.id==='acceptance:migration'||test.id==='acceptance:opencode-permissions')await run(test,process.execPath,[test.file,godot]);
       else if(process.platform==='win32'||process.env.DISPLAY)await run(test,godot,['--path',root,'--script','res://'+test.file],{APPDATA:join(directory,'windowed'),HOME:join(directory,'windowed'),XDG_DATA_HOME:join(directory,'windowed/data')});
       else if(spawnSync('xvfb-run',['--help'],{windowsHide:true}).status===0)await run(test,'xvfb-run',['-a',godot,'--path',root,'--script','res://'+test.file],{HOME:join(directory,'windowed')});
       else {result.tests.push({id:test.id,status:'skipped',reason:'No display or xvfb-run available'});progress.completed++;}
     }}
+    if(options.requireCommittedPackage&&!interrupted){
+      phase('delivery-package');
+      const dirty=packageChanged(root);
+      const reason='GameSmith-Windows/GameSmith.pck does not match HEAD. Commit the tested package before delivery; the factory merges commits, not working-tree files.';
+      await run({id:'build:package-committed',phase:'build'},process.execPath,['-e',dirty?`console.error(${JSON.stringify(reason)});process.exit(1);`:'process.exit(0);']);
+    }
     result.status=interrupted?'interrupted':result.tests.some(t=>!['passed','reused','skipped'].includes(t.status))?'failed':'passed';
   }catch(error){result.status='failed';result.error=error.message;console.log('FAIL: '+error.message);}
   finally{for(const test of tests)if(!result.tests.some(t=>t.id===test.id)){result.tests.push({id:test.id,status:interrupted?'interrupted':'blocked',reason:result.error||'Execution interrupted'});progress.completed++;}
@@ -204,7 +205,7 @@ export async function runVerification(options,root=ROOT){
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--list] [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--live harness] [--report results.json]');
+  try{const options=parseArgs(process.argv.slice(2));if(options.help)console.log('verify --suite affected|core|full|all|release|acceptance|smoke|node|host|package|launcher|<harness> --output summary|errors|full [--list] [--godot path] [--jobs 4] [--rerun-failed results.json] [--reuse results.json] [--changed paths] [--since ref] [--test id,id] [--build-package] [--require-committed-package] [--live harness] [--report results.json]');
   else if(options.report)console.log(timingSummary(JSON.parse(readFileSync(resolve(options.report),'utf8'))));
   else if(options.list){const ids=resolveSelection(options).tests.map(test=>test.id).sort();if(ids.length)process.stdout.write(ids.join('\n')+'\n');else console.error('no tests selected');}
   else process.exitCode=(await runVerification(options)).status==='passed'?0:1;}

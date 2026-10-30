@@ -115,6 +115,32 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  for(const path of ['export_presets.cfg','src/core/unknown.gd','tests/unknown-fixture.gd','tools/testing/verify.mjs','tools/testing/verification-evidence.mjs','tools/testing/assembled-runtime.mjs','src/pi/pi_runtime_config.gd','src/ui/app.gd'])
   assert.deepEqual(ids([path]),selectTests(root,'full').map(t=>t.id).sort(),path);
 });
+test('Command-code controller changes keep audited concrete consumers',()=>{
+ const expected=[
+  'node:command-code-acp','node:command-code-native','node:command-code',
+  'host:command_code_lifecycle','host:command_code_compaction','host:native_recovery_command_code',
+  'host:native_reset','host:native_controller','host:harness','host:harness_assembly',
+  'host:prompt_contract','host:review_ownership','host:reload_settings',
+  'host:runtime_properties','host:runtime_children','host:blender','host:turn_recovery',
+  'node:verification','package:contents',
+ ].sort();
+ for(const suffix of ['.gd','.gd.uid']){
+  const selected=selectTests(root,'affected',['src/agent/command_code_agent_controller'+suffix]).map(t=>t.id).sort();
+  assert.deepEqual(selected,expected,'concrete Command-code changes must keep UI/reset, approval, compaction and recovery coverage');
+ }
+});
+
+test('shared native controller changes retain exhaustive lifecycle and recovery coverage',()=>{
+ const exhaustive=selectTests(root,'full').map(t=>t.id).sort();
+ for(const source of ['agent_controller_base','native_agent_controller','opencode_agent_controller','cline_agent_controller'])
+  for(const suffix of ['.gd','.gd.uid'])
+   assert.deepEqual(selectTests(root,'affected',['src/agent/'+source+suffix]).map(t=>t.id).sort(),exhaustive,source+suffix);
+ // Do not substitute the named harness suite for the inherited lifecycle.
+ for(const id of ['host:native_controller','host:native_reset','host:command_code_compaction',
+  ...inventory(root).filter(h=>h.id!=='pi').flatMap(h=>['host:native_recovery_'+h.id.replaceAll('-','_'),...h.host_runners.map(file=>'host:'+file.slice(6,-10))])])
+  assert(exhaustive.includes(id),'shared native selection misses '+id);
+});
+
 test('host failures are counted and excerpted from Godot error output',()=>{
  const text=['PASS: keeps working','ERROR: FAIL: rejects a workspace link','   at: push_error (core/variant/variant_utility.cpp:1023)','ERROR: FAIL: second failure'].join('\n');
  assert.deepEqual(assertionCounts(text,'host'),{passed:1,failed:2});
@@ -184,7 +210,7 @@ test('inventory paths and launcher stay synchronized; affected mapping is conser
   for(const consumer of catalog.harnesses.filter(h=>h.modules.some(([,file])=>file===source)))
    for(const entry of selectTests(root,consumer.id))assert(selected.has(entry.id),source+' misses '+consumer.id+': '+entry.id);
  }
- for(const parent of ['cline','command_code'])assert.equal(selectTests(root,'affected',['src/agent/'+parent+'_agent_controller.gd']).length,selectTests(root,'all').length,'inherited '+parent+' controller needs broad coverage');
+ for(const parent of ['opencode','cline'])assert.equal(selectTests(root,'affected',['src/agent/'+parent+'_agent_controller.gd']).length,selectTests(root,'all').length,'inherited '+parent+' controller needs broad coverage');
  assert.equal(resolveTest(root,'host:opencode_stop').file,'tests/opencode_stop_runner.gd');
  assert.equal(resolveTest(root,'acceptance:windowed').phase,'acceptance');
  assert.throws(()=>resolveTest(root,'host:codex_integration'),/Unknown test/);
@@ -241,7 +267,7 @@ test('changes during a run invalidate the evidence',async t=>{
  assert.deepEqual(rerun.selection,['node:mutate']);assert.equal(rerun.tests[0].status,'passed');assert.equal(rerun.status,'passed');
 });
 
-test('a rebuilt package only counts when it matches HEAD',t=>{
+test('package commitment is checked independently of development evidence',t=>{
  const dir=repository(t),pck='GameSmith-Windows/GameSmith.pck';
  mkdirSync(join(dir,'GameSmith-Windows'));
  writeFileSync(join(dir,pck),'pck-v1');
@@ -249,6 +275,35 @@ test('a rebuilt package only counts when it matches HEAD',t=>{
  assert.equal(packageChanged(dir),false);
  writeFileSync(join(dir,pck),'pck-v2');
  assert.equal(packageChanged(dir),true);
+});
+
+test('development verifies rebuilt bytes before an optional final delivery gate',async t=>{
+ const godot=process.env.GODOT_BIN||resolve('GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe');
+ if(!existsSync(godot)){t.skip('Godot required for real package export');return;}
+ const dir=repository(t);
+ rmSync(join(dir,'tests/bad.test.mjs'));
+ mkdirSync(join(dir,'GameSmith-Windows'));
+ writeFileSync(join(dir,'GameSmith-Windows/GameSmith.pck'),'old package');
+ writeFileSync(join(dir,'project.godot'),'config_version=5\n[application]\nconfig/name="Verifier fixture"\n');
+ writeFileSync(join(dir,'export_presets.cfg'),'[preset.0]\nname="Linux Pack"\nplatform="Linux"\nrunnable=true\nexport_filter="all_resources"\n[preset.0.options]\n');
+ const args=['--test','node:good','--godot',godot,'--build-package'];
+ const dev=await runVerification(parseArgs(args),dir);
+ assert.equal(dev.status,'passed');
+ assert.equal(dev.tests.find(entry=>entry.id==='node:good')?.status,'passed');
+ assert.equal(packageChanged(dir),true);
+ const delivery=await runVerification(parseArgs([...args,'--require-committed-package']),dir);
+ assert.equal(delivery.status,'failed');
+ assert.equal(delivery.tests.find(entry=>entry.id==='node:good')?.status,'passed','delivery gate must not block validation');
+ assert.equal(delivery.tests.find(entry=>entry.id==='build:package-committed')?.status,'failed');
+ // Failed-only reruns must retain the gate, including without another export.
+ const rerun=await runVerification(parseArgs(['--rerun-failed',delivery.results_path,'--godot',godot]),dir);
+ assert.equal(rerun.status,'failed');
+ assert.equal(rerun.tests.find(entry=>entry.id==='build:package-committed')?.status,'failed');
+ for(const args of [['add','.'],['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','tested package']])
+  assert.equal(spawnSync('git',args,{cwd:dir,windowsHide:true}).status,0);
+ const committed=await runVerification(parseArgs(['--test','node:good','--require-committed-package']),dir);
+ assert.equal(committed.status,'passed');
+ assert.equal(committed.tests.find(entry=>entry.id==='build:package-committed')?.status,'passed');
 });
 test('missing runtime records setup failure and blocked selections for a focused rerun',async t=>{
  const dir=repository(t),args=['--test','host:test','--godot',join(dir,'missing-godot.exe')];

@@ -8,6 +8,22 @@ import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { readdir, readFile, rename } from 'node:fs/promises';
 import { buildArguments, buildConfig, mergeConfig, normalizeFrame } from '../tools/opencode/protocol.mjs';
+import workspacePlugin from '../tools/opencode/workspace-plugin.js';
+import { symlink } from 'node:fs/promises';
+
+test('native workspace hook resolves links and protects nested metadata, including new files', async () => {
+  const root=await mkdtemp(join(tmpdir(),'opencode-guard-'));
+  const workspace=join(root,'game'),outside=join(root,'outside');
+  await mkdir(join(workspace,'nested','.git'),{recursive:true});await mkdir(outside);
+  await writeFile(join(workspace,'file.txt'),'inside');await writeFile(join(outside,'secret'),'outside');
+  await symlink(outside,join(workspace,'escape'),process.platform==='win32'?'junction':'dir');
+  await symlink(join(workspace,'nested','.git'),join(workspace,'metadata-alias'),process.platform==='win32'?'junction':'dir');
+  let before;
+  await workspacePlugin.setup({location:{directory:workspace},tool:{hook:async(name,callback)=>{assert.equal(name,'execute.before');before=callback;}}});
+  for (const [tool,path] of [['read','file.txt'],['write','new/file.txt'],['glob','.'],['grep','.']]) await before({tool,input:{path}});
+  for (const [tool,path] of [['read',join(outside,'secret')],['read','escape/secret'],['write','escape/new/file'],['edit','nested/.git/config'],['write','metadata-alias/new/file'],['grep','escape']])
+    await assert.rejects(before({tool,input:{path}}),/Permission denied/);
+});
 
 test('OpenCode resumes only the explicit game session and receives no model/compaction overrides', () => {
   const args = buildArguments({session:'ses_game',name:'Fixture'}, 'literal $prompt & "quoted"');
@@ -21,6 +37,7 @@ test('OpenCode resumes only the explicit game session and receives no model/comp
 test('OpenCode 2 confines the build agent to workspace tools and GameSmith MCP', () => {
   const config = buildConfig({mcp:'C:/fixture/mcp.mjs',prompt_path:'C:/fixture/prompt.md'});
   assert.equal(config.default_agent,'build');
+  assert.deepEqual(config.plugins,['C:/fixture']);
   const rules = config.agents.build.permissions;
   assert.deepEqual(rules[0], {action:'*',resource:'*',effect:'deny'}, 'unknown tools stay hidden until the surface names them');
   assert.deepEqual(rules.filter(rule=>rule.resource==='*' && rule.effect==='allow').map(rule=>rule.action), ['read','glob','grep','edit','write','gamesmith_*']);
@@ -32,10 +49,11 @@ test('OpenCode 2 confines the build agent to workspace tools and GameSmith MCP',
 });
 
 test('OpenCode 2 keeps player settings while replacing the confined agent rules', () => {
-  const existing = {model:'fixture/model',instructions:['global.md'],mcp:{timeout:{startup:5},servers:{other:{type:'local',command:['x']}}},agents:{plan:{permissions:[]}}};
+  const existing = {model:'fixture/model',plugins:['player-plugin'],instructions:['global.md'],mcp:{timeout:{startup:5},servers:{other:{type:'local',command:['x']}}},agents:{plan:{permissions:[]}}};
   const merged = mergeConfig(existing,buildConfig({mcp:'C:/fixture/mcp.mjs',prompt_path:'C:/fixture/prompt.md'}),'opencode');
   assert.equal(merged.model,'fixture/model');
   assert.equal(merged.default_agent,'build');
+  assert.deepEqual(merged.plugins,['player-plugin','C:/fixture']);
   assert.deepEqual(merged.instructions,['global.md','C:/fixture/prompt.md']);
   assert.deepEqual(Object.keys(merged.mcp.servers).sort(),['gamesmith','other']);
   assert.equal(merged.mcp.timeout.startup,5);

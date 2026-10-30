@@ -159,6 +159,10 @@
         [
           "rg-search.mjs",
           "agent/rg-search.mjs"
+        ],
+        [
+          "server.ts",
+          "opencode/workspace-plugin.js"
         ]
       ],
       "node_suites": [

@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { dirname } from 'node:path';
 
 // OpenCode 2 exposes far more capability than GameSmith allows. The confined
 // agent names the tools it may use and denies everything else, so a tool added
@@ -37,6 +38,7 @@ function opencodeConfig(config) {
   const allow = action => ({action,resource:'*',effect:'allow'});
   return {
     default_agent: 'build',
+    plugins: [dirname(config.mcp)],
     agents: {build: {permissions: [
       {action:'*',resource:'*',effect:'deny'},
       ...ALLOWED_ACTIONS.map(allow),
@@ -54,6 +56,7 @@ export function mergeConfig(existing, host, harness) {
     instructions: [...(existing.instructions || []),...host.instructions],
     mcp: {...existing.mcp,...host.mcp}};
   return {...existing,...host,
+    plugins: [...(existing.plugins || []),...host.plugins],
     agents: {...existing.agents,build: {...existing.agents?.build,...host.agents.build}},
     instructions: [...(existing.instructions || []),...host.instructions],
     mcp: {...existing.mcp,...host.mcp,servers: {...existing.mcp?.servers,...host.mcp.servers}}};

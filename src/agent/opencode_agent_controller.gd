@@ -1,8 +1,13 @@
-extends "res://src/agent/command_code_agent_controller.gd"
+extends "res://src/agent/native_agent_controller.gd"
 
 const STOP_GRACE_MS = 5000
 var cancel_deadline := 0
 var cancelling = false
+
+func start_new_session() -> Dictionary:
+    # The UI does not advertise reset for OpenCode. Direct callers must not
+    # inherit another provider's session archive or touch native runtime state.
+    return {"ok": false, "error": "OpenCode session reset is unsupported."}
 
 func cancel() -> void:
     if tools != null: tools.cancel_reload()
@@ -93,9 +98,6 @@ func _start_command_runtime() -> Dictionary:
     rpc.stderr_line.connect(func(line): AppLoggerScript.game_event(game_name, _harness_id() + ".stderr", line, "WARN"))
     rpc.process_stopped.connect(func(message): last_error = message.replace("Pi", _harness_name() + " adapter"))
     return rpc.start(config)
-
-func _maybe_auto_compact(_phase: String) -> void:
-    pass
 
 func compact_now() -> Dictionary:
     return {"ok": false, "error": _harness_name() + " manages its own compaction."}

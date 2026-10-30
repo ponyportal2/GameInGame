@@ -30,6 +30,8 @@ type runtimeConfig struct {
 	Client *http.Client
 }
 
+const missingHarnessWarning = "No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, experimental AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI, or OMP to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.4.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g @opencode/cli@2.1.2\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\nCursor Agent CLI: https://cursor.com/docs/cli/installation\nGrok Build: https://docs.x.ai/build\nAGY (experimental): https://antigravity.google/docs/cli/installation\nKimi Code: https://moonshotai.github.io/kimi-code/\nKiro CLI: https://kiro.dev/docs/cli/\nKilo CLI: npm install -g @kilocode/cli\nCopilot CLI: npm install -g @github/copilot\nCrush CLI: winget install charmbracelet.crush\nOMP: https://github.com/can1357/oh-my-pi\n\nThen restart GameSmith and choose the installed harness when creating a game."
+
 func main() {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -65,7 +67,7 @@ func main() {
 		warningf("Git for Windows was not found on PATH. GameSmith will open, but creating or editing generated games requires Git. Install Git for Windows and restart GameSmith.")
 	}
 	if !hasInstalledHarness(exec.LookPath) {
-		warningf("No coding harness was found. GameSmith will open; install Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, experimental AGY, Kimi Code, Kiro CLI, Kilo CLI, Copilot CLI, Crush CLI, or OMP to build or edit games.\n\nPi: npm install -g @earendil-works/pi-coding-agent@1.4.0\nCommand-code: npm install -g command-code\nOpenCode: npm install -g opencode-ai\nCodex: npm install -g @openai/codex\nCline: npm install -g cline\nCursor Agent CLI: https://cursor.com/docs/cli/installation\nGrok Build: https://docs.x.ai/build\nAGY (experimental): https://antigravity.google/docs/cli/installation\nKimi Code: https://moonshotai.github.io/kimi-code/\nKiro CLI: https://kiro.dev/docs/cli/\nKilo CLI: npm install -g @kilocode/cli\nCopilot CLI: npm install -g @github/copilot\nCrush CLI: winget install charmbracelet.crush\nOMP: https://github.com/can1357/oh-my-pi\n\nThen restart GameSmith and choose the installed harness when creating a game.")
+		warningf(missingHarnessWarning)
 	}
 
 	args := append([]string{"--main-pack", packPath}, os.Args[1:]...)

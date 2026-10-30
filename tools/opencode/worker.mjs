@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, writeFileSync, renameSync, realpathSync, rmSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { buildConfig, mergeConfig, normalizeFrame } from './protocol.mjs';
 import { OpenCodeAcpServer, OpenCodeServer } from './server.mjs';
@@ -20,7 +21,8 @@ function writeBackend(extra={}) {
   writeFileSync(join(dirname(config.session_file),'backend.json'),JSON.stringify({pid:server.pid,...(backendModel ? {model:backendModel} : {}),...extra}));
 }
 const inline=mergeConfig(JSON.parse(process.env[prefix+'_CONFIG_CONTENT'] || '{}'),buildConfig(config),harness);
-const shared={workspace:config.workspace,env:{...process.env,[prefix+'_CONFIG_CONTENT']:JSON.stringify(inline),GAMESMITH_HOST_BRIDGE_DIR:config.bridge_dir},
+const guard=acp ? {path:join(dirname(config.session_file),'guard-'+randomBytes(16).toString('hex')+'.json'),token:randomBytes(16).toString('hex')} : null;
+const shared={workspace:config.workspace,env:{...process.env,[prefix+'_CONFIG_CONTENT']:JSON.stringify(inline),...(guard ? {GAMESMITH_OPENCODE_GUARD:JSON.stringify(guard)} : {}),GAMESMITH_HOST_BRIDGE_DIR:config.bridge_dir},
   onStderr:line=>process.stderr.write(line+'\n'),onExit:error=>{if (!stopping) emit({type:'integration_error',error:error.message});}};
 const server=acp ? new OpenCodeAcpServer(shared) : new OpenCodeServer({...shared,harness});
 function emitRecords(records,operation) {
@@ -41,8 +43,10 @@ async function adoptOptions(result) {
   const mode=options.find(option=>option.id==='mode');
   // A resumed session keeps the agent it was created with, and a player-wide
   // default agent would bypass the confined rule set. Pin the confined agent.
-  if (mode && mode.currentValue!=='build') {
+  if (!mode) throw new Error('OpenCode did not report its active agent; refusing an unconfined session.');
+  if (mode.currentValue!=='build') {
     const updated=await server.request('session/set_config_option',{sessionId:session,configId:'mode',value:'build'});
+    if (!updated?.configOptions?.some(option=>option.id==='mode' && option.currentValue==='build')) throw new Error('OpenCode did not activate the confined build agent.');
     const next=(updated?.configOptions || []).find(option=>option.id==='model');
     if (next?.currentValue) backendModel=next.currentValue;
   }
@@ -62,6 +66,13 @@ function ready() {
         session=created.sessionId;
         await adoptOptions(created);
       }
+      try {
+        const loaded=JSON.parse(readFileSync(guard.path,'utf8'));
+        // OpenCode may run the plugin in its own server subprocess. The fresh
+        // secret and canonical workspace bind this acknowledgement to our run.
+        if (loaded.token!==guard.token || !Number.isInteger(loaded.pid) || resolve(loaded.directory)!==realpathSync(config.workspace)) throw new Error('Invalid workspace guard acknowledgement.');
+      } catch (error) { throw new Error('OpenCode workspace guard was not loaded; refusing to run: '+error.message); }
+      finally {rmSync(guard.path,{force:true});}
       writeBackend();
     } else {
       if (session) {
@@ -77,6 +88,7 @@ function ready() {
   })().catch(async error=>{
     error.initializationFailed=true;
     stopping=true;await server.close();
+    if (guard) rmSync(guard.path,{force:true});
     throw error;
   });
 }
@@ -151,5 +163,5 @@ createInterface({input:process.stdin}).on('line',line=>{
 process.stdin.on('end',async()=>{
   stopping=true;if (active) active.cancelled=true;
   // Kill the complete backend tree even when a native request is blocked.
-  await server.close();process.exit();
+  await server.close();if (guard) rmSync(guard.path,{force:true});process.exit();
 });
