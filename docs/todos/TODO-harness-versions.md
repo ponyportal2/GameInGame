@@ -47,13 +47,20 @@ the installed version is supported.
 - **Pi** `1.4.0` (was 1.3.0). The 7-day floor alone would have kept 1.3.0,
   but the pin now names the current release. The two real-Pi checks that had
   been failing since before this pass are fixed, and `pi_integration_runner.gd`
-  finishes 140 passed / 0 failed (see below).
+  finishes 140 passed / 0 failed (see below). The pin also reaches the launcher
+  guidance, both workflows and both `THIRD_PARTY_NOTICES.md` copies;
+  `tests/pi-pin.test.mjs` fails when a current site disagrees with the README
+  target or when the tracked `GameSmith.exe` was not rebuilt.
 - **Cline** `3.0.74` — the CLI had already moved this profile past the floor
-  on its own, and the pin now matches the installed release. GameSmith no
-  longer sets `CLINE_NO_AUTO_UPDATE=1`: Cline owns its install, the adapter
-  targets the ACP surface rather than one release, and suppressing the upgrade
-  only pinned the player to a build the CLI had decided to leave. The
-  adapter-side fixes from the 3.0.73 pass stay: `liveEnvironment()` passes
+  on its own, and the pin now matches the installed release. GameSmith keeps
+  `CLINE_NO_AUTO_UPDATE=1` on the child: the startup updater runs
+  `npm update --global cline --tag latest --min-release-age 0`, which bypasses
+  the 7-day floor and can replace the tested build with an unvetted release
+  mid-session. The 3.0.74 bundle still gates that updater on the same variable
+  (`if(process.env.CLINE_NO_AUTO_UPDATE==="1")return;`), so suppression is
+  honoured rather than ignored; live runs record the resolved executable's
+  version before and after and fail when it moved. The player owns updating
+  Cline. The adapter-side fixes from the 3.0.73 pass stay: `liveEnvironment()` passes
   `CLINE_DIR` so the live host's isolated `HOME` no longer hides
   `providers.json`, and the live runner compares the applied model against the
   profile's saved model instead of the retired `cline-free/` prefix.

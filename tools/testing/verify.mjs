@@ -151,17 +151,27 @@ export async function runVerification(options,root=ROOT){
     if(host.length){
       if(imported.status==='passed'){
         phase('godot-host');
+        const live=options.live?await import('./verification-live.mjs'):null;
+        const liveBefore=live?await live.liveVersion(options.live,process.env):null;
         await runHostTests(host,options.jobs,async test=>{
           const data=join(directory,test.id.replaceAll(':','-')+'-data');mkdirSync(data,{recursive:true});
           const env={APPDATA:data,HOME:data,XDG_DATA_HOME:join(data,'data')};
           // Real CLI login remains native-owned; fixture suites stay isolated.
-          if(options.live){const {liveEnvironment}=await import('./verification-live.mjs');Object.assign(env,liveEnvironment(options.live,process.env));}
+          if(live)Object.assign(env,live.liveEnvironment(options.live,process.env));
           const args=test.id==='package:contents'?['--main-pack',join(root,'GameSmith-Windows/GameSmith.pck')]:['--path',root];
           // A shared runner can register several entries; the entry's arguments
           // name the scenario, so the runner executes only the selected one.
           const scenario=test.args?.length?['--',...test.args]:[];
           await run(test,godot,['--headless',...args,'--log-file',join(data,'engine.log'),'--script','res://'+test.file,...scenario],env,test.id==='package:contents'?data:root);
         },()=>interrupted);
+        if(liveBefore){
+          const liveAfter=await live.liveVersion(options.live,process.env);
+          const entry=result.tests.find(t=>t.id==='live:'+options.live);
+          const reason=liveBefore.error||liveAfter.error?`Could not read the ${options.live} version: ${liveBefore.error||liveAfter.error}`
+            :liveAfter.version!==liveBefore.version?`${options.live} moved from ${liveBefore.version} to ${liveAfter.version} during the run (${liveBefore.command}); a game session must not rewrite the global install`
+            :null;
+          if(reason&&entry){entry.status='failed';entry.reason=reason;console.log('FAIL: '+entry.id+'; '+reason);}
+        }
       }else for(const test of host){result.tests.push({id:test.id,status:'blocked',reason:'Godot import failed'});progress.completed++;}
     }
     for(const test of tests.filter(t=>t.id==='package:structure'||t.phase==='launcher')){

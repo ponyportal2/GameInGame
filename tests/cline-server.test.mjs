@@ -29,6 +29,10 @@ test('persistent ACP turns, native policy and provider failure',{timeout:15000},
   f.send({type:'prompt',id:'three',message:'provider-error'});const result=await f.until(r=>r.type==='complete' && !r.ok);assert.match(result.error,/Fixture provider error/);
   assert.equal(JSON.parse(readFileSync(join(f.directory,'session.json'))).session,'cline-fixture-session');
 });
+test('Cline child never runs the global auto-updater',{timeout:15000},async t=>{
+  const f=fixture(t,{GAMESMITH_CLINE_EXPECT_NO_AUTO_UPDATE:'1'});f.send({type:'prompt',id:'one',message:'hello'});
+  assert((await f.until(r=>r.type==='complete')).ok);
+});
 test('readiness failure is reported for host retirement',{timeout:15000},async t=>{
   const f=fixture(t,{GAMESMITH_CLINE_FAIL_METHOD:'session/new'});f.send({type:'prompt',id:'one',message:'hello'});
   const result=await f.until(r=>r.type==='response');assert.equal(result.success,false);assert.equal(result.initialization_failed,true);

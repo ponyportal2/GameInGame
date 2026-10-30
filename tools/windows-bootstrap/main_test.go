@@ -347,7 +347,7 @@ func TestResolvePiExecutableMissingHasInstallGuidance(t *testing.T) {
 	}
 	message := err.Error()
 	for _, want := range []string{
-		"npm install -g @earendil-works/pi-coding-agent@1.0.0",
+		"npm install -g @earendil-works/pi-coding-agent@1.4.0",
 		"GAMESMITH_PI_BIN",
 	} {
 		if !strings.Contains(message, want) {

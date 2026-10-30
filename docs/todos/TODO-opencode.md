@@ -35,3 +35,10 @@ can omit the update (`context-missing`). Two regressions in
 `tests/opencode-server.test.mjs` cover the unchanged measurement and the missing
 update; both fail against the old worker (observed `[5120,5120,120]` and a
 non-null persisted count) and pass now. `tests/opencode*.test.mjs`: 20/20.
+Tool surface (2026-10-30): `skill` left the native allowlist. The ACP move had
+carried it over from OpenCode 2's own tool list, but nothing in the GameSmith
+integration asks for skills, and each entry loads instructions from files
+GameSmith did not author into the confined agent's context. The allowlist is
+now `read`/`glob`/`grep`/`edit`/`write` plus the GameSmith MCP tools; a
+capability belongs there because a reviewed feature needs it, not because
+denying it seemed unnecessary.

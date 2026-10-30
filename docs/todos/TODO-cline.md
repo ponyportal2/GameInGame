@@ -55,13 +55,17 @@ Re-verification on Cline 3.0.73 (2026-10-29):
 
 Re-verification on Cline 3.0.74 (2026-10-30):
 
-- The auto-update suppression is gone. `CLINE_NO_AUTO_UPDATE=1` was added in
-  the 3.0.73 pass to stop the CLI's startup
-  `npm update --global cline --tag latest --min-release-age 0` from rewriting
-  the global install mid-run. Suppressing it instead pinned the player to a
-  build the CLI had already decided to leave, and the adapter targets the ACP
-  surface rather than one release, so the child now inherits Cline's own update
-  policy. Nothing in the adapter reads or rewrites the CLI version.
+- The auto-update suppression is back. It was briefly removed on the theory
+  that the adapter targets the ACP surface rather than one release, but the
+  startup updater runs `npm update --global cline --tag latest
+  --min-release-age 0`: it bypasses the 7-day floor and can replace the tested
+  build with an unvetted release while a game is running. The 3.0.74 bundle
+  still honours the variable (`if(process.env.CLINE_NO_AUTO_UPDATE==="1")return;`
+  guards the update check), so the child keeps `CLINE_NO_AUTO_UPDATE=1`.
+  `liveVersion()` in `tools/testing/verification-live.mjs` resolves the exact
+  executable the adapter launches and `verify.mjs` fails the live run when the
+  version moved. The player updates Cline; starting a game never rewrites the
+  global install.
 - 3.0.74 is installed, so the documented pin matches what was verified.
 - Live acceptance on installed 3.0.74: 2/2 in 135.3 s, evidence
   `%TEMP%/gamesmith-verify-xqKXAD/results.json`. The run includes the real

@@ -28,12 +28,12 @@ export class ClineServer {
     const mcpPath=join(this.config.bridge_dir,'mcp.json');
     const quote=path=>process.platform==='win32' ? '"'+path+'"' : path;
     writeFileSync(mcpPath,JSON.stringify({mcpServers:{gamesmith:{command:quote(process.execPath),args:[quote(this.config.mcp),quote(this.config.config_path)]}}}));
-    // Cline owns its own install and upgrades it on startup. GameSmith leaves
-    // that alone: suppressing it would pin the player to a build the CLI has
-    // already decided to move past, and the ACP surface is what the adapter
-    // targets, not one release. Nothing here reads or rewrites the CLI version.
+    // Cline upgrades its own global npm install on startup, and that updater
+    // passes --min-release-age 0, so a game session could silently replace the
+    // CLI GameSmith was tested against with a release nobody vetted. The player
+    // owns updating Cline; starting a game never rewrites the global install.
     const env={...process.env,CLINE_PROVIDER_SETTINGS_PATH:native.providerPath,CLINE_SESSION_BACKEND_MODE:'local',
-      CLINE_DATA_DIR:join(directory,'native'),CLINE_MCP_SETTINGS_PATH:mcpPath,CLINE_PROVIDER:native.provider};
+      CLINE_DATA_DIR:join(directory,'native'),CLINE_MCP_SETTINGS_PATH:mcpPath,CLINE_PROVIDER:native.provider,CLINE_NO_AUTO_UPDATE:'1'};
     if(native.model)env.CLINE_MODEL=native.model;
     // ACP restores OAuth itself, but its API-key providers require this env
     // input. Keep the credential in child memory, never runtime metadata/logs.

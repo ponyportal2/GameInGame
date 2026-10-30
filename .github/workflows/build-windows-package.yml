@@ -42,8 +42,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install -g @earendil-works/pi-coding-agent@1.0.0
-          test "$(pi --version)" = "1.0.0"
+          npm install -g @earendil-works/pi-coding-agent@1.4.0
+          test "$(pi --version)" = "1.4.0"
 
       - name: Download and verify Godot 4.7.2 runtimes
         shell: bash

@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 // OpenCode 2 exposes far more capability than GameSmith allows. The confined
 // agent names the tools it may use and denies everything else, so a tool added
 // by a later OpenCode release stays invisible until it is reviewed here.
-const ALLOWED_ACTIONS = ['read','glob','grep','edit','write','skill'];
+const ALLOWED_ACTIONS = ['read','glob','grep','edit','write'];
 const RESERVED_PATHS = ['.git/*','*/.git/*'];
 
 export function buildArguments(config, prompt) {

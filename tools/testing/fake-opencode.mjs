@@ -9,8 +9,8 @@ const allows=action=>permissions.some(rule=>rule.action===action && rule.resourc
 // policy cannot silently regress behind a green lifecycle run.
 if (config.default_agent!=='build') throw new Error('Fixture requires the confined build agent');
 if (!permissions.some(rule=>rule.action==='*' && rule.resource==='*' && rule.effect==='deny')) throw new Error('Fixture requires the default-deny rule');
-for (const action of ['read','write','edit','glob','grep','skill','gamesmith_*']) if (!allows(action)) throw new Error('Fixture requires the '+action+' allow rule');
-for (const action of ['shell','execute','subagent','question','webfetch','external_directory']) if (allows(action)) throw new Error('Fixture must not allow '+action);
+for (const action of ['read','write','edit','glob','grep','gamesmith_*']) if (!allows(action)) throw new Error('Fixture requires the '+action+' allow rule');
+for (const action of ['shell','execute','subagent','question','webfetch','external_directory','skill']) if (allows(action)) throw new Error('Fixture must not allow '+action);
 if (!(config.instructions || []).length) throw new Error('Fixture requires the game instructions');
 
 const sessionId='ses_fixture';

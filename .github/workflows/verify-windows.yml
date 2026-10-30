@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: '22.19.0'
       - name: Install pinned Pi
-        run: npm install -g @earendil-works/pi-coding-agent@1.0.0
+        run: npm install -g @earendil-works/pi-coding-agent@1.4.0
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'

@@ -67,6 +67,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
   if(r.method===process.env.GAMESMITH_CLINE_FAIL_METHOD || r.method==='session/prompt' && r.params.prompt.at(-1).text.split('Player request:\n').at(-1)==='reject-before-admission'){emit({id:r.id,error:{code:-32000,message:'Fixture readiness failure: '+r.method}});return;}
   if(r.method==='initialize'){
     if(process.env.GAMESMITH_CLINE_EXPECT_API_KEY && process.env.CLINE_API_KEY!==process.env.GAMESMITH_CLINE_EXPECT_API_KEY){emit({id:r.id,error:{code:-32000,message:'Native provider key was not inherited'}});return;}
+    if(process.env.GAMESMITH_CLINE_EXPECT_NO_AUTO_UPDATE==='1' && process.env.CLINE_NO_AUTO_UPDATE!=='1'){emit({id:r.id,error:{code:-32000,message:'Cline child would rewrite the global install'}});return;}
     if(process.env.GAMESMITH_CLINE_STUCK_START==='1'){writeFileSync('.cline-fixture-busy.json',JSON.stringify({phase:'initialize'}));return;}reply({protocolVersion:1,agentCapabilities:{loadSession:true}});return;
   }
   if(r.method==='session/new' || r.method==='session/load'){

@@ -23,7 +23,7 @@ test('OpenCode 2 confines the build agent to workspace tools and GameSmith MCP',
   assert.equal(config.default_agent,'build');
   const rules = config.agents.build.permissions;
   assert.deepEqual(rules[0], {action:'*',resource:'*',effect:'deny'}, 'unknown tools stay hidden until the surface names them');
-  assert.deepEqual(rules.filter(rule=>rule.resource==='*' && rule.effect==='allow').map(rule=>rule.action), ['read','glob','grep','edit','write','skill','gamesmith_*']);
+  assert.deepEqual(rules.filter(rule=>rule.resource==='*' && rule.effect==='allow').map(rule=>rule.action), ['read','glob','grep','edit','write','gamesmith_*']);
   for (const [action,resource] of [['edit','.git/*'],['edit','*/.git/*'],['write','.git/*'],['write','*/.git/*']]) assert.ok(rules.some(rule=>rule.action===action && rule.resource===resource && rule.effect==='deny'), action+' '+resource);
   assert.deepEqual(rules.at(-1), {action:'gamesmith_*',resource:'*',effect:'allow'});
   assert.deepEqual(config.instructions, ['C:/fixture/prompt.md']);

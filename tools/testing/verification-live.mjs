@@ -1,5 +1,20 @@
+import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+// A live run may not rewrite the toolchain it was handed. The probe resolves the
+// same executable the adapter launches (override bin, npm shim or native binary)
+// so an upgrade to a different install cannot hide behind a PATH alias.
+export async function liveVersion(harness,env){
+  if(harness!=='cline')return null;
+  try{
+    const { resolveExecutable } = await import('../cline/server.mjs');
+    const { bin, prefix } = resolveExecutable(env.GAMESMITH_CLINE_BIN||undefined);
+    const probe = spawnSync(bin,[...prefix,'--version'],{encoding:'utf8',windowsHide:true});
+    if(probe.error)return {version:null,command:[bin,...prefix].join(' '),error:probe.error.message};
+    const version = (probe.stdout||'').trim().split(/\r?\n/).filter(Boolean).at(-1) || null;
+    return {version,command:[bin,...prefix].join(' '),error:version?null:'cline --version printed nothing'};
+  }catch(error){return {version:null,command:null,error:error.message};}
+}
 export function liveEnvironment(harness,env){
   // Native logins live in the real profile. The live host still runs with an
   // isolated HOME, so each harness that reads one has to be told where its
