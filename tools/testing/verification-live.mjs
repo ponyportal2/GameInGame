@@ -9,7 +9,7 @@ export async function liveVersion(harness,env){
   try{
     const { resolveExecutable } = await import('../cline/server.mjs');
     const { bin, prefix } = resolveExecutable(env.GAMESMITH_CLINE_BIN||undefined);
-    const probe = spawnSync(bin,[...prefix,'--version'],{encoding:'utf8',windowsHide:true});
+    const probe = spawnSync(bin,[...prefix,'--version'],{encoding:'utf8',windowsHide:true,env:{...env,CLINE_NO_AUTO_UPDATE:'1'}});
     if(probe.error)return {version:null,command:[bin,...prefix].join(' '),error:probe.error.message};
     const version = (probe.stdout||'').trim().split(/\r?\n/).filter(Boolean).at(-1) || null;
     return {version,command:[bin,...prefix].join(' '),error:version?null:'cline --version printed nothing'};

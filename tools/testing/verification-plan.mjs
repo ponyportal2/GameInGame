@@ -34,6 +34,12 @@ export function allTests(root) {
 // Audited inputs only. Configuration/lifecycle files not listed here retain the
 // full fallback. Prompt text has its own file so that boundary is unambiguous.
 export const INPUT_CONSUMERS = {
+  // These Markdown files carry the shipped Pi pin. Other documentation keeps
+  // its cheap no-test behavior; this is not a general documentation contract.
+  'README.md': ['node:pi-pin'],
+  'tools/testing/README.md': ['node:pi-pin'],
+  'THIRD_PARTY_NOTICES.md': ['node:pi-pin'],
+  'GameSmith-Windows/THIRD_PARTY_NOTICES.md': ['node:pi-pin'],
   'src/core/runtime_properties.gd': ['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly'],
   'src/agent/game_prompt.gd': ['host:prompt_contract','host:harness_assembly','node:verification'],
   'tests/runtime_wall_response.gd': ['node:runtime-properties','node:verification'],
@@ -134,7 +140,7 @@ export function selectTests(root,suite='full',changed=[]) {
   if(suite!=='affected')throw new Error('Unknown suite: '+suite);
   const selected=new Map();
   for(const path of changed){
-    if(/\.(md|png|jpg|zip)$/.test(path)&&!path.startsWith('tools/blender/'))continue;
+    if(/\.(md|png|jpg|zip)$/.test(path)&&!path.startsWith('tools/blender/')&&!INPUT_CONSUMERS[path])continue;
     const source=path.endsWith('.gd.uid')?path.slice(0,-4):path;
     // A shared runner file can register several entries (the recovery scenarios
     // do); a change to that source selects every entry, not just the first.

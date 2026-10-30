@@ -116,7 +116,7 @@
       "label": "OpenCode",
       "selector_label": "OpenCode",
       "controller": "src/agent/opencode_agent_controller.gd",
-      "reset": false,
+      "reset": true,
       "native_settings": true,
       "experimental": false,
       "launcher": {

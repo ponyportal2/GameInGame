@@ -76,10 +76,28 @@ test('--list prints a focused selection without creating artifacts',t=>{
  assert.equal(result.status,0,result.stderr);
  assert.equal(result.stdout,'node:verification\n');
  assert.equal(existsSync(artifacts),false,'listing must not create the artifact directory');
- const empty=spawnSync(process.execPath,[resolve('tools/testing/verify.mjs'),'--suite','affected','--changed','README.md','--list'],{cwd:root,encoding:'utf8',windowsHide:true});
+ const empty=spawnSync(process.execPath,[resolve('tools/testing/verify.mjs'),'--suite','affected','--changed','docs/todos/unrelated.md','--list'],{cwd:root,encoding:'utf8',windowsHide:true});
  assert.equal(empty.status,0,empty.stderr);
  assert.equal(empty.stdout,'');
  assert.equal(empty.stderr,'no tests selected\n');
+});
+test('Pi-pin Markdown authorities select only the pin contract',()=>{
+ for(const path of ['README.md','tools/testing/README.md','THIRD_PARTY_NOTICES.md','GameSmith-Windows/THIRD_PARTY_NOTICES.md'])
+  assert.deepEqual(selectTests(root,'affected',[path]).map(t=>t.id),['node:pi-pin'],path);
+ assert.deepEqual(selectTests(root,'affected',['docs/todos/unrelated.md']),[]);
+ assert.deepEqual(selectTests(root,'affected',['README.md','tests/tool-output.test.mjs']).map(t=>t.id).sort(),['node:pi-pin','node:tool-output','node:verification']);
+});
+test('Cline version probe suppresses updates and preserves its caller environment',async t=>{
+ const {liveVersion}=await import('../tools/testing/verification-live.mjs');
+ const dir=mkdtempSync(join(tmpdir(),'gs-cline-probe-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const record=join(dir,'probe.json'),bin=join(dir,'probe.mjs');
+ writeFileSync(bin,"import{writeFileSync}from'node:fs';writeFileSync(process.env.PROBE_RECORD,JSON.stringify({flag:process.env.CLINE_NO_AUTO_UPDATE,marker:process.env.PROBE_MARKER,args:process.argv.slice(2)}));console.log('3.fixture');");
+ const env={...process.env,GAMESMITH_CLINE_BIN:bin,PROBE_RECORD:record,PROBE_MARKER:'preserved',CLINE_NO_AUTO_UPDATE:'0'};
+ const result=await liveVersion('cline',env);
+ assert.equal(result.error,null);assert.equal(result.version,'3.fixture');
+ assert.deepEqual(JSON.parse(readFileSync(record,'utf8')),{flag:'1',marker:'preserved',args:['--version']});
+ assert.equal(env.CLINE_NO_AUTO_UPDATE,'0','the caller environment is not mutated');
+ assert.equal(await liveVersion('opencode',env),null);
 });
 test('affected selection enumerates known consumers and isolates test edits',()=>{
  const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();
@@ -202,7 +220,7 @@ test('inventory paths and launcher stay synchronized; affected mapping is conser
  assert.equal(readFileSync('tools/windows-bootstrap/harness_inventory_generated.go','utf8').replaceAll('\r\n','\n'),generatedLauncher(catalog));
  assert(selectTests(root,'affected',['tools/copilot/worker.mjs']).some(t=>t.id==='host:copilot_lifecycle'));
  for(const id of ['node:workspace-paths','node:model-capabilities','node:diagnostic-delivery','node:empty-response-retry','host:turn_recovery','host:reliability','host:diagnostics'])assert(selectTests(root,'pi').some(t=>t.id===id),'Pi suite missing '+id);
- assert.equal(selectTests(root,'affected',['README.md']).length,0);
+ assert.deepEqual(selectTests(root,'affected',['README.md']).map(t=>t.id),['node:pi-pin']);
  assert(selectTests(root,'affected',['src/core/game_tools.gd']).length<selectTests(root,'core').length);
  assert(selectTests(root,'full').length>selectTests(root,'core').length,'full must stay exhaustive');
  for(const source of ['cline/mcp.mjs','codex/tools.mjs','kiro/mcp.mjs']){

@@ -5,9 +5,19 @@ var cancel_deadline := 0
 var cancelling = false
 
 func start_new_session() -> Dictionary:
-    # The UI does not advertise reset for OpenCode. Direct callers must not
-    # inherit another provider's session archive or touch native runtime state.
-    return {"ok": false, "error": "OpenCode session reset is unsupported."}
+    if busy: return {"ok": false, "error": "Stop OpenCode before starting a new session."}
+    if not acquire_editor(): return {"ok": false, "error": last_error}
+    # Archive only GameSmith's reference; native history stays with OpenCode.
+    var directory = ProjectSettings.globalize_path(metadata.game_meta_dir(game_name).path_join("opencode"))
+    var session_file = directory.path_join("session.json")
+    var archive = ""
+    if FileAccess.file_exists(session_file):
+        archive = directory.path_join("session.previous-%d-%d.json" % [Time.get_unix_time_from_system(), Time.get_ticks_usec()])
+        if DirAccess.rename_absolute(session_file, archive) != OK:
+            return {"ok": false, "error": "Could not preserve the previous OpenCode session reference. No session was reset."}
+    restart_runtime()
+    backend_pid = -1
+    return {"ok": true, "archive": archive}
 
 func cancel() -> void:
     if tools != null: tools.cancel_reload()
