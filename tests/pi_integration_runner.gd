@@ -691,7 +691,7 @@ func _test_pi_binary_discovery_modes() -> void:
 
 func _test_windows_pi_install_guidance() -> void:
     var readme = FileAccess.get_file_as_string("res://GameSmith-Windows/README.txt")
-    assert_true("npm install -g @earendil-works/pi-coding-agent@1.3.0" in readme, "Windows README gives the pinned global Pi install command")
+    assert_true("npm install -g @earendil-works/pi-coding-agent@1.4.0" in readme, "Windows README gives the pinned global Pi install command")
     assert_true("GAMESMITH_PI_BIN" in readme, "Windows README documents the explicit Pi executable override")
 
 func _fake_records(model: String) -> Array:

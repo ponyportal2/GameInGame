@@ -117,7 +117,7 @@ The scanner recognizes bare `load()` and the three direct `ResourceLoader` metho
 
 `run-pi-e2e.sh` starts `../fake-openai-endpoint/pi-server.mjs` and drives the actual globally installed `pi` executable over GameSmith's production JSONL RPC path. The deterministic server speaks streaming OpenAI-compatible `/v1/chat/completions` and requires only Node's standard library.
 
-CI pins `@earendil-works/pi-coding-agent@1.3.0`. Pi 1.3.0 is the supported integration baseline; older releases are not supported. For local runs you may point GameSmith at another explicit Pi executable with `GAMESMITH_PI_BIN`.
+CI pins `@earendil-works/pi-coding-agent@1.4.0`. Pi 1.4.0 is the supported integration baseline; older releases are not supported. For local runs you may point GameSmith at another explicit Pi executable with `GAMESMITH_PI_BIN`.
 
 The portable host runner imports the project with the headless editor before launching suites, using the same isolated application data. Diagnostic delivery tests verify that receipts remain pending until an exact tool result or hidden notice appears in the current Pi session branch, including errors, altered responses, branch changes and bounded receipt eviction.
 

@@ -34,7 +34,7 @@ Settings > Start new Crush session confirms and archives an unusable reference.
 Headless testing and manual/automatic reload approval remain GameSmith settings.
 Install Node.js/npm, then install the pinned Pi version from PowerShell or Command Prompt:
 
-  npm install -g @earendil-works/pi-coding-agent@1.3.0
+  npm install -g @earendil-works/pi-coding-agent@1.4.0
 
 After installation, restart GameSmith. If Pi is installed somewhere that is not on PATH,
 set the GAMESMITH_PI_BIN environment variable to the full Pi executable path (for example pi.cmd).
@@ -79,13 +79,13 @@ session reference, readable chat and game files are kept. Restart GameSmith afte
 updating the package.
 
 For Cline games:
-  npm install -g cline@3.0.73
+  npm install -g cline@3.0.74
 (add --force if a running Cline process keeps the previous binary)
 Sign in and select a model in Cline, then choose Cline for a new game or in
 Settings > This game > Coding harness. Cline owns provider/model/reasoning and
 compaction; GameSmith's testing and reload preferences remain available.
-GameSmith sets CLINE_NO_AUTO_UPDATE=1 for its sessions, so a game never upgrades
-the CLI mid-run; running cline yourself can still update it. Native
+Cline upgrades its own global install on startup and GameSmith leaves that
+alone, so re-check cline --version before treating older evidence as current. Native
 ACP sessions persist per game and resume when reopening or switching back.
 Reload approval waits without a timer. Stop retains a healthy backend; stalled
 cancellation force-stops it after five seconds. A failed resume can be recovered
@@ -171,11 +171,11 @@ asks for confirmation and archives the reference while keeping files/chat.
 Only GameSmith MCP tools can be invoked. Reload uses host approval or the
 player's auto-approve setting. Stop has a five-second forced process-tree fallback.
 
-For Kilo games (tested with Kilo CLI 7.8.15; other releases unverified):
-  npm install -g @kilocode/cli@7.8.15
-The interactive Kilo TUI upgrades its own global install to the latest release,
-so re-check kilo --version if it starts behaving differently. GameSmith runs
-kilo serve, which does not update.
+For Kilo games (tested with Kilo CLI 7.8.18; other releases unverified):
+  npm install -g @kilocode/cli@7.8.18
+The interactive Kilo TUI upgrades its own global install to the latest release
+and GameSmith leaves that update policy alone, so re-check kilo --version if it
+starts behaving differently. GameSmith runs kilo serve, which does not update.
 Sign in and select your model/provider through Kilo, then choose Kilo in GameSmith.
 Model, reasoning, provider and compaction remain Kilo-owned. Node.js must be on
 PATH. GAMESMITH_KILO_BIN can point to a custom executable, npm shim or wrapper.

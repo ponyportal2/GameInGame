@@ -54,6 +54,16 @@ fixture attempt exposed a Windows slash-comparison bug in the fixture; corrected
 the fixture and reran successfully. No global native settings or credentials were
 changed, and no GitHub CI workflow was started.
 
+## Kilo 7.8.18 accepted; shared transport re-verified (2026-10-30)
+
+The TUI's self-upgrade to 7.8.18 is now the supported install rather than
+something to revert. Kilo owns its own update policy and `kilo serve` - the
+path GameSmith runs - does not check for updates, so a game session never
+triggers one. The adapter targets the HTTP/SSE surface, not a single release.
+Live acceptance on installed 7.8.18: 2/2 in 187.3 s,
+`%TEMP%/gamesmith-verify-tCCW4O/results.json`, with the inherited
+`kilo/stealth/glyph-cluster` model.
+
 ## Kilo 7.8.15 stays; shared transport re-verified (2026-10-29)
 
 Kilo is on the newest release at or above the 7-day floor: 7.8.15 is 8.8 days

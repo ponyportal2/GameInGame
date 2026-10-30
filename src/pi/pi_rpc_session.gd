@@ -9,8 +9,8 @@ var stdio: FileAccess
 var stderr: FileAccess
 var pid := -1
 var running := false
-var stdout_buffer := ""
-var stderr_buffer := ""
+var stdout_buffer := PackedByteArray()
+var stderr_buffer := PackedByteArray()
 var responses: Dictionary = {}
 var next_id := 1
 var stop_message := ""
@@ -140,24 +140,31 @@ func _drain_pipe(pipe: FileAccess, is_stderr: bool) -> void:
     var available = pipe.get_length()
     if available <= 0:
         return
-    var text = pipe.get_buffer(available).get_string_from_utf8()
+    var chunk = pipe.get_buffer(available)
+    if chunk.is_empty():
+        return
+    # Buffer bytes, not text. A chunk boundary lands wherever the pipe happens to
+    # flush, which splits multi-byte UTF-8 sequences; decoding each chunk on its
+    # own would replace both halves with U+FFFD and Godot would report every one
+    # of them as a Unicode parsing error. Decode whole lines only.
     if is_stderr:
-        stderr_buffer += text
+        stderr_buffer.append_array(chunk)
         stderr_buffer = _consume_lines(stderr_buffer, true)
     else:
-        stdout_buffer += text
+        stdout_buffer.append_array(chunk)
         stdout_buffer = _consume_lines(stdout_buffer, false)
 
-func _consume_lines(buffer: String, is_stderr: bool) -> String:
-    var remaining = buffer
+func _consume_lines(buffer: PackedByteArray, is_stderr: bool) -> PackedByteArray:
+    var start := 0
     while true:
-        var newline = remaining.find("\n")
+        var newline = buffer.find(0x0A, start)
         if newline < 0:
-            return remaining
-        var line = remaining.left(newline)
-        if line.ends_with("\r"):
-            line = line.left(line.length() - 1)
-        remaining = remaining.substr(newline + 1)
+            return buffer.slice(start)
+        var end = newline
+        if end > start and buffer[end - 1] == 0x0D:
+            end -= 1
+        var line = buffer.slice(start, end).get_string_from_utf8()
+        start = newline + 1
         if line == "":
             continue
         if is_stderr:
@@ -171,7 +178,7 @@ func _consume_lines(buffer: String, is_stderr: bool) -> String:
         if str(record.get("type", "")) == "response" and record.has("id"):
             responses[str(record.id)] = record
         record_received.emit(record)
-    return remaining
+    return buffer.slice(start)
 
 func _write_json(record: Dictionary) -> Error:
     while writing and running:
@@ -203,12 +210,12 @@ func _check_pi_available() -> Dictionary:
         if configured.contains("/") or configured.contains("\\"):
             if FileAccess.file_exists(configured):
                 return {"ok": true}
-            return {"ok": false, "error": "Configured Pi executable does not exist: %s. Set GAMESMITH_PI_BIN to a valid executable, or install with: npm install -g @earendil-works/pi-coding-agent@1.3.0" % configured}
+            return {"ok": false, "error": "Configured Pi executable does not exist: %s. Set GAMESMITH_PI_BIN to a valid executable, or install with: npm install -g @earendil-works/pi-coding-agent@1.4.0" % configured}
         var configured_out: Array = []
         var configured_code = OS.execute("/bin/sh", PackedStringArray(["-lc", "command -v " + configured]), configured_out, true) if OS.get_name() != "Windows" else OS.execute("cmd.exe", PackedStringArray(["/D", "/S", "/C", "where " + configured]), configured_out, true)
         if configured_code == 0:
             return {"ok": true}
-        return {"ok": false, "error": "Configured Pi command was not found on PATH: %s. Set GAMESMITH_PI_BIN to a valid command, or install with: npm install -g @earendil-works/pi-coding-agent@1.3.0" % configured}
+        return {"ok": false, "error": "Configured Pi command was not found on PATH: %s. Set GAMESMITH_PI_BIN to a valid command, or install with: npm install -g @earendil-works/pi-coding-agent@1.4.0" % configured}
 
     var output: Array = []
     var code: int
@@ -218,7 +225,7 @@ func _check_pi_available() -> Dictionary:
         code = OS.execute("/bin/sh", PackedStringArray(["-lc", "command -v pi"]), output, true)
     if code == 0:
         return {"ok": true}
-    return {"ok": false, "error": "Global Pi executable was not found on PATH. Install with: npm install -g @earendil-works/pi-coding-agent@1.3.0. If Pi is installed elsewhere, set GAMESMITH_PI_BIN."}
+    return {"ok": false, "error": "Global Pi executable was not found on PATH. Install with: npm install -g @earendil-works/pi-coding-agent@1.4.0. If Pi is installed elsewhere, set GAMESMITH_PI_BIN."}
 
 func _command_line(config: Dictionary) -> String:
     var pi_bin = OS.get_environment("GAMESMITH_PI_BIN").strip_edges()

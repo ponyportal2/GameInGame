@@ -44,28 +44,21 @@ the installed version is supported.
   `C:\` path as a remote host ("Cannot connect to C: resolve failed"). Running
   the same update from PowerShell succeeds. The adapter has no version gate
   and live acceptance passed 2/2.
-- **Pi** stays `1.3.0` (12.9 days old). 1.4.0 (2026-10-21T22:48Z) is inside the
-  7-day floor at 6.8 days, which on its own keeps the pin. The two real-Pi
-  checks that fail — "persisted reload diagnostics are acknowledged at the
-  session boundary" and "delivered diagnostic notice is not announced again" —
-  also fail on the 1.3.0 baseline, so they do not establish a 1.4-specific
-  regression. 1.3.0 stays because of the floor, not because of that evidence.
-- **Cline** `3.0.73` — stays on the floor-eligible release (3.0.74 is 2.6 days
-  old) and now passes live acceptance. Two adapter-side gaps had to be closed:
-  the live host ran with an isolated `HOME`, so the adapter looked for
-  `providers.json` in a temp directory and every session aborted with
-  "Call authenticate before starting a session" even though the profile was
-  logged in; `liveEnvironment()` now passes `CLINE_DIR` for Cline like it
-  already does for Copilot, Crush and OMP. Separately, the CLI upgrades its own
-  global install on startup with `npm update --global cline --tag latest
-  --min-release-age 0`, bypassing the release-age floor (it moved this profile
-  from 3.0.73 to 3.0.74 on 2026-10-29), so the adapter sets
-  `CLINE_NO_AUTO_UPDATE=1` for its child: a game session must not rewrite the
-  user's toolchain mid-run. Reinstalling 3.0.73 needed `--force` because the
-  running hub daemon kept the 3.0.74 binary on disk. The live runner also
-  asserted a stale `cline-free/` model prefix; the current free tier id is
-  `reflection/beam-free`, so it now compares against the profile's saved model
-  instead of a hardcoded prefix.
+- **Pi** `1.4.0` (was 1.3.0). The 7-day floor alone would have kept 1.3.0,
+  but the pin now names the current release. The two real-Pi checks that had
+  been failing since before this pass are fixed, and `pi_integration_runner.gd`
+  finishes 140 passed / 0 failed (see below).
+- **Cline** `3.0.74` — the CLI had already moved this profile past the floor
+  on its own, and the pin now matches the installed release. GameSmith no
+  longer sets `CLINE_NO_AUTO_UPDATE=1`: Cline owns its install, the adapter
+  targets the ACP surface rather than one release, and suppressing the upgrade
+  only pinned the player to a build the CLI had decided to leave. The
+  adapter-side fixes from the 3.0.73 pass stay: `liveEnvironment()` passes
+  `CLINE_DIR` so the live host's isolated `HOME` no longer hides
+  `providers.json`, and the live runner compares the applied model against the
+  profile's saved model instead of the retired `cline-free/` prefix.
+  Reinstalling a specific release needs `--force` because the running hub
+  daemon keeps the newer binary on disk.
 
 - **Live acceptance on the new pins** — `command_code_integration_runner.gd`
   passed 14/14 assertions in 169.8 s against installed `command-code 1.86.3`
@@ -94,45 +87,67 @@ the installed version is supported.
   calling any tool. The identical rerun passing is consistent with model
   variance, but one rerun cannot exclude an intermittent integration problem;
   the initial failure stays on the record.
-- **Kilo self-updates from the TUI.** An interactive `kilo` run moved the
-  install from 7.8.15 to 7.8.18 at 2026-10-28T18:57Z; the CLI logged
+- **Live acceptance on the versions installed now** - with Pi 1.4.0 the real-Pi
+  e2e passed 140/140 (exit 0), including the two diagnostics assertions that had
+  been failing. `cline_integration_runner.gd` passed 2/2 in 135.3 s against
+  installed `cline 3.0.74` (`%TEMP%/gamesmith-verify-xqKXAD/results.json`), and
+  `kilo_integration_runner.gd` passed 2/2 in 187.3 s against installed
+  `kilo 7.8.18` (`%TEMP%/gamesmith-verify-tCCW4O/results.json`). The first Cline
+  attempt aborted with "Inputs changed during verification" because a doc edit
+  landed mid-run; it had already passed 2/2, and the clean rerun above is the
+  one on the record.
+- **Kilo** `7.8.18` — an interactive `kilo` run moved the install from 7.8.15
+  to 7.8.18 at 2026-10-28T18:57Z; the CLI logged
   `upgraded method=npm target=7.8.18` and the npm cache shows that tarball
   fetched at the same moment. 7.8.18 is 3.3 days old, so the upgrade bypassed
-  the floor. `kilo serve` — the path GameSmith runs — does not check for
-  updates: two 75-second probes produced no update activity, and the live run
-  left the version unchanged. Injecting `update:"disable"` (current schema
-  key) or `autoupdate:false` (deprecated) through `KILO_CONFIG_CONTENT` did
-  not stop a 60-second TUI run from reaching 7.8.18, so the adapter cannot
-  hold the pin; only the player's global Kilo config can. 7.8.15 was
-  reinstalled and live acceptance repeated: 2/2 in 158.0 s
-  (`%TEMP%/gamesmith-verify-cW8L9R/results.json`), version still 7.8.15
-  afterwards.
+  the floor. That upgrade is now accepted rather than fought: Kilo owns its own
+  install, and `kilo serve` — the path GameSmith runs — does not check for
+  updates, so a game session never triggers one. Injecting `update:"disable"`
+  (current schema key) or `autoupdate:false` (deprecated) through
+  `KILO_CONFIG_CONTENT` did not stop a 60-second TUI run from reaching 7.8.18,
+  which is why the adapter does not try to hold a pin.
 
 ## Already current, no change
 
 | Harness | Installed | Newest at or above the 7-day floor |
 | --- | --- | --- |
-| Kilo | 7.8.15 | 7.8.15; 7.8.16 is 6.7 days old |
+| Kilo | 7.8.18 | 7.8.18; installed by the CLI's own TUI upgrade |
 | Cursor | 2026.10.22-27dcf5f | current |
 | Grok Build | 1.0.70 | current |
 | AGY | 1.4.9 | current |
 | Kimi | 2.4.0 | current |
 | OMP | 18.12.5 | current; live acceptance re-run on it |
 
+## Fixed in this pass: the two real-Pi diagnostics failures
+
+Both assertions came from `src/core/json_output.gd`, not from Pi. It escaped
+ASCII control characters by looping `String.chr(code)` from 0, and
+`String.chr(0)` is not a NUL: Godot reports "Unicode parsing error, some
+characters were replaced with U+FFFD: Unexpected NUL character" and returns
+U+FFFD. The loop then rewrote every U+FFFD in the payload as a `\u0000`
+escape, so each host response was corrupted and each call emitted an error
+record. The collector stored that record as a new diagnostic, the next notice
+included it, and `take_notification()` could never empty. The loop now starts
+at 1; `JSON.stringify` already substitutes U+FFFD for a real NUL, so code 0
+never survives to be escaped.
+
+A second, independent defect produced the same symptoms.
+`PiRpcSession._drain_pipe` decoded each pipe chunk with
+`get_string_from_utf8()`. A chunk boundary lands wherever the pipe flushes, so
+multi-byte UTF-8 sequences were split and Godot reported a Unicode parsing
+error per split — 854 of them in one run. The session now buffers
+`PackedByteArray` and decodes only complete newline-delimited lines.
+
 ## Known blockers
 
-- **Pi diagnostics e2e** has two failures that predate this pass and reproduce
-  on the 1.3.0 baseline: `pi_integration_runner.gd` finishes 138 passed /
-  2 failed. They are unrelated to the harness version work; the Pi sources are
-  unchanged apart from the pinned install string.
-- **Cline self-updates past the floor.** The CLI runs
-  `npm update --global cline --tag latest --min-release-age 0` on startup, so
-  any ordinary `cline` invocation can move the install to a release younger
-  than 7 days. The adapter suppresses it for its own child
-  (`CLINE_NO_AUTO_UPDATE=1`), and 3.0.73 is installed, but a manual run outside
-  GameSmith can still bump the pin. Re-check `cline --version` before treating
-  the live evidence as current. A running hub daemon also holds the old binary,
-  so a downgrade needs `npm install -g cline@<version> --force` after it exits.
+- **Cline and Kilo update themselves.** Both CLIs upgrade their own global
+  install on their own schedule (Cline on startup with
+  `--min-release-age 0`, Kilo from its interactive TUI). GameSmith does not
+  suppress that: the adapter targets the ACP/HTTP surface, not one release, and
+  the installed version is what gets verified. Re-check `cline --version` /
+  `kilo --version` before treating live evidence as current. A running Cline
+  hub daemon holds the old binary, so a downgrade needs
+  `npm install -g cline@<version> --force` after it exits.
 - **Cline is tested on the binary the wrapper resolves.** `cline --version`
   reports the platform binary, not the npm wrapper version; the two can diverge
   when an update is interrupted, so compare both after any reinstall.

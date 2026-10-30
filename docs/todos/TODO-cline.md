@@ -52,3 +52,18 @@ Re-verification on Cline 3.0.73 (2026-10-29):
   not the npm wrapper): 19/19 assertions in 114.4 s, evidence
   `%TEMP%/gamesmith-verify-bztEpn/results.json`. Version still 3.0.73 after the
   run, i.e. the auto-update suppression held.
+
+Re-verification on Cline 3.0.74 (2026-10-30):
+
+- The auto-update suppression is gone. `CLINE_NO_AUTO_UPDATE=1` was added in
+  the 3.0.73 pass to stop the CLI's startup
+  `npm update --global cline --tag latest --min-release-age 0` from rewriting
+  the global install mid-run. Suppressing it instead pinned the player to a
+  build the CLI had already decided to leave, and the adapter targets the ACP
+  surface rather than one release, so the child now inherits Cline's own update
+  policy. Nothing in the adapter reads or rewrites the CLI version.
+- 3.0.74 is installed, so the documented pin matches what was verified.
+- Live acceptance on installed 3.0.74: 2/2 in 135.3 s, evidence
+  `%TEMP%/gamesmith-verify-xqKXAD/results.json`. The run includes the real
+  edit, headless startup, streaming, conversation/backend reuse, reload
+  approval and native Stop checks.
