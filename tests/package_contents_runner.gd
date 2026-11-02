@@ -39,7 +39,7 @@ func _run() -> void:
             push_error("FAIL: " + str(assembled.error))
             quit(1)
             return
-    for script in ["workspace_ui.gd", "settings_ui.gd", "theme_factory.gd"]:
+    for script in ["workspace_ui.gd", "settings_ui.gd", "theme_factory.gd", "annotation_canvas.gd", "annotation_editor.gd"]:
         if not ResourceLoader.exists("res://src/ui/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)
@@ -75,6 +75,23 @@ func _run() -> void:
     var runner = preload("res://src/core/game_runner.gd").new()
     root.add_child(runner)
     var tools = preload("res://src/core/game_tools.gd").new("user://package-live-properties", runner)
+    tools.picture_store.game_name = "Packaged marked picture"
+    var canvas = preload("res://src/ui/annotation_canvas.gd").new()
+    canvas.size = Vector2(100, 100)
+    var picture := Image.create(100, 100, false, Image.FORMAT_RGBA8)
+    picture.fill(Color.BLACK)
+    canvas.set_picture(picture)
+    canvas.begin_stroke(Vector2(50, 50))
+    canvas.end_stroke()
+    var saved: Dictionary = tools.picture_store.save_picture(canvas.flatten())
+    var attachment: Dictionary = tools.execute("inspect_attachment", {"id": saved.get("id", "")})
+    var decoded := Image.new()
+    if not attachment.get("ok", false) or decoded.load_png_from_buffer(Marshalls.base64_to_raw(attachment.get("image_base64", ""))) != OK or decoded.get_pixel(50, 50).r < 0.9:
+        push_error("FAIL: packaged annotation cannot be saved and opened through the agent tool")
+        quit(1)
+        return
+    canvas.free()
+    print("PASS: packaged pen markings survive PNG storage and agent attachment inspection")
     tools.write_file("main.gd", "extends Node2D\nvar speed = 80.0\nvar health = 43\n")
     var loaded = await tools.wait_reload(tools.reload_game())
     if not loaded.ok:

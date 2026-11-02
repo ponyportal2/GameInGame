@@ -195,6 +195,8 @@ static func build_play_hud(app) -> void:
     app.game_title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     app._add_execution_status(top)
     button(top, "Chat  F1", func(): app._set_chat_visible(true))
+    app.mark_buttons.append(button(top, "Mark", app._capture_annotation))
+    app.mark_buttons.back().tooltip_text = "Mark a game screenshot (Ctrl+Shift+S)"
     app._add_reload_button(top)
     app.reload_notice = label(app.play_hud, "Reload requested  ·  Shift+F5 to allow  ·  F1 to view chat", 15, T.ACCENT)
     app.reload_notice.position = Vector2(24, 86)
@@ -280,6 +282,16 @@ static func build_chat(app) -> void:
     composer_panel.add_theme_stylebox_override("panel", T.box(Color("111719"), 12, T.BORDER, 12))
     box.add_child(composer_panel)
     var composer = column(composer_panel, 8)
+    var capture = button(composer, "Mark screenshot  Ctrl+Shift+S", app._capture_annotation, "QuietButton")
+    capture.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+    app.mark_buttons.append(capture)
+    app.picture_scroll = ScrollContainer.new()
+    app.picture_scroll.custom_minimum_size.y = 102
+    app.picture_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    app.picture_scroll.visible = false
+    composer.add_child(app.picture_scroll)
+    app.picture_strip = HBoxContainer.new()
+    app.picture_scroll.add_child(app.picture_strip)
     app.chat_input = TextEdit.new()
     app.chat_input.placeholder_text = "What would you like to create or change?"
     app.chat_input.custom_minimum_size.y = 78

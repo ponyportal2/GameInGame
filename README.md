@@ -271,6 +271,7 @@ Tests never promote the working snapshot or approve a live reload. Their workspa
 ## Library/chat behavior
 
 - **F1** toggles chat.
+- **Ctrl+Shift+S** (or **Mark screenshot**) pauses the game and opens a pen editor. Draw, undo or clear marks, then attach the picture to chat. Queue multiple pictures, add a comment to each, reopen a thumbnail to edit, or remove it before sending. Your text and other queued pictures stay in the draft.
 - **Enter** sends.
 - **Shift+Enter** inserts a newline.
 - **Escape** closes chat.

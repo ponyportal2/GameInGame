@@ -11,7 +11,9 @@ func exists(game: String) -> bool:
 func seed(game: String, entries: Array) -> bool:
     var lines = PackedStringArray([JSON.stringify({"type": "init"})])
     for entry in entries:
-        lines.append(JSON.stringify({"type": "message", "role": entry.get("role", "system"), "content": entry.get("content", "")}))
+        var message := {"type": "message", "role": entry.get("role", "system"), "content": entry.get("display_content", entry.get("content", ""))}
+        if entry.has("pictures"): message.pictures = entry.pictures
+        lines.append(JSON.stringify(message))
     var saved = JsonStore.write_bytes_atomic(path(game), ("\n".join(lines) + "\n").to_utf8_buffer())
     if not saved: push_warning("Could not initialize visible chat history.")
     return saved

@@ -30,6 +30,7 @@ export async function callHost(command, args, signal) {
 export default async function (cmd) {
   const prompt = await readFile(process.env.GAMESMITH_PROMPT_PATH!, 'utf8');
   const tools = {
+    inspect_attachment: hostTools.inspect_attachment,
     rg_search: hostTools.rg_search,
     inspect_runtime: hostTools.inspect_runtime,
     set_properties: hostTools.set_properties,
@@ -53,7 +54,7 @@ export default async function (cmd) {
   if (!hostTools.blender) delete tools.blender;
   for (const [name, tool] of Object.entries(tools)) cmd.addTool({
     schema:{name,description:tool.description,input_schema:{type:'object',properties:tool.properties,required:('required' in tool ? tool.required : [])}},
-    readOnly:['rg_search','inspect_runtime','read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),
+    readOnly:['inspect_attachment','rg_search','inspect_runtime','read_runtime_log','read_test_log','git_status','git_diff','git_log'].includes(name),
     run:async ({input,signal}) => {
       const result = await callHost(name,input,signal);
       if (result.ok === false) return {ok:false,error:JSON.stringify(result)};

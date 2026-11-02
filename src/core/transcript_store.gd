@@ -3,12 +3,16 @@ extends RefCounted
 
 var metadata = MetadataStore.new()
 
-func append(game_name: String, role: String, content: String) -> void:
-    JsonStore.append_json_line(metadata.transcript_path(game_name), {
+func append(game_name: String, role: String, content: String, presentation: Dictionary = {}) -> void:
+    var entry := {
         "time": Time.get_datetime_string_from_system(true),
         "role": role,
         "content": content
-    })
+    }
+    if not presentation.is_empty():
+        entry.display_content = presentation.get("content", content)
+        entry.pictures = presentation.get("pictures", [])
+    JsonStore.append_json_line(metadata.transcript_path(game_name), entry)
 
 func read_all(game_name: String, max_entries: int = 200) -> Array[Dictionary]:
     var path = metadata.transcript_path(game_name)

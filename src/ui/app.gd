@@ -46,6 +46,17 @@ var play_hud: Control
 var chat_overlay: Control
 var transcript_view: RichTextLabel
 var chat_input: TextEdit
+var picture_store = preload("res://src/core/chat_pictures.gd").new()
+var draft_pictures: Array = []
+var picture_strip: HBoxContainer
+var picture_scroll: ScrollContainer
+var mark_buttons: Array[Button] = []
+var annotation_editor
+var annotation_capturing := false
+var annotation_return_to_play := false
+var editing_picture := -1
+var pending_chat_send: Dictionary = {}
+const MAX_CHAT_PICTURES = 8
 var status_label: Label
 var game_title_label: Label
 var toast_label: Label
@@ -118,6 +129,17 @@ func _ready() -> void:
     preload("res://src/core/test_evidence.gd").recover_all()
     AppLoggerScript.global_event("app.startup", "user_data=%s legacy_source=%s migrated=%d skipped=%d" % [ProjectSettings.globalize_path("user://"), str(migration.get("source_found", false)), int(migration.get("copied", 0)), int(migration.get("skipped", 0))])
     _build_ui()
+    annotation_editor = preload("res://src/ui/annotation_editor.gd").new()
+    host_ui_root.add_child(annotation_editor)
+    annotation_editor.attached.connect(_attach_picture)
+    annotation_editor.cancelled.connect(_cancel_annotation)
+    if not InputMap.has_action("mark_game_picture"):
+        InputMap.add_action("mark_game_picture")
+        var pen_shortcut := InputEventKey.new()
+        pen_shortcut.physical_keycode = KEY_S
+        pen_shortcut.ctrl_pressed = true
+        pen_shortcut.shift_pressed = true
+        InputMap.action_add_event("mark_game_picture", pen_shortcut)
     if not InputMap.has_action("approve_game_reload"):
         InputMap.add_action("approve_game_reload")
         var shortcut = InputEventKey.new()
@@ -135,12 +157,19 @@ func _process(_delta: float) -> void:
         _set_chat_visible(not chat_overlay.visible)
     if current_game != "" and Input.is_action_just_pressed("approve_game_reload"):
         _approve_agent_reload()
+    if current_game != "" and not _host_modal_open() and Input.is_action_just_pressed("mark_game_picture"):
+        _capture_annotation()
 
 func _exit_tree() -> void:
     _flush_chat_delta()
+    for picture in draft_pictures: picture_store.remove_draft(picture.id)
 
 func _input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
+        return
+    if event.keycode == KEY_ESCAPE and is_instance_valid(annotation_editor) and annotation_editor.visible:
+        _cancel_annotation()
+        get_viewport().set_input_as_handled()
         return
     if event.keycode == KEY_ESCAPE and codex_session_dialog.visible:
         _cancel_new_codex_session()
@@ -169,7 +198,7 @@ func _input(event: InputEvent) -> void:
         _send_chat()
 
 func _host_modal_open() -> bool:
-    return settings_dialog.visible or codex_session_dialog.visible or new_game_dialog.visible or rename_dialog.visible or delete_dialog.visible
+    return annotation_capturing or (is_instance_valid(annotation_editor) and annotation_editor.visible) or settings_dialog.visible or codex_session_dialog.visible or new_game_dialog.visible or rename_dialog.visible or delete_dialog.visible
 
 func _build_ui() -> void:
     host_ui_canvas = CanvasLayer.new(); host_ui_canvas.layer = HOST_UI_CANVAS_LAYER; add_child(host_ui_canvas)
@@ -327,6 +356,8 @@ func _refresh_library() -> void:
     WorkspaceUIScript.refresh_library(self)
 
 func _show_library() -> void:
+    _clear_picture_draft()
+    if is_instance_valid(annotation_editor): annotation_editor.hide()
     _flush_chat_delta()
     _blender_approval_changed({})
     _reload_approval_changed(false)
@@ -359,6 +390,7 @@ func _create_game() -> void:
 func _open_game(name: String) -> void:
     _flush_chat_delta()
     current_game = name
+    picture_store.game_name = name
     AppLoggerScript.global_event("game.open", "name=%s" % name)
     AppLoggerScript.game_event(name, "game.open", "workspace=%s" % ProjectSettings.globalize_path(store.game_path(name)))
     background.visible = false
@@ -409,6 +441,7 @@ func _attach_game_agent() -> void:
     if agent.has_signal("transcript_reconciled"):
         agent.transcript_reconciled.connect(_reconcile_chat_history)
     agent.finished.connect(_on_agent_finished)
+    agent.player_request_accepted.connect(_accept_chat_send)
     agent.reload_approval_changed.connect(_reload_approval_changed)
 
 func _finish_settings_save(confirm_blender_reset: bool = false) -> void:
@@ -496,17 +529,153 @@ func _cap_generated_canvas_layers(node: Node) -> void:
 
 func _send_chat() -> void:
     var text = chat_input.text.strip_edges()
-    if text == "" or agent == null or agent.busy: return
-    chat_input.text = ""
+    if (text == "" and draft_pictures.is_empty()) or agent == null or agent.busy or not pending_chat_send.is_empty(): return
+    var pictures: Array = []
+    for picture in draft_pictures:
+        if not picture_store.inspect_picture(picture.id).ok:
+            _toast("An attached picture is missing. Remove it or capture it again.")
+            return
+        pictures.append({"id": picture.id, "caption": picture.caption})
+    pending_chat_send = {"content": text, "pictures": pictures}
+    var request: String = text
+    if not pictures.is_empty():
+        request += "\n\nPlayer-attached marked pictures. Open each PNG using inspect_attachment with its id before acting on its visual details:\n"
+        for i in pictures.size():
+            request += JSON.stringify({"picture": i + 1, "id": pictures[i].id, "caption": pictures[i].caption}) + "\n"
+    agent.player_message = pending_chat_send.duplicate(true) if not pictures.is_empty() else {}
     _set_chat_busy_controls(true)
-    _append_chat("user", text)
-    agent.send_player_request(text)
+    agent.send_player_request(request)
+
+func _accept_chat_send() -> void:
+    if pending_chat_send.is_empty(): return
+    var sent := pending_chat_send
+    pending_chat_send = {}
+    chat_input.text = ""
+    # Sent PNGs belong to history, so clear memory without deleting their files.
+    draft_pictures.clear()
+    _refresh_picture_strip()
+    _append_chat("user", sent.content, sent.pictures)
+
+func _capture_annotation() -> void:
+    if _host_modal_open() or not is_instance_valid(runner) or not runner.has_active_game() or (is_instance_valid(agent) and agent.busy): return
+    if draft_pictures.size() >= MAX_CHAT_PICTURES:
+        _toast("Send or remove a picture before adding more (maximum 8).")
+        return
+    annotation_return_to_play = not chat_overlay.visible
+    editing_picture = -1
+    annotation_capturing = true
+    _set_chat_visible(true)
+    # Suspend generated input first, then render one clean game frame without
+    # host controls. The game stays paused while its frozen picture is marked.
+    host_ui_root.hide()
+    await RenderingServer.frame_post_draw
+    if not is_inside_tree(): return
+    var image := get_viewport().get_texture().get_image()
+    host_ui_root.show()
+    annotation_capturing = false
+    if image == null or image.is_empty():
+        _toast("Could not capture the game picture.")
+        _cancel_annotation()
+        return
+    annotation_editor.open(image)
+
+func _cancel_annotation() -> void:
+    annotation_editor.hide()
+    editing_picture = -1
+    if annotation_return_to_play: _set_chat_visible(false)
+    else: _set_chat_visible(true)
+    annotation_return_to_play = false
+
+func _attach_picture(image: Image, original: Image, strokes: Array) -> void:
+    if editing_picture < 0 and draft_pictures.size() >= MAX_CHAT_PICTURES:
+        _toast("Maximum 8 pictures per message.")
+        return
+    var saved: Dictionary = picture_store.save_picture(image)
+    if not saved.ok:
+        _toast(str(saved.error))
+        return
+    var picture := {"id": saved.id, "caption": "", "original": original, "strokes": strokes.duplicate(true), "image": image}
+    if editing_picture >= 0 and editing_picture < draft_pictures.size():
+        picture.caption = draft_pictures[editing_picture].caption
+        picture_store.remove_draft(draft_pictures[editing_picture].id)
+        draft_pictures[editing_picture] = picture
+    else:
+        draft_pictures.append(picture)
+    editing_picture = -1
+    annotation_return_to_play = false
+    annotation_editor.hide()
+    _refresh_picture_strip()
+    _set_chat_visible(true)
+
+func _edit_picture(index: int) -> void:
+    if _host_modal_open() or (is_instance_valid(agent) and agent.busy): return
+    if index < 0 or index >= draft_pictures.size(): return
+    annotation_return_to_play = false
+    editing_picture = index
+    annotation_editor.open(draft_pictures[index].original, draft_pictures[index].strokes)
+
+func _remove_picture(index: int) -> void:
+    if is_instance_valid(agent) and agent.busy: return
+    if index < 0 or index >= draft_pictures.size(): return
+    picture_store.remove_draft(draft_pictures[index].id)
+    draft_pictures.remove_at(index)
+    _refresh_picture_strip()
+
+func _clear_picture_draft() -> void:
+    for picture in draft_pictures: picture_store.remove_draft(picture.id)
+    draft_pictures.clear()
+    pending_chat_send = {}
+    editing_picture = -1
+    if is_instance_valid(chat_input): chat_input.text = ""
+    _refresh_picture_strip()
+
+func _refresh_picture_strip() -> void:
+    if not is_instance_valid(picture_strip): return
+    for child in picture_strip.get_children():
+        picture_strip.remove_child(child)
+        child.queue_free()
+    picture_scroll.visible = not draft_pictures.is_empty()
+    for i in draft_pictures.size():
+        var card := VBoxContainer.new()
+        card.custom_minimum_size.x = 150
+        picture_strip.add_child(card)
+        var top := HBoxContainer.new()
+        card.add_child(top)
+        var preview := TextureButton.new()
+        preview.texture_normal = ImageTexture.create_from_image(draft_pictures[i].image)
+        preview.ignore_texture_size = true
+        preview.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+        preview.custom_minimum_size = Vector2(110, 56)
+        preview.tooltip_text = "Edit markings"
+        preview.pressed.connect(_edit_picture.bind(i))
+        top.add_child(preview)
+        var remove := Button.new()
+        remove.text = "×"
+        remove.tooltip_text = "Remove picture"
+        remove.pressed.connect(_remove_picture.bind(i))
+        top.add_child(remove)
+        var caption := LineEdit.new()
+        caption.placeholder_text = "Add a comment…"
+        caption.max_length = 1024
+        caption.text = draft_pictures[i].caption
+        caption.text_changed.connect(func(text): draft_pictures[i].caption = text)
+        card.add_child(caption)
+
+func _set_picture_controls_disabled(node: Node, disabled: bool) -> void:
+    if node is BaseButton: node.disabled = disabled
+    if node is LineEdit: node.editable = not disabled
+    for child in node.get_children(): _set_picture_controls_disabled(child, disabled)
 
 func _set_chat_busy_controls(is_busy: bool) -> void:
     if is_instance_valid(chat_input):
         chat_input.editable = not is_busy
     if is_instance_valid(send_button):
         send_button.disabled = is_busy
+    for button in mark_buttons:
+        button.disabled = is_busy or not is_instance_valid(runner) or not runner.has_active_game()
+    if is_instance_valid(picture_strip):
+        for child in picture_strip.get_children():
+            _set_picture_controls_disabled(child, is_busy)
     if is_instance_valid(library_button):
         library_button.disabled = is_busy
     if is_instance_valid(stop_button):
@@ -527,13 +696,24 @@ func _stop_agent() -> void:
     if is_instance_valid(agent) and agent.busy:
         agent.cancel()
 
-func _append_chat(role: String, text: String) -> void:
+func _append_chat(role: String, text: String, pictures: Array = []) -> void:
     if stream_open_kind != "":
         _end_stream_block(stream_open_kind)
-    _record_chat_event({"type": "message", "role": role, "content": text})
+    var event := {"type": "message", "role": role, "content": text}
+    if not pictures.is_empty(): event.pictures = pictures
+    _record_chat_event(event)
     var label = {"user": "YOU", "assistant": "AGENT", "thinking": "THINK", "tool": "TOOL"}.get(role, "HOST")
     var color = {"user": "8bc7dd", "assistant": "b8e986", "thinking": "97a6ab", "tool": "ecc592"}.get(role, "8393b2")
-    transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n%s\n\n" % [color, label, _escape_bbcode(text)])
+    transcript_view.append_text("[color=#%s][b]%s[/b][/color]\n%s\n" % [color, label, _escape_bbcode(text)])
+    for picture in pictures:
+        var image: Image = picture_store.picture_image(str(picture.get("id", "")))
+        if image != null:
+            var width := mini(320, image.get_width())
+            transcript_view.add_image(ImageTexture.create_from_image(image), width, maxi(1, roundi(float(width) * image.get_height() / image.get_width())))
+        else:
+            transcript_view.add_text("[Picture unavailable]")
+        transcript_view.add_text("\n" + str(picture.get("caption", "")) + "\n")
+    transcript_view.add_text("\n")
     await get_tree().process_frame
     transcript_view.scroll_to_line(maxi(0, transcript_view.get_line_count() - 1))
 
@@ -604,7 +784,7 @@ func _load_transcript() -> void:
     for event in chat_history.read_all(current_game):
         var role = str(event.get("role", "system"))
         match event.get("type"):
-            "message": _append_chat(role, str(event.get("content", "")))
+            "message": _append_chat(role, str(event.get("content", "")), event.get("pictures", []))
             "delta": _append_stream_delta(role, str(event.get("content", "")))
             "end": _end_stream_block(role)
     replaying_chat = false
@@ -678,6 +858,10 @@ func _return_to_library() -> void:
     _show_library()
 
 func _on_agent_finished(_ok: bool) -> void:
+    # A rejected request keeps the complete draft for retry; accepted work may
+    # fail later, but its message has already been delivered.
+    pending_chat_send = {}
+    if is_instance_valid(agent): agent.player_message = {}
     if stream_open_kind != "":
         _end_stream_block(stream_open_kind)
     _set_chat_busy_controls(false)
@@ -755,6 +939,7 @@ func _rename_game() -> void:
             game_edit_guard = destination_guard
             agent.editor_guard = game_edit_guard
         current_game = new_name
+        picture_store.game_name = new_name
         if is_instance_valid(runner):
             runner.rebind_workspace(store.game_path(old), store.game_path(new_name))
         game_title_label.text = current_game

@@ -21,10 +21,12 @@ class FakeUiAgent:
     signal llm_stream_delta(kind: String, text: String)
     signal llm_stream_end(kind: String)
     signal finished(ok: bool)
+    signal player_request_accepted
 
     var tree: SceneTree
     var game_name := ""
     var transcript = TranscriptStoreScript.new()
+    var player_message: Dictionary = {}
     var busy := false
     var call_count := 0
     var send_mode := "simple"
@@ -41,6 +43,7 @@ class FakeUiAgent:
         if busy: return
         busy = true
         transcript.append(game_name, "user", text)
+        player_request_accepted.emit()
         call_count += 1
         status_changed.emit("Fake UI agent working…")
         call_deferred("_finish_send")
@@ -120,6 +123,7 @@ func _replace_app_agent(app, fake: FakeUiAgent) -> void:
     fake.llm_stream_delta.connect(app._append_stream_delta)
     fake.llm_stream_end.connect(app._end_stream_block)
     fake.finished.connect(app._on_agent_finished)
+    fake.player_request_accepted.connect(app._accept_chat_send)
 
 
 func _test_paths() -> void:

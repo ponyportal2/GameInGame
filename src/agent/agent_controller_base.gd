@@ -13,6 +13,7 @@ signal llm_stream_end(kind: String)
 signal transcript_reconciled
 signal finished(ok: bool)
 signal reload_approval_changed(pending: bool)
+signal player_request_accepted
 
 const MetadataStoreScript = preload("res://src/core/metadata_store.gd")
 const TranscriptStoreScript = preload("res://src/core/transcript_store.gd")
@@ -47,7 +48,12 @@ var recovery_generation := 0
 var recovery_active := false
 var recovery_error := ""
 var recovery_attempt := 0
-var request_admitted := false
+var request_admitted := false:
+    set(value):
+        var newly_admitted := value and not request_admitted
+        request_admitted = value
+        if newly_admitted: player_request_accepted.emit()
+var player_message: Dictionary = {}
 var request_preserved := true
 var initialization_failed := false
 
@@ -57,6 +63,7 @@ func configure(p_game_name: String, p_tools) -> void:
         editor_guard = GameEditGuardScript.new()
     editor_guard.workspace = p_tools.workspace
     tools = p_tools
+    tools.picture_store.game_name = p_game_name
     tools.blender_enabled = _blender_enabled()
     process_mode = Node.PROCESS_MODE_ALWAYS
 
@@ -138,7 +145,11 @@ func _wait_recovery(seconds: float, generation: int) -> void:
 
 func _record_player_request(text: String) -> void:
     if not recovery_active or recovery_attempt == 0:
-        transcript.append(game_name, "user", text)
+        if player_message.is_empty():
+            transcript.append(game_name, "user", text)
+        else:
+            transcript.append(game_name, "user", text, player_message)
+            player_message = {}
 
 func cancel() -> void:
     if not busy:
@@ -281,7 +292,7 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
     elif command == "remove_runtime_child":
         _runtime_child_request(request, directory, operation_id)
         return
-    elif command in ["read_runtime_log", "inspect_runtime", "set_properties"]:
+    elif command in ["read_runtime_log", "inspect_runtime", "set_properties", "inspect_attachment"]:
         result = tools.execute(command, request.get("args", {}))
     elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
         result = tools.execute(command, request.get("args", {}))

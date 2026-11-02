@@ -38,7 +38,7 @@ func _ready():
     ui_layer.layer = 524287
     add_child(ui_layer)
     blocker = ColorRect.new()
-    blocker.color = Color(0, 0, 0, 0)
+    blocker.color = Color(0.08, 0.32, 0.16, 1)
     blocker.mouse_filter = Control.MOUSE_FILTER_STOP
     blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     ui_layer.add_child(blocker)
@@ -118,9 +118,76 @@ func _input(event):
         assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_STOP, "closing chat restores generated GUI blocker")
         assert_eq(Input.mouse_mode, Input.MOUSE_MODE_CAPTURED, "closing chat restores gameplay mouse capture")
 
+    # Capture must own input even when generated _input consumes every key.
+    var pen_key := InputEventKey.new()
+    pen_key.keycode = KEY_S
+    pen_key.physical_keycode = KEY_S
+    pen_key.ctrl_pressed = true
+    pen_key.shift_pressed = true
+    pen_key.pressed = true
+    Input.parse_input_event(pen_key)
+    for i in 60:
+        await process_frame
+        if app.annotation_editor.visible: break
+    pen_key = pen_key.duplicate()
+    pen_key.pressed = false
+    Input.parse_input_event(pen_key)
+    assert_true(app.annotation_editor.visible, "Ctrl+Shift+S opens the frozen pen editor above hostile generated input")
+    assert_true(paused and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "marking pauses gameplay and releases the captured mouse")
+    await RenderingServer.frame_post_draw
+    root.get_texture().get_image().save_png("user://annotation-editor.png")
+    var screenshot: Image = app.annotation_editor.canvas.picture
+    if screenshot != null:
+        var pixel := screenshot.get_pixel(40, 40)
+        assert_true(pixel.g > 0.28 and pixel.r < 0.12, "captured PNG contains the game rather than host HUD or editor")
+    else:
+        assert_true(false, "capture produced a real screenshot")
+    app._cancel_annotation()
+    assert_true(not paused and not app.chat_overlay.visible and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED, "cancel from play restores pause, chat and mouse capture exactly")
+    assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_STOP, "cancel restores generated GUI input")
+
+    app.chat_input.text = "Keep my text"
+    app._capture_annotation()
+    for i in 60:
+        await process_frame
+        if app.annotation_editor.visible: break
+    var canvas = app.annotation_editor.canvas
+    var center: Vector2 = canvas.image_rect().get_center()
+    # Exercise real GUI pen events, not only the canvas's model methods.
+    var down_mark := InputEventMouseButton.new()
+    down_mark.position = canvas.global_position + center
+    down_mark.global_position = down_mark.position
+    down_mark.button_index = MOUSE_BUTTON_LEFT
+    down_mark.pressed = true
+    Input.parse_input_event(down_mark)
+    await process_frame
+    var up_mark = down_mark.duplicate()
+    up_mark.pressed = false
+    Input.parse_input_event(up_mark)
+    await process_frame
+    assert_true(not canvas.strokes.is_empty(), "real mouse input draws a pen stroke in the frozen picture")
+    var attach_button = _find_button(app.annotation_editor, "Attach picture")
+    attach_button.pressed.emit()
+    assert_true(app.draft_pictures.size() == 1 and app.chat_overlay.visible and paused, "Attach queues a marked picture and returns to paused chat")
+    assert_true(app.chat_input.text == "Keep my text", "capture preserves a previously composed message")
+    await process_frame
+    await RenderingServer.frame_post_draw
+    root.get_texture().get_image().save_png("user://annotation-chat.png")
+    if not app.draft_pictures.is_empty():
+        var png: Image = app.picture_store.picture_image(app.draft_pictures[0].id)
+        var marked_pixel := png.get_pixel(png.get_width() / 2, png.get_height() / 2)
+        assert_true(marked_pixel.r > 0.8, "saved attachment includes the user's actual mouse-drawn mark")
+    app._capture_annotation()
+    for i in 60:
+        await process_frame
+        if app.annotation_editor.visible: break
+    app._cancel_annotation()
+    assert_true(app.chat_overlay.visible and paused and app.draft_pictures.size() == 1, "cancel an additional capture keeps chat and existing queued pictures")
+
     # Regression: returning from a generated game must leave New Game as host-canvas
     # UI, not a modal Window that can own focus invisibly and make the main window
     # appear frozen.
+    app._set_chat_visible(false)
     Input.action_press("toggle_chat")
     await process_frame
     Input.action_release("toggle_chat")

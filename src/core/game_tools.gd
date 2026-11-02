@@ -18,6 +18,7 @@ var blender_supervisor: Node
 var blender_enabled := true
 var image_supervisor: Node
 var reload_token := 0
+var picture_store = preload("res://src/core/chat_pictures.gd").new()
 func generate_image(args: Dictionary) -> Dictionary:
     if not is_instance_valid(image_supervisor):
         image_supervisor = preload("res://src/core/image_generation.gd").new()
@@ -194,6 +195,7 @@ func _checked_runtime_child(command: String, args: Dictionary, token: int) -> Di
 
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
+        "inspect_attachment": return picture_store.inspect_picture(str(args.get("id", "")))
         "inspect_runtime": return preload("res://src/core/runtime_properties.gd").new(runner).inspect(args)
         "set_properties": return preload("res://src/core/runtime_properties.gd").new(runner).set_properties(args)
         "add_runtime_child", "remove_runtime_child": return runtime_child(name, args)

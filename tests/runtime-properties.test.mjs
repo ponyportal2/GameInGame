@@ -43,7 +43,7 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     writeFileSync(join(ai,'index.mjs'),'export const Type=new Proxy({}, {get:(_,key)=>key===\'Unsafe\'?schema=>schema:()=>({})});');
     const registered=[];
     await (await import(pathToFileURL(join(directory,'gamesmith-extension.ts')))).default({on(){},registerTool(tool){registered.push(tool);}});
-    for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.name===name),name);
+    for(const name of ['inspect_attachment','inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.name===name),name);
     assert.equal(registered.find(t=>t.name==='inspect_runtime').parameters.properties.offset.maximum,1000);
     assert.deepEqual(registered.find(t=>t.name==='test_game_action').parameters.required,['run_id','action']);
   }else if(harness.id==='command-code'){
@@ -51,16 +51,16 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     process.env.GAMESMITH_PROMPT_PATH=join(directory,'prompt.md');writeFileSync(process.env.GAMESMITH_PROMPT_PATH,'fixture');
     const mod=await import(pathToFileURL(join(directory,'gamesmith.ts')));
     await mod.default({cwd:directory,addTool(t){registered.push(t);},getAllTools(){return registered.map(t=>t.schema.name);},setActiveTools(names){
-      for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(names.includes(name),`active ${name}`);
+      for(const name of ['inspect_attachment','inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(names.includes(name),`active ${name}`);
     },hooks(){}});
-    for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.schema.name===name),name);
+    for(const name of ['inspect_attachment','inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.schema.name===name),name);
     assert.equal(registered.find(t=>t.schema.name==='read_runtime_log').schema.input_schema.properties.cursor.type,'integer');
     assert.equal(registered.find(t=>t.schema.name==='read_runtime_log').schema.input_schema.properties.session_id.type,'string');
     assert.equal(registered.find(t=>t.schema.name==='read_test_log').schema.input_schema.properties.since_sequence,undefined);
     assert.equal(registered.find(t=>t.schema.name==='inspect_runtime').schema.input_schema.properties.discover_properties.type,'boolean');
   }else{
     const {hostTools}=await import(pathToFileURL(join(directory,'host-tools.mjs')));
-    for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']){
+    for(const name of ['inspect_attachment','inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']){
       assert(hostTools[name],name);
       assert(hostTools[name].description.length>30);
       if(name==='inspect_runtime'){
@@ -75,7 +75,7 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     const workspace=harness.modules.find(([destination])=>destination==='workspace-tools.mjs');
     if(workspace){
       const {toolSpecs}=await import(pathToFileURL(join(directory,'workspace-tools.mjs')));
-      for(const name of ['inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(toolSpecs().some(t=>t.name==='gamesmith_'+name));
+      for(const name of ['inspect_attachment','inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(toolSpecs().some(t=>t.name==='gamesmith_'+name));
     }
   }
 });
