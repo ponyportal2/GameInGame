@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { workspacePath } from "./workspace-paths.mjs";
 import { resolveModelCapabilities, compactionReserveTokens } from "./model-capabilities.mjs";
@@ -14,6 +14,20 @@ const execFileAsync = promisify(execFile);
 const bridgeDir = process.env.GAMESMITH_HOST_BRIDGE_DIR || "";
 const legacyTranscriptPath = process.env.GAMESMITH_LEGACY_TRANSCRIPT || "";
 const delayMs = Math.max(0, Number(process.env.GAMESMITH_LLM_DELAY_MS || "0"));
+
+// Inspect before removing anything, including hidden entries. Never follow a
+// link into a foreign tree just to decide whether this tree can be deleted.
+async function assertDeletableTree(path: string) {
+  const info = await lstat(path);
+  if (!info.isDirectory() || info.isSymbolicLink()) return;
+  const entries = await readdir(path, { withFileTypes: true });
+  if (entries.some(entry => entry.name.toLowerCase() === ".git")) {
+    throw new Error("GameSmith reserves .git metadata; use the Git tools instead.");
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() && !entry.isSymbolicLink()) await assertDeletableTree(join(path, entry.name));
+  }
+}
 
 function textResult(text: string, details: unknown = undefined) {
   const bounded = boundedToolResult({ok:true,text});
@@ -204,6 +218,7 @@ export default async function (pi: ExtensionAPI) {
     executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const path = await workspacePath(ctx.cwd, params.path, { destructive: true });
+      await assertDeletableTree(path);
       await rm(path, { recursive: true, force: false });
       return textResult(`Deleted ${params.path}`);
     },
@@ -212,7 +227,7 @@ export default async function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "move_path",
     label: "move_path",
-    description: "Move or rename a file/directory inside the current game workspace.",
+    description: "Move or rename a file/directory inside the current game workspace. The destination must not already exist; use an intermediate name for case-only renames.",
     promptSnippet: "move_path: Move or rename a workspace path",
     parameters: Type.Object({
       from: Type.String({ description: "Existing relative path" }),
@@ -223,6 +238,11 @@ export default async function (pi: ExtensionAPI) {
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const from = await workspacePath(ctx.cwd, params.from, { destructive: true });
       const to = await workspacePath(ctx.cwd, params.to, { destructive: true });
+      const destination = await lstat(to).catch(error => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (destination) throw new Error("Destination already exists. Delete or rename it first.");
       await mkdir(dirname(to), { recursive: true });
       await rename(from, to);
       return textResult(`Moved ${params.from} -> ${params.to}`);

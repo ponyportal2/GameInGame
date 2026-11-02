@@ -8,7 +8,7 @@ function inside(root, target, allowRoot) {
 
 function gitPath(root, target) {
   const rel = relative(root, target).replaceAll("\\", "/").toLowerCase();
-  return rel === ".git" || rel.startsWith(".git/");
+  return rel.split("/").includes(".git");
 }
 
 const DEVICES = new Set(["con", "prn", "aux", "nul", ...Array.from({ length: 9 }, (_, i) => "com" + (i + 1)), ...Array.from({ length: 9 }, (_, i) => "lpt" + (i + 1))]);

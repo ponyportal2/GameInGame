@@ -134,6 +134,12 @@ func delete_path(relative_path: String) -> Dictionary:
     if _reserved(relative_path): return _reserved_path()
     var abs = ProjectSettings.globalize_path(path)
     if DirAccess.dir_exists_absolute(abs):
+        # Refuse reserved descendants before deleting ordinary siblings. Links
+        # are inspected as entries, never traversed into another directory.
+        var eligibility = _check_delete_tree(abs)
+        if eligibility == ERR_UNAUTHORIZED: return _reserved_path()
+        if eligibility != OK:
+            return {"ok": false, "error": "Could not inspect directory before deletion (%d). Nothing was deleted." % eligibility}
         var err_tree = _remove_tree_abs(abs)
         if err_tree == OK:
             return {"ok": true}
@@ -195,9 +201,25 @@ func _walk(dir_path: String, root_path: String, out: Array[String]) -> void:
         item = dir.get_next()
     dir.list_dir_end()
 
+func _check_delete_tree(abs: String) -> Error:
+    var dir = DirAccess.open(abs)
+    if dir == null: return ERR_CANT_OPEN
+    dir.include_hidden = true
+    dir.list_dir_begin()
+    var item = dir.get_next()
+    while item != "":
+        if item.to_lower() == ".git": return ERR_UNAUTHORIZED
+        if not dir.is_link(item) and dir.current_is_dir():
+            var result = _check_delete_tree(abs.path_join(item))
+            if result != OK: return result
+        item = dir.get_next()
+    dir.list_dir_end()
+    return OK
+
 func _remove_tree_abs(abs: String) -> Error:
     var dir = DirAccess.open(abs)
     if dir == null: return ERR_CANT_OPEN
+    dir.include_hidden = true
     dir.list_dir_begin()
     var item = dir.get_next()
     while item != "":

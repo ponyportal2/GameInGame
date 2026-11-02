@@ -26,6 +26,8 @@ func run() -> void:
     _test_boundary()
     _test_facade()
     _test_large_file_read_and_patch_integrity()
+    _test_delete_metadata_and_hidden()
+    _test_git_diff()
     print("workspace ops: %d passed, %d failed" % [passed, failures])
     quit(1 if failures else 0)
 
@@ -149,6 +151,72 @@ func _test_facade() -> void:
     check(str(tools.execute("read_file", {"path": "rebound.txt"}).get("content", "")) == "new root\n", "facade reads from the rebound workspace")
     meta._remove_tree_abs(ProjectSettings.globalize_path(root))
     meta._remove_tree_abs(ProjectSettings.globalize_path(rebound))
+
+func _test_delete_metadata_and_hidden() -> void:
+    var root = "user://games/delete-reserved-test"
+    var meta = MetadataStoreScript.new()
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    var tools = GameToolsScript.new(root)
+    for metadata_name in [".git", ".GIT"]:
+        var container = "vendor" if metadata_name == ".git" else "mixed"
+        _write_abs(ProjectSettings.globalize_path(root.path_join(container + "/ordinary.txt")), "ordinary sentinel")
+        var sentinel = root.path_join(container + "/nested/" + metadata_name + "/config")
+        _write_abs(ProjectSettings.globalize_path(sentinel), "metadata sentinel")
+        if OS.get_name() == "Windows":
+            check(FileAccess.set_hidden_attribute(ProjectSettings.globalize_path(sentinel.get_base_dir()), true) == OK, "reserved metadata fixture hides its directory")
+        var result = tools.execute("delete_path", {"path": container})
+        check(not result.ok and ".git" in str(result.get("error", "")), "recursive delete reports reserved metadata " + metadata_name)
+        check(FileAccess.get_file_as_string(sentinel) == "metadata sentinel", "recursive delete preserves nested metadata " + metadata_name)
+        check(FileAccess.get_file_as_string(root.path_join(container + "/ordinary.txt")) == "ordinary sentinel", "metadata refusal precedes sibling deletion " + metadata_name)
+    # A .git file (as used by Git worktrees) is reserved too.
+    _write_abs(ProjectSettings.globalize_path(root.path_join("worktree/.git")), "gitdir: elsewhere")
+    check(not tools.execute("delete_path", {"path": "worktree"}).ok, "recursive delete refuses a nested .git file")
+    check(FileAccess.file_exists(root.path_join("worktree/.git")), "nested .git file survives refusal")
+    _write_abs(ProjectSettings.globalize_path(root.path_join("hidden/ordinary.txt")), "ordinary")
+    var hidden_name = "hidden.txt" if OS.get_name() == "Windows" else ".hidden.txt"
+    var hidden = ProjectSettings.globalize_path(root.path_join("hidden/" + hidden_name))
+    _write_abs(hidden, "hidden sentinel")
+    if OS.get_name() == "Windows":
+        check(FileAccess.set_hidden_attribute(hidden, true) == OK, "hidden regression sets the real Windows Hidden attribute")
+        check(FileAccess.get_hidden_attribute(hidden), "hidden fixture verifies the Windows attribute before deletion")
+    check(tools.execute("delete_path", {"path": "hidden"}).ok, "recursive delete includes hidden entries")
+    check(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(root.path_join("hidden"))), "hidden directory is completely removed")
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+
+func _test_git_diff() -> void:
+    var root = "user://games/scoped-diff-test"
+    var meta = MetadataStoreScript.new()
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root))
+    var tools = GameToolsScript.new(root)
+    check(tools.git.init_repo(root).ok, "diff fixture initializes a real Git repository")
+    for filename in ["main.gd", "other.gd", "[literal].gd", "sub/item.gd"]:
+        _write_abs(ProjectSettings.globalize_path(root.path_join(filename)), "before\n")
+    check(tools.git_commit("baseline").ok, "diff fixture commits its baseline")
+    for filename in ["main.gd", "other.gd", "[literal].gd", "sub/item.gd"]:
+        _write(root.path_join(filename), "after\n")
+    var scoped = tools.execute("git_diff", {"path": "main.gd"})
+    check(scoped.ok and "main.gd" in scoped.output and not "other.gd" in scoped.output, "public Git diff honors the requested file")
+    var folder = tools.execute("git_diff", {"path": "sub"})
+    check(folder.ok and "sub/item.gd" in folder.output and not "main.gd" in folder.output, "Git diff accepts a workspace subdirectory")
+    var literal = tools.execute("git_diff", {"path": "[literal].gd"})
+    check(literal.ok and "[literal].gd" in literal.output and not "main.gd" in literal.output, "Git diff treats wildcard-like filenames literally")
+    for args in [{}, {"path": "."}, {"path": ""}]:
+        var all = tools.execute("git_diff", args)
+        check(all.ok and "main.gd" in all.output and "other.gd" in all.output, "omitted or root diff path keeps workspace-wide behavior")
+    for unsafe in ["../outside.gd", "C:/outside.gd", ":(top)**", "..\\outside.gd"]:
+        check(not tools.execute("git_diff", {"path": unsafe}).ok, "Git diff rejects unsafe path " + unsafe)
+    var outside = "user://games/scoped-diff-outside"
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(outside))
+    if _create_dir_link(root.path_join("escape"), outside):
+        check(not tools.execute("git_diff", {"path": "escape/file.gd"}).ok, "Git diff rejects linked workspace paths")
+    else:
+        check(false, "Git diff fixture creates its boundary link")
+    check(tools.git._run(root, ["add", "-A"]).ok, "diff fixture stages changes")
+    var staged = tools.execute("git_diff", {"path": "main.gd"})
+    check(staged.ok and staged.output.strip_edges() == "", "scoped Git diff preserves unstaged-only semantics")
+    meta._remove_tree_abs(ProjectSettings.globalize_path(root))
+    meta._remove_tree_abs(ProjectSettings.globalize_path(outside))
 
 func _create_dir_link(link: String, target: String) -> bool:
     var abs_link = ProjectSettings.globalize_path(link)

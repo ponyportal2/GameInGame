@@ -55,7 +55,12 @@ func move_path(from_relative: String, to_relative: String) -> Dictionary: return
 func delete_path(relative_path: String) -> Dictionary: return ops.delete_path(relative_path)
 
 func git_status() -> Dictionary: return git.status(workspace)
-func git_diff() -> Dictionary: return git.diff(workspace)
+func git_diff(relative_path: String = "") -> Dictionary:
+    if relative_path in ["", "."]: return git.diff(workspace)
+    var safe = PathUtils.safe_relative_path(relative_path)
+    if safe == "": return ops._unsafe()
+    if ops._linked(safe): return ops._linked_path()
+    return git.diff(workspace, safe)
 func git_log(limit: int = 12) -> Dictionary: return git.log(workspace, limit)
 func git_commit(message: String) -> Dictionary: return git.commit(workspace, message)
 
@@ -202,7 +207,7 @@ func execute(name: String, args: Dictionary) -> Dictionary:
         "move_path": return move_path(str(args.get("from", "")), str(args.get("to", "")))
         "delete_path": return delete_path(str(args.get("path", "")))
         "git_status": return git_status()
-        "git_diff": return git_diff()
+        "git_diff": return git_diff(str(args.get("path", "")))
         "git_log": return git_log(int(args.get("limit", 12)))
         "git_commit": return git_commit(str(args.get("message", "Update generated game")))
         "reload_game": return reload_game()

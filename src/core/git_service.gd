@@ -36,8 +36,8 @@ func ensure_repo(path: String) -> Dictionary:
 func status(path: String) -> Dictionary:
     return _run(path, ["status", "--short", "--branch"])
 
-func diff(path: String) -> Dictionary:
-    return _run(path, ["diff", "--", "."])
+func diff(path: String, relative_path: String = ".") -> Dictionary:
+    return _run(path, ["--literal-pathspecs", "diff", "--", relative_path])
 
 func log(path: String, limit: int = 12) -> Dictionary:
     return _run(path, ["log", "--oneline", "--decorate", "-n", str(clampi(limit, 1, 50))])
