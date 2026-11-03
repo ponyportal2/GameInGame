@@ -167,6 +167,9 @@ func _exit_tree() -> void:
 func _input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
         return
+    if annotation_capturing:
+        get_viewport().set_input_as_handled()
+        return
     if event.keycode == KEY_ESCAPE and is_instance_valid(annotation_editor) and annotation_editor.visible:
         _cancel_annotation()
         get_viewport().set_input_as_handled()
@@ -532,7 +535,7 @@ func _send_chat() -> void:
     if (text == "" and draft_pictures.is_empty()) or agent == null or agent.busy or not pending_chat_send.is_empty(): return
     var pictures: Array = []
     for picture in draft_pictures:
-        if not picture_store.inspect_picture(picture.id).ok:
+        if not picture_store.has_picture(picture.id):
             _toast("An attached picture is missing. Remove it or capture it again.")
             return
         pictures.append({"id": picture.id, "caption": picture.caption})
@@ -594,7 +597,7 @@ func _attach_picture(image: Image, original: Image, strokes: Array) -> void:
     if not saved.ok:
         _toast(str(saved.error))
         return
-    var picture := {"id": saved.id, "caption": "", "original": original, "strokes": strokes.duplicate(true), "image": image}
+    var picture := {"id": saved.id, "caption": "", "original": original, "strokes": strokes.duplicate(true), "preview": _picture_preview(image, Vector2i(110, 56))}
     if editing_picture >= 0 and editing_picture < draft_pictures.size():
         picture.caption = draft_pictures[editing_picture].caption
         picture_store.remove_draft(draft_pictures[editing_picture].id)
@@ -642,7 +645,7 @@ func _refresh_picture_strip() -> void:
         var top := HBoxContainer.new()
         card.add_child(top)
         var preview := TextureButton.new()
-        preview.texture_normal = ImageTexture.create_from_image(draft_pictures[i].image)
+        preview.texture_normal = draft_pictures[i].preview
         preview.ignore_texture_size = true
         preview.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
         preview.custom_minimum_size = Vector2(110, 56)
@@ -660,6 +663,13 @@ func _refresh_picture_strip() -> void:
         caption.text = draft_pictures[i].caption
         caption.text_changed.connect(func(text): draft_pictures[i].caption = text)
         card.add_child(caption)
+
+func _picture_preview(image: Image, bounds: Vector2i) -> ImageTexture:
+    var display: Image = image.duplicate()
+    var scale_factor := minf(1.0, minf(float(bounds.x) / image.get_width(), float(bounds.y) / image.get_height()))
+    if scale_factor < 1.0:
+        display.resize(maxi(1, roundi(image.get_width() * scale_factor)), maxi(1, roundi(image.get_height() * scale_factor)), Image.INTERPOLATE_LANCZOS)
+    return ImageTexture.create_from_image(display)
 
 func _set_picture_controls_disabled(node: Node, disabled: bool) -> void:
     if node is BaseButton: node.disabled = disabled
@@ -708,8 +718,8 @@ func _append_chat(role: String, text: String, pictures: Array = []) -> void:
     for picture in pictures:
         var image: Image = picture_store.picture_image(str(picture.get("id", "")))
         if image != null:
-            var width := mini(320, image.get_width())
-            transcript_view.add_image(ImageTexture.create_from_image(image), width, maxi(1, roundi(float(width) * image.get_height() / image.get_width())))
+            var preview := _picture_preview(image, Vector2i(320, 320))
+            transcript_view.add_image(preview, preview.get_width(), preview.get_height())
         else:
             transcript_view.add_text("[Picture unavailable]")
         transcript_view.add_text("\n" + str(picture.get("caption", "")) + "\n")

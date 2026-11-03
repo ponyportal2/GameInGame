@@ -1,5 +1,11 @@
 extends SceneTree
 
+class CountingPictures extends "res://src/core/chat_pictures.gd":
+    var inspections := 0
+    func inspect_picture(id: String) -> Dictionary:
+        inspections += 1
+        return super.inspect_picture(id)
+
 class FixtureAgent extends "res://src/agent/agent_controller_base.gd":
     var reject := false
     var received := ""
@@ -33,6 +39,9 @@ func run() -> void:
     await settle()
     app.store.create_game("Pictures UI")
     app._open_game("Pictures UI")
+    var pictures := CountingPictures.new()
+    pictures.game_name = app.current_game
+    app.picture_store = pictures
     var previous = app.agent
     previous.queue_free()
     var agent := FixtureAgent.new()
@@ -41,18 +50,39 @@ func run() -> void:
     app.agent = agent
     agent.player_request_accepted.connect(app._accept_chat_send)
     agent.finished.connect(app._on_agent_finished)
-    var image := Image.create(100, 60, false, Image.FORMAT_RGBA8)
+    var escape := InputEventKey.new()
+    escape.keycode = KEY_ESCAPE
+    escape.pressed = true
+    app.annotation_capturing = true
+    app._input(escape)
+    check(app.chat_overlay.visible and paused, "Escape during the capture frame keeps chat paused")
+    app.annotation_capturing = false
+    app._set_chat_visible(true)
+    var image := Image.create(3840, 2160, false, Image.FORMAT_RGBA8)
     image.fill(Color.BLUE)
     app.chat_input.text = "Fix the marked area"
     app._attach_picture(image, image, [])
     app._attach_picture(image, image, [])
+    var preview: Texture2D = app.picture_strip.get_child(0).get_child(0).get_child(0).texture_normal
+    check(preview.get_width() <= 110 and preview.get_height() <= 56, "4K draft uses a thumbnail-sized GPU texture")
+    check(not app.draft_pictures[0].has("image") and app.draft_pictures[0].original == image, "draft retains its editable original without a full flattened image")
+    check(image.get_size() == Vector2i(3840, 2160), "preview creation preserves original screenshot dimensions")
+    check(app.has_method("_picture_preview"), "UI provides bounded display copies")
+    if app.has_method("_picture_preview"):
+        var history_preview: Texture2D = app._picture_preview(image, Vector2i(320, 320))
+        check(history_preview.get_size() == Vector2(320, 180), "history display copy preserves aspect ratio within its bounds")
+        var portrait := Image.create(10, 4000, false, Image.FORMAT_RGBA8)
+        var portrait_preview: Texture2D = app._picture_preview(portrait, Vector2i(320, 320))
+        check(portrait_preview.get_width() >= 1 and portrait_preview.get_height() == 320, "tall screenshots also have bounded history textures")
+        var small := Image.create(20, 10, false, Image.FORMAT_RGBA8)
+        check(app._picture_preview(small, Vector2i(110, 56)).get_size() == Vector2(20, 10), "small previews are not upscaled")
     check(app.draft_pictures.size() == 2 and app.chat_input.text == "Fix the marked area", "multiple captures preserve the existing text and pictures")
     app.draft_pictures[0].caption = "First problem"
     var removed: String = app.draft_pictures[1].id
     app._remove_picture(1)
     check(app.draft_pictures.size() == 1 and not app.picture_store.inspect_picture(removed).ok, "removing a draft removes only its PNG")
     app._edit_picture(0)
-    check(app.annotation_editor.visible and app.annotation_editor.canvas.picture != null, "queued picture can be reopened for editing")
+    check(app.annotation_editor.visible and app.annotation_editor.canvas.picture == image, "queued picture reopens its full-resolution original for editing")
     app._cancel_annotation()
     check(app.draft_pictures.size() == 1 and app.chat_overlay.visible and paused, "cancel editing retains the draft and chat pause")
     var old_id: String = app.draft_pictures[0].id
@@ -65,7 +95,9 @@ func run() -> void:
     check(app.draft_pictures.size() == 1 and not app.annotation_editor.visible, "busy request prevents editing or deleting its draft")
     agent.busy = false
     agent.reject = true
+    pictures.inspections = 0
     app._send_chat()
+    check(pictures.inspections == 0, "send admission does not decode and base64-encode PNGs")
     check(app.chat_input.text == "Fix the marked area" and app.draft_pictures.size() == 1, "rejected send retains text and attachments")
     check(app.chat_history.read_all(app.current_game).filter(func(event): return event.role == "user").is_empty(), "rejected send is not recorded as delivered")
     agent.reject = false
@@ -79,9 +111,14 @@ func run() -> void:
     check(user.pictures.size() == 1 and user.content == "Fix the marked area", "delivered history contains clean text and image metadata")
     var id: String = user.pictures[0].id
     check(app.tools.execute("inspect_attachment", {"id": id}).ok, "production tool facade can read the delivered PNG")
+    check(app.picture_store.picture_image(id).get_size() == image.get_size(), "saved PNG retains full resolution despite bounded previews")
     app._load_transcript()
     await settle()
     check("First problem" in app.transcript_view.get_parsed_text(), "reopened chat renders the saved caption")
+    pictures.inspections = 0
+    app._load_transcript()
+    await settle()
+    check(pictures.inspections == 0, "history previews do not use agent image encoding")
     app.chat_input.text = ""
     app._attach_picture(image, image, [])
     app._send_chat()

@@ -148,10 +148,18 @@ func _input(event):
 
     app.chat_input.text = "Keep my text"
     app._capture_annotation()
+    assert_true(app.annotation_capturing and not app.annotation_editor.visible, "capture is suspended before the editor appears")
+    var capture_escape := InputEventKey.new()
+    capture_escape.keycode = KEY_ESCAPE
+    capture_escape.pressed = true
+    Input.parse_input_event(capture_escape)
+    assert_true(app.chat_overlay.visible and paused and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "Escape in the awaited capture frame preserves host input ownership")
+    assert_eq(app.runner.active_game.blocker.mouse_filter, Control.MOUSE_FILTER_IGNORE, "capture-frame Escape keeps generated GUI input suspended")
     for i in 60:
         await process_frame
         if app.annotation_editor.visible: break
     var canvas = app.annotation_editor.canvas
+    assert_true(paused and app.chat_overlay.visible, "editor opens with gameplay still paused after capture-frame Escape")
     var center: Vector2 = canvas.image_rect().get_center()
     # Exercise real GUI pen events, not only the canvas's model methods.
     var down_mark := InputEventMouseButton.new()

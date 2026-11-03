@@ -33,6 +33,12 @@ func save_picture(image: Image) -> Dictionary:
         return {"ok": false, "error": "Could not finish saving the picture."}
     return {"ok": true, "id": id}
 
+func has_picture(id: String) -> bool:
+    var path := _path(id)
+    if path == "": return false
+    var file := FileAccess.open(path, FileAccess.READ)
+    return file != null and file.get_length() > 0 and file.get_length() <= MAX_PNG_BYTES
+
 func inspect_picture(id: String) -> Dictionary:
     var path := _path(id)
     if path == "" or not FileAccess.file_exists(path):
@@ -47,10 +53,12 @@ func inspect_picture(id: String) -> Dictionary:
     return {"ok": true, "id": id, "mime_type": "image/png", "image_base64": Marshalls.raw_to_base64(bytes)}
 
 func picture_image(id: String) -> Image:
-    var result := inspect_picture(id)
-    if not result.ok: return null
+    var path := _path(id)
+    if path == "": return null
+    var file := FileAccess.open(path, FileAccess.READ)
+    if file == null or file.get_length() > MAX_PNG_BYTES: return null
     var image := Image.new()
-    image.load_png_from_buffer(Marshalls.base64_to_raw(result.image_base64))
+    if image.load_png_from_buffer(file.get_buffer(file.get_length())) != OK: return null
     return image
 
 func remove_draft(id: String) -> void:

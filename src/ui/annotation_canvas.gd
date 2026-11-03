@@ -82,12 +82,28 @@ func flatten() -> Image:
             var a: Vector2 = points[maxi(0, i - 1)]
             var b: Vector2 = points[i]
             var radius: float = stroke.width / 2.0
+            var delta := b - a
+            var length_squared := a.distance_squared_to(b)
+            var left := maxi(0, int(minf(a.x, b.x) - radius))
+            var right := mini(result.get_width(), ceili(maxf(a.x, b.x) + radius) + 1)
             # Rasterize the capsule in source pixels, independent of UI scaling.
             for y in range(maxi(0, int(minf(a.y, b.y) - radius)), mini(result.get_height(), ceili(maxf(a.y, b.y) + radius) + 1)):
-                for x in range(maxi(0, int(minf(a.x, b.x) - radius)), mini(result.get_width(), ceili(maxf(a.x, b.x) + radius) + 1)):
+                var row_left := left
+                var row_right := right
+                if delta.y != 0:
+                    # Only segment points within the brush radius of this row
+                    # can cover it. Include the half-pixel antialiasing fringe.
+                    var reach := radius + 0.5
+                    var t0 := clampf((y - reach - a.y) / delta.y, 0, 1)
+                    var t1 := clampf((y + reach - a.y) / delta.y, 0, 1)
+                    var x0 := a.x + delta.x * t0
+                    var x1 := a.x + delta.x * t1
+                    row_left = maxi(left, floori(minf(x0, x1) - reach))
+                    row_right = mini(right, ceili(maxf(x0, x1) + reach) + 1)
+                for x in range(row_left, row_right):
                     var p := Vector2(x, y)
                     var nearest := a
-                    if a != b: nearest = a + (b - a) * clampf((p - a).dot(b - a) / a.distance_squared_to(b), 0, 1)
+                    if a != b: nearest = a + delta * clampf((p - a).dot(delta) / length_squared, 0, 1)
                     var coverage := clampf(radius + 0.5 - p.distance_to(nearest), 0, 1)
                     if coverage > 0:
                         var color: Color = stroke.color
