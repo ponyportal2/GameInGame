@@ -1,5 +1,8 @@
 # GameSmith
 
+[Voice input](docs/voice-input.md): optional local Whisper dictation. F8 records/stops;
+F9 sends the transcript while gameplay continues. Enable and install it in Settings → Voice.
+
 GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, **Cline**, **Cursor**, **Grok Build**, **AGY (experimental)**, **Kimi Code**, **Kiro CLI**, **Kilo CLI**, **Copilot CLI**, **Crush CLI**, or **OMP** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
 
 For an existing game, open **Settings → This game → Coding harness**, choose an installed harness, then **Save**. Wait for the current request to finish or Stop it first. Switching closes the previous backend while preserving the running game, workspace, Git history, readable chat, and each harness's separate native session. Switching back resumes that harness's session; native agent histories are not merged. Reopen settings after switching to see the selected harness's provider/model/compaction controls.

@@ -298,6 +298,7 @@ static func build_chat(app) -> void:
     app.chat_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
     app.chat_input.add_theme_stylebox_override("normal", T.box(Color.TRANSPARENT, 6, Color.TRANSPARENT, 4))
     composer.add_child(app.chat_input)
+    app._build_voice_composer(composer)
     var actions = row(composer)
     label(actions, "Enter to send  ·  Shift+Enter for a new line", 11, T.MUTED)
     space(actions)

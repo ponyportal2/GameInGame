@@ -100,6 +100,14 @@ func global_settings() -> Dictionary:
         "auto_approve_runtime_children": false,
         "auto_approve_blender_scripts": false,
         "image_backend": "",
+        "voice_enabled": false,
+        "voice_model": "base",
+        "voice_language": "auto",
+        "voice_microphone": "Default",
+        "voice_record_key": KEY_F8,
+        "voice_send_key": KEY_F9,
+        "voice_auto_send": false,
+        "voice_python": "python",
     })
 
 func save_global_settings(data: Dictionary) -> bool:

@@ -77,7 +77,7 @@ export async function runVerification(options,root=ROOT){
   const version=(bin,args)=>{const r=spawnSync(bin,args,{encoding:'utf8',windowsHide:true,timeout:10000});if(r.status!==0)return {unavailable:bin,error:r.error?.message||r.stderr?.trim()||'version probe failed'};return r.stdout.trim();};
   const runtimes={node:process.version,platform:process.platform,arch:process.arch};
   if(needsGodot)runtimes.godot={path:godot,version:version(godot,['--version']),sha256:existsSync(godot)?digest(readFileSync(godot)):null};
-  for(const bin of ['python','go'])if(tests.some(t=>t.phase===(bin==='go'?'launcher':'package')))runtimes[bin]=version(bin,bin==='go'?['version']:['--version']);
+  for(const bin of ['python','go'])if(tests.some(t=>t.phase===(bin==='go'?'launcher':'package')||(bin==='python'&&t.id==='node:voice')))runtimes[bin]=version(bin,bin==='go'?['version']:['--version']);
   // Fixtures can exercise installed Blender. Record its resolved identity too.
   const {resolveBlender}=await import('../blender/jobs.mjs');
   const blender=tests.some(t=>/blender|game_assets|native_recovery/.test(t.id))?await resolveBlender().catch(()=>null):null;

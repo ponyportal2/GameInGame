@@ -88,9 +88,9 @@ func run() -> void:
     app._open_settings()
     await settle()
     var tabs = app.settings_dialog.find_child("SettingsTabs", true, false)
-    check(tabs.get_tab_count() == 5, "settings groups model, agent, images, conversation and game preferences")
+    check(tabs.get_tab_count() == 6, "settings groups model, agent, images, voice, conversation and game preferences")
     await capture("settings")
-    tabs.current_tab = 3
+    tabs.current_tab = 4
     await settle()
     check(app.compact_now_button.is_visible_in_tree(), "conversation tools are reachable on their settings tab")
     var escape = InputEventKey.new()

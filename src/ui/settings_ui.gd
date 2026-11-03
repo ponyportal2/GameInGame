@@ -129,6 +129,7 @@ static func build(app) -> void:
         app.image_backend_labels[id] = U.paragraph(images, id + ": not checked")
     U.button(images, "Check installed backends", app._refresh_image_backends, "QuietButton")
     U.paragraph(images, "An older Codex game conversation may not know this new tool. Use This game > Start new Codex session to refresh its tool list; this starts fresh native context and preserves the displayed chat.")
+    app._build_voice_settings(tabs)
     var conversation = page(tabs, "Conversation")
     U.paragraph(conversation, "Summarize older conversation to make room for new work. Recent messages stay intact.")
     app.compaction_auto_spin = spin(0, 2000000, 1000)

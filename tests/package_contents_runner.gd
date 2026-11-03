@@ -39,7 +39,11 @@ func _run() -> void:
             push_error("FAIL: " + str(assembled.error))
             quit(1)
             return
-    for script in ["workspace_ui.gd", "settings_ui.gd", "theme_factory.gd", "annotation_canvas.gd", "annotation_editor.gd"]:
+    if not FileAccess.file_exists("res://tools/voice/worker.py") or not ResourceLoader.exists("res://src/core/voice_input.gd"):
+        push_error("FAIL: exported GameSmith.pck is missing local voice recognition")
+        quit(1)
+        return
+    for script in ["workspace_ui.gd", "settings_ui.gd", "theme_factory.gd", "annotation_canvas.gd", "annotation_editor.gd", "voice_ui.gd"]:
         if not ResourceLoader.exists("res://src/ui/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)
             quit(1)

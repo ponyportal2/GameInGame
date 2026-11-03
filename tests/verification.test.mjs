@@ -103,6 +103,10 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();
  const check=(paths,expected)=>assert.deepEqual(ids(paths),expected.sort(),paths.join(', '));
  check(['tests/runtime_properties_runner.gd'],['host:runtime_properties','node:verification','package:contents']);
+ check(['tools/voice/worker.py'],['node:voice','host:voice_input','package:contents']);
+ check(['tests/voice_worker_test.py'],['node:voice','node:verification']);
+ check(['src/core/voice_input.gd'],['node:voice','host:voice_input','host:chat_picture_ui','host:ui_layout','package:contents']);
+ check(['src/ui/voice_ui.gd'],['host:voice_input','host:chat_picture_ui','host:ui_layout','package:contents']);
  check(['tests/runtime_node_lifecycle_runner.gd.uid'],['host:runtime_node_lifecycle','node:verification','package:contents']);
  check(['tests/tool-output.test.mjs'],['node:tool-output','node:verification']);
  check(['tests/package_contents_runner.gd'],['package:contents','node:verification']);
@@ -181,6 +185,14 @@ function repository(t){
  for(const args of [['init','-q'],['add','.'],['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','fixture']])assert.equal(spawnSync('git',args,{cwd:dir,windowsHide:true}).status,0);
  return dir;
 }
+test('voice-only verification fingerprints its Python runtime',async t=>{
+ const dir=repository(t);
+ writeFileSync(join(dir,'tests/voice.test.mjs'),"import {test} from 'node:test';test('voice fixture',()=>{});\n");
+ const result=await runVerification(parseArgs(['--test','node:voice']),dir);
+ assert.equal(result.status,'passed');
+ assert.match(result.runtimes.python,/^Python /);
+});
+
 test('output views preserve complete evidence; exit state wins over ERROR text',async t=>{
  const dir=repository(t);let prior;
  for(const output of ['summary','errors','full']){

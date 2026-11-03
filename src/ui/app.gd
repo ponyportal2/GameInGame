@@ -15,6 +15,7 @@ const LegacyDataMigratorScript = preload("res://src/core/legacy_data_migrator.gd
 
 const WorkspaceUIScript = preload("res://src/ui/workspace_ui.gd")
 const SettingsUIScript = preload("res://src/ui/settings_ui.gd")
+const VoiceUIScript = preload("res://src/ui/voice_ui.gd")
 
 # Embedded PopupMenu windows render at 1024. Keep host controls below them,
 # while clamping generated game layers below the host.
@@ -56,6 +57,14 @@ var annotation_capturing := false
 var annotation_return_to_play := false
 var editing_picture := -1
 var pending_chat_send: Dictionary = {}
+var voice = preload("res://src/core/voice_input.gd").new()
+var voice_hud: Label
+var voice_status: Label
+var voice_draft_edit: TextEdit
+var voice_record_button: Button
+var voice_send_button: Button
+var voice_settings: Dictionary = {}
+var voice_composer: VBoxContainer
 const MAX_CHAT_PICTURES = 8
 var status_label: Label
 var game_title_label: Label
@@ -128,7 +137,12 @@ func _ready() -> void:
     store.ensure()
     preload("res://src/core/test_evidence.gd").recover_all()
     AppLoggerScript.global_event("app.startup", "user_data=%s legacy_source=%s migrated=%d skipped=%d" % [ProjectSettings.globalize_path("user://"), str(migration.get("source_found", false)), int(migration.get("copied", 0)), int(migration.get("skipped", 0))])
+    add_child(voice)
     _build_ui()
+    VoiceUIScript.build_hud(self)
+    voice.changed.connect(_voice_changed)
+    voice.transcribed.connect(_voice_transcribed)
+    _apply_voice_settings()
     annotation_editor = preload("res://src/ui/annotation_editor.gd").new()
     host_ui_root.add_child(annotation_editor)
     annotation_editor.attached.connect(_attach_picture)
@@ -159,6 +173,9 @@ func _process(_delta: float) -> void:
         _approve_agent_reload()
     if current_game != "" and not _host_modal_open() and Input.is_action_just_pressed("mark_game_picture"):
         _capture_annotation()
+    if current_game != "" and not _host_modal_open():
+        if Input.is_action_just_pressed("record_voice"): _toggle_voice()
+        if Input.is_action_just_pressed("send_voice"): _send_voice()
 
 func _exit_tree() -> void:
     _flush_chat_delta()
@@ -168,6 +185,10 @@ func _input(event: InputEvent) -> void:
     if not (event is InputEventKey) or not event.pressed or event.echo:
         return
     if annotation_capturing:
+        get_viewport().set_input_as_handled()
+        return
+    if event.keycode == KEY_ESCAPE and voice.state in ["recording", "transcribing"]:
+        voice.cancel()
         get_viewport().set_input_as_handled()
         return
     if event.keycode == KEY_ESCAPE and is_instance_valid(annotation_editor) and annotation_editor.visible:
@@ -359,6 +380,7 @@ func _refresh_library() -> void:
     WorkspaceUIScript.refresh_library(self)
 
 func _show_library() -> void:
+    voice.bind_game("")
     _clear_picture_draft()
     if is_instance_valid(annotation_editor): annotation_editor.hide()
     _flush_chat_delta()
@@ -393,6 +415,7 @@ func _create_game() -> void:
 func _open_game(name: String) -> void:
     _flush_chat_delta()
     current_game = name
+    voice.bind_game(name)
     picture_store.game_name = name
     AppLoggerScript.global_event("game.open", "name=%s" % name)
     AppLoggerScript.game_event(name, "game.open", "workspace=%s" % ProjectSettings.globalize_path(store.game_path(name)))
@@ -491,6 +514,7 @@ func _finish_settings_save(confirm_blender_reset: bool = false) -> void:
         if archive != "":
             _append_chat("system", "Blender availability changed. The previous Codex session reference was archived; the next Codex message starts a fresh conversation. Chat and game files were kept.")
     settings_dialog.visible = false
+    _apply_voice_settings()
     _toast("Settings saved.")
 
 func _handle_load_failure(message: String) -> void:
@@ -530,6 +554,71 @@ func _cap_generated_canvas_layers(node: Node) -> void:
     for child in node.get_children():
         _cap_generated_canvas_layers(child)
 
+func _build_voice_settings(tabs: TabContainer) -> void:
+    VoiceUIScript.build_settings(self, tabs)
+
+func _build_voice_composer(parent: Control) -> void:
+    VoiceUIScript.build_composer(self, parent)
+
+func _apply_voice_settings() -> void:
+    var values: Dictionary = {}
+    var global_values = metadata.global_settings()
+    for key in global_values:
+        if str(key).begins_with("voice_"): values[key] = global_values[key]
+    voice.configure(values)
+    for binding in [["record_voice", int(values.get("voice_record_key", KEY_F8))], ["send_voice", int(values.get("voice_send_key", KEY_F9))]]:
+        if not InputMap.has_action(binding[0]): InputMap.add_action(binding[0])
+        InputMap.action_erase_events(binding[0])
+        var event = InputEventKey.new()
+        event.physical_keycode = binding[1]
+        InputMap.action_add_event(binding[0], event)
+    _voice_changed()
+
+func _toggle_voice() -> void:
+    if _host_modal_open() or current_game == "": return
+    voice.toggle_recording()
+
+func _clear_voice() -> void:
+    voice.cancel()
+    voice.clear_draft()
+
+func _send_voice() -> void:
+    var text = voice.draft.strip_edges()
+    if text == "" or current_game == "" or voice.state != "idle": return
+    if agent == null or agent.busy or not pending_chat_send.is_empty():
+        voice.status = "Agent busy — voice draft kept. Send when ready."
+        _voice_changed()
+        return
+    _submit_message(text, [], "voice")
+
+func _voice_transcribed() -> void:
+    if bool(voice.settings.get("voice_auto_send", false)): _send_voice()
+
+func _install_voice() -> void:
+    voice.install_recognition(str(voice_settings.python.text).strip_edges())
+
+func _voice_changed() -> void:
+    if not is_instance_valid(voice_status): return
+    voice_composer.visible = voice.enabled() or voice.draft != ""
+    if voice_draft_edit.text != voice.draft: voice_draft_edit.text = voice.draft
+    voice_draft_edit.visible = voice.draft != ""
+    voice_draft_edit.editable = voice.state == "idle"
+    voice_status.text = voice.status
+    voice_record_button.text = "Stop recording" if voice.state == "recording" else "Record voice"
+    voice_record_button.disabled = not voice.enabled() or voice.state not in ["idle", "recording"]
+    voice_send_button.disabled = voice.draft.strip_edges() == "" or voice.state != "idle" or (is_instance_valid(agent) and agent.busy)
+    if not voice_settings.is_empty():
+        voice_settings.install.disabled = voice.state != "idle"
+        voice_settings.install_status.text = voice.status if voice.state == "installing" or voice.status != "" else ("Local recognition installed." if voice.installed() else "Local recognition is not installed yet.")
+    if not is_instance_valid(voice_hud): return
+    voice_hud.visible = current_game != "" and not chat_overlay.visible and (voice.draft != "" or voice.status != "")
+    var record_key = OS.get_keycode_string(int(voice.settings.get("voice_record_key", KEY_F8)))
+    var send_key = OS.get_keycode_string(int(voice.settings.get("voice_send_key", KEY_F9)))
+    if voice.state == "recording":
+        voice_hud.text = "● Recording %ds / 60s  %s\n%s stops · Esc cancels" % [int(voice.elapsed), "▰".repeat(clampi(int(voice.level * 20), 0, 20)), record_key]
+    else:
+        voice_hud.text = voice.status + ("  ·  %s sends · Chat to edit\n%s" % [send_key, voice.draft] if voice.draft != "" else "")
+
 func _send_chat() -> void:
     var text = chat_input.text.strip_edges()
     if (text == "" and draft_pictures.is_empty()) or agent == null or agent.busy or not pending_chat_send.is_empty(): return
@@ -539,13 +628,17 @@ func _send_chat() -> void:
             _toast("An attached picture is missing. Remove it or capture it again.")
             return
         pictures.append({"id": picture.id, "caption": picture.caption})
-    pending_chat_send = {"content": text, "pictures": pictures}
+    _submit_message(text, pictures, "chat")
+
+func _submit_message(text: String, pictures: Array, source: String) -> void:
+    if agent == null or agent.busy or not pending_chat_send.is_empty(): return
+    pending_chat_send = {"content": text, "pictures": pictures, "source": source}
     var request: String = text
     if not pictures.is_empty():
         request += "\n\nPlayer-attached marked pictures. Open each PNG using inspect_attachment with its id before acting on its visual details:\n"
         for i in pictures.size():
             request += JSON.stringify({"picture": i + 1, "id": pictures[i].id, "caption": pictures[i].caption}) + "\n"
-    agent.player_message = pending_chat_send.duplicate(true) if not pictures.is_empty() else {}
+    agent.player_message = {"content":text, "pictures":pictures} if not pictures.is_empty() else {}
     _set_chat_busy_controls(true)
     agent.send_player_request(request)
 
@@ -553,10 +646,13 @@ func _accept_chat_send() -> void:
     if pending_chat_send.is_empty(): return
     var sent := pending_chat_send
     pending_chat_send = {}
-    chat_input.text = ""
-    # Sent PNGs belong to history, so clear memory without deleting their files.
-    draft_pictures.clear()
-    _refresh_picture_strip()
+    if sent.get("source", "chat") == "voice":
+        if voice.draft.strip_edges() == sent.content: voice.clear_draft()
+    else:
+        chat_input.text = ""
+        # Sent PNGs belong to history, so clear memory without deleting their files.
+        draft_pictures.clear()
+        _refresh_picture_strip()
     _append_chat("user", sent.content, sent.pictures)
 
 func _capture_annotation() -> void:
@@ -677,6 +773,7 @@ func _set_picture_controls_disabled(node: Node, disabled: bool) -> void:
     for child in node.get_children(): _set_picture_controls_disabled(child, disabled)
 
 func _set_chat_busy_controls(is_busy: bool) -> void:
+    _voice_changed()
     if is_instance_valid(chat_input):
         chat_input.editable = not is_busy
     if is_instance_valid(send_button):
@@ -831,6 +928,7 @@ func _set_chat_visible(visible: bool) -> void:
         _release_host_keyboard_focus()
         Input.mouse_mode = gameplay_mouse_mode
         get_tree().paused = false
+    _voice_changed()
 
 func _suspend_generated_input() -> void:
     generated_input_states.clear()
@@ -870,6 +968,8 @@ func _return_to_library() -> void:
 func _on_agent_finished(_ok: bool) -> void:
     # A rejected request keeps the complete draft for retry; accepted work may
     # fail later, but its message has already been delivered.
+    if pending_chat_send.get("source", "") == "voice":
+        voice.status = "Message was not accepted; voice draft kept for retry."
     pending_chat_send = {}
     if is_instance_valid(agent): agent.player_message = {}
     if stream_open_kind != "":
@@ -949,6 +1049,7 @@ func _rename_game() -> void:
             game_edit_guard = destination_guard
             agent.editor_guard = game_edit_guard
         current_game = new_name
+        voice.bind_game(new_name)
         picture_store.game_name = new_name
         if is_instance_valid(runner):
             runner.rebind_workspace(store.game_path(old), store.game_path(new_name))
@@ -1048,6 +1149,7 @@ func _open_settings() -> void:
         if str(game_harness_option.get_item_metadata(i)) == saved_harness:
             game_harness_option.select(i)
     var settings = metadata.global_settings()
+    VoiceUIScript.load_settings(self, settings)
     var creds = metadata.credentials()
     var id = str(settings.get("provider", "openrouter"))
     _select_provider_id(id)
@@ -1177,6 +1279,10 @@ func _provider_changed(index: int) -> void:
     custom_base_edit.get_parent().visible = id == "custom"
 
 func _save_settings(confirm_blender_reset: bool = false) -> void:
+    var voice_values = VoiceUIScript.values(self)
+    if voice_values.voice_record_key == voice_values.voice_send_key:
+        _toast("Choose different shortcuts for recording and sending voice.")
+        return
     if current_game != "" and not game_edit_guard.acquire():
         _toast(game_edit_guard.error)
         return
@@ -1201,6 +1307,7 @@ func _save_settings(confirm_blender_reset: bool = false) -> void:
             return
     if _uses_native_agent_settings():
         var host_settings = metadata.global_settings()
+        host_settings.merge(voice_values, true)
         if _uses_command_code():
             host_settings.compaction_auto_tokens = int(compaction_auto_spin.value)
         host_settings.allow_rendered_tests = rendered_tests_check.button_pressed
@@ -1215,6 +1322,7 @@ func _save_settings(confirm_blender_reset: bool = false) -> void:
         return
     var id = str(provider_option.get_item_metadata(provider_option.selected))
     var settings = metadata.global_settings()
+    settings.merge(voice_values, true)
     settings.provider = id
     settings.model = model_edit.text.strip_edges()
     settings.custom_base_url = custom_base_edit.text.strip_edges()

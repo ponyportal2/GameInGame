@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const HOST_SCRIPTS = ['chat_annotations','chat_picture_ui','native_controller','native_reset','test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','workspace_ops','image_generation','turn_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','kilo_stop','agent_shutdown','harness_assembly','pi_controller'];
+export const HOST_SCRIPTS = ['voice_input','chat_annotations','chat_picture_ui','native_controller','native_reset','test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','workspace_ops','image_generation','turn_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','kilo_stop','agent_shutdown','harness_assembly','pi_controller'];
 
 export function inventory(root) {
   return JSON.parse(readFileSync(resolve(root,'tools/agent/harnesses.json'),'utf8')).harnesses;
@@ -34,6 +34,10 @@ export function allTests(root) {
 // Audited inputs only. Configuration/lifecycle files not listed here retain the
 // full fallback. Prompt text has its own file so that boundary is unambiguous.
 export const INPUT_CONSUMERS = {
+  'tools/voice/worker.py': ['node:voice','host:voice_input','package:contents'],
+  'tests/voice_worker_test.py': ['node:voice','node:verification'],
+  'src/core/voice_input.gd': ['node:voice','host:voice_input','host:chat_picture_ui','host:ui_layout','package:contents'],
+  'src/ui/voice_ui.gd': ['host:voice_input','host:chat_picture_ui','host:ui_layout','package:contents'],
   // These Markdown files carry the shipped Pi pin. Other documentation keeps
   // its cheap no-test behavior; this is not a general documentation contract.
   'README.md': ['node:pi-pin'],
