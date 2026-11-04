@@ -3,6 +3,8 @@ extends PanelContainer
 signal attached(image: Image, original: Image, strokes: Array)
 signal cancelled
 var canvas = preload("res://src/ui/annotation_canvas.gd").new()
+var comment := LineEdit.new()
+var voice_status := Label.new()
 
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
@@ -32,6 +34,11 @@ func _ready() -> void:
     canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
     canvas.resized.connect(canvas.queue_redraw)
     box.add_child(canvas)
+    comment.placeholder_text = "Add a picture comment…"
+    comment.max_length = 1024
+    box.add_child(comment)
+    voice_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    box.add_child(voice_status)
     var actions := HBoxContainer.new()
     box.add_child(actions)
     _button(actions, "Undo", canvas.undo)
@@ -41,7 +48,7 @@ func _ready() -> void:
     hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     actions.add_child(hint)
     _button(actions, "Cancel", func(): cancelled.emit())
-    _button(actions, "Attach picture", func(): attached.emit(canvas.flatten(), canvas.picture, canvas.strokes.duplicate(true)))
+    _button(actions, "Attach picture", attach)
     hide()
 
 func _button(parent: Node, text: String, action: Callable) -> void:
@@ -50,6 +57,10 @@ func _button(parent: Node, text: String, action: Callable) -> void:
     button.pressed.connect(action)
     parent.add_child(button)
 
-func open(image: Image, strokes: Array = []) -> void:
+func attach() -> void:
+    attached.emit(canvas.flatten(), canvas.picture, canvas.strokes.duplicate(true))
+
+func open(image: Image, strokes: Array = [], caption: String = "") -> void:
     canvas.set_picture(image, strokes)
+    comment.text = caption
     show()

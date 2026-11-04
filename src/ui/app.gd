@@ -65,6 +65,7 @@ var voice_record_button: Button
 var voice_send_button: Button
 var voice_settings: Dictionary = {}
 var voice_composer: VBoxContainer
+var picture_voice := false
 const MAX_CHAT_PICTURES = 8
 var status_label: Label
 var game_title_label: Label
@@ -173,7 +174,7 @@ func _process(_delta: float) -> void:
         _approve_agent_reload()
     if current_game != "" and not _host_modal_open() and Input.is_action_just_pressed("mark_game_picture"):
         _capture_annotation()
-    if current_game != "" and not _host_modal_open():
+    if current_game != "" and _voice_shortcuts_allowed():
         if Input.is_action_just_pressed("record_voice"): _toggle_voice()
         if Input.is_action_just_pressed("send_voice"): _send_voice()
 
@@ -575,14 +576,26 @@ func _apply_voice_settings() -> void:
     _voice_changed()
 
 func _toggle_voice() -> void:
-    if _host_modal_open() or current_game == "": return
-    voice.toggle_recording()
+    if not _voice_shortcuts_allowed() or current_game == "": return
+    if voice.state == "idle": picture_voice = annotation_editor.visible
+    voice.toggle_recording(not picture_voice)
+
+func _voice_shortcuts_allowed() -> bool:
+    # Picture annotation accepts dictation; other host dialogs still own input.
+    return not (annotation_capturing or settings_dialog.visible or codex_session_dialog.visible or new_game_dialog.visible or rename_dialog.visible or delete_dialog.visible)
+
+func _cancel_picture_voice() -> void:
+    if picture_voice: voice.cancel()
+    picture_voice = false
 
 func _clear_voice() -> void:
     voice.cancel()
     voice.clear_draft()
 
 func _send_voice() -> void:
+    if is_instance_valid(annotation_editor) and annotation_editor.visible:
+        _send_picture_message()
+        return
     var text = voice.draft.strip_edges()
     if text == "" or current_game == "" or voice.state != "idle": return
     if agent == null or agent.busy or not pending_chat_send.is_empty():
@@ -591,8 +604,23 @@ func _send_voice() -> void:
         return
     _submit_message(text, [], "voice")
 
-func _voice_transcribed() -> void:
+func _voice_transcribed(text: String) -> void:
+    if picture_voice:
+        if not annotation_editor.visible: return
+        annotation_editor.comment.text = (annotation_editor.comment.text + " " + text).strip_edges().left(1024)
+        if bool(voice.settings.get("voice_auto_send", false)): _send_picture_message()
+        return
     if bool(voice.settings.get("voice_auto_send", false)): _send_voice()
+
+func _send_picture_message() -> void:
+    if voice.state != "idle": return
+    if agent == null or agent.busy or not pending_chat_send.is_empty():
+        voice.status = "Agent busy — picture and comment kept. Send when ready."
+        _voice_changed()
+        return
+    annotation_editor.attach()
+    # A save failure leaves the editor open; do not send an incomplete message.
+    if not annotation_editor.visible: _send_chat()
 
 func _install_voice() -> void:
     voice.install_recognition(str(voice_settings.python.text).strip_edges())
@@ -614,6 +642,9 @@ func _voice_changed() -> void:
     voice_hud.visible = current_game != "" and not chat_overlay.visible and (voice.draft != "" or voice.status != "")
     var record_key = OS.get_keycode_string(int(voice.settings.get("voice_record_key", KEY_F8)))
     var send_key = OS.get_keycode_string(int(voice.settings.get("voice_send_key", KEY_F9)))
+    if is_instance_valid(annotation_editor):
+        annotation_editor.voice_status.visible = voice.enabled()
+        annotation_editor.voice_status.text = "%s records/stops · %s attaches and sends message. %s" % [record_key, send_key, voice.status]
     if voice.state == "recording":
         voice_hud.text = "● Recording %ds / 60s  %s\n%s stops · Esc cancels" % [int(voice.elapsed), "▰".repeat(clampi(int(voice.level * 20), 0, 20)), record_key]
     else:
@@ -660,6 +691,8 @@ func _capture_annotation() -> void:
     if draft_pictures.size() >= MAX_CHAT_PICTURES:
         _toast("Send or remove a picture before adding more (maximum 8).")
         return
+    voice.cancel()
+    picture_voice = false
     annotation_return_to_play = not chat_overlay.visible
     editing_picture = -1
     annotation_capturing = true
@@ -679,6 +712,7 @@ func _capture_annotation() -> void:
     annotation_editor.open(image)
 
 func _cancel_annotation() -> void:
+    _cancel_picture_voice()
     annotation_editor.hide()
     editing_picture = -1
     if annotation_return_to_play: _set_chat_visible(false)
@@ -700,6 +734,8 @@ func _attach_picture(image: Image, original: Image, strokes: Array) -> void:
         draft_pictures[editing_picture] = picture
     else:
         draft_pictures.append(picture)
+    if annotation_editor.visible: picture.caption = annotation_editor.comment.text
+    _cancel_picture_voice()
     editing_picture = -1
     annotation_return_to_play = false
     annotation_editor.hide()
@@ -709,9 +745,11 @@ func _attach_picture(image: Image, original: Image, strokes: Array) -> void:
 func _edit_picture(index: int) -> void:
     if _host_modal_open() or (is_instance_valid(agent) and agent.busy): return
     if index < 0 or index >= draft_pictures.size(): return
+    voice.cancel()
+    picture_voice = false
     annotation_return_to_play = false
     editing_picture = index
-    annotation_editor.open(draft_pictures[index].original, draft_pictures[index].strokes)
+    annotation_editor.open(draft_pictures[index].original, draft_pictures[index].strokes, draft_pictures[index].caption)
 
 func _remove_picture(index: int) -> void:
     if is_instance_valid(agent) and agent.busy: return

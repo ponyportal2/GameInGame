@@ -1,7 +1,7 @@
 extends Node
 
 signal changed
-signal transcribed
+signal transcribed(text: String)
 
 const MODELS = ["tiny", "base", "small", "medium", "large-v3", "turbo"]
 const ROOT = "user://host/voice"
@@ -11,6 +11,7 @@ const WORK_TIMEOUT_MS = 600000
 var settings: Dictionary = {}
 var game_name := ""
 var draft := ""
+var append_to_draft := true
 var state := "idle"
 var status := ""
 var level := 0.0
@@ -73,7 +74,7 @@ func install_recognition(executable: String = "") -> void:
         _error("Python could not start. Choose its executable in Voice settings.")
     changed.emit()
 
-func toggle_recording() -> void:
+func toggle_recording(keep_in_draft: bool = true) -> void:
     if state == "recording":
         _finish_recording()
         return
@@ -85,6 +86,7 @@ func toggle_recording() -> void:
         _error("Install local recognition in Settings → Voice first.")
         return
     if not _capture_start(): return
+    append_to_draft = keep_in_draft
     elapsed = 0.0
     state = "recording"
     status = "Recording"
@@ -225,10 +227,10 @@ func _consume_result(result: Dictionary) -> void:
         changed.emit()
         return
     # Dictation appends rather than destroying an unsent voice draft.
-    draft = (draft + " " + text).strip_edges().left(4000)
+    if append_to_draft: draft = (draft + " " + text).strip_edges().left(4000)
     status = "Ready to send"
     changed.emit()
-    transcribed.emit()
+    transcribed.emit(text)
 
 func _python() -> String:
     return ProjectSettings.globalize_path(ROOT.path_join("environment/Scripts/python.exe" if OS.get_name() == "Windows" else "environment/bin/python"))

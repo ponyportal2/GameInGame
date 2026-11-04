@@ -52,6 +52,15 @@ func check(value: bool, message: String) -> void:
 func settle() -> void:
     for i in 5: await process_frame
 
+func shortcut(action: String) -> void:
+    # Screenshot capture resumes after drawing, when the host already polled
+    # input. Inject on the next process frame so it observes the press once.
+    await process_frame
+    Input.action_press(action)
+    await settle()
+    Input.action_release(action)
+    await settle()
+
 func capture_picture(name: String) -> void:
     if DisplayServer.get_name() == "headless": return
     for arg in OS.get_cmdline_user_args():
@@ -60,6 +69,94 @@ func capture_picture(name: String) -> void:
         DirAccess.make_dir_recursive_absolute(path)
         await RenderingServer.frame_post_draw
         root.get_texture().get_image().save_png(path.path_join(name + ".png"))
+
+func picture_voice(app, agent, image: Image) -> void:
+    check(app.annotation_editor.get("comment") is LineEdit, "picture editor has an editable comment")
+    if not (app.annotation_editor.get("comment") is LineEdit): return
+    app.voice.queue_free()
+    var voice := CaptureFixture.new()
+    app.voice = voice
+    app.add_child(voice)
+    # Recognition replies are injected below; this fixture has no worker to poll.
+    voice.set_process(false)
+    voice.configure({"voice_enabled":true})
+    voice.bind_game(app.current_game)
+    voice.changed.connect(app._voice_changed)
+    voice.transcribed.connect(app._voice_transcribed)
+    voice.set_draft("Separate gameplay voice draft")
+    app._clear_picture_draft()
+    app.chat_input.text = "Typed message"
+    app._attach_picture(image, image, [])
+    app.draft_pictures[0].caption = "First picture"
+    app.annotation_editor.open(image)
+    app.annotation_editor.comment.text = "Existing comment"
+    await shortcut("record_voice")
+    check(voice.state == "recording", "F8 starts recording while the picture editor is modal")
+    await shortcut("record_voice")
+    check(voice.state == "transcribing", "F8 stops picture recording for recognition")
+    voice._consume_result({"id":voice.request_id, "ok":true, "text":"Make this red"})
+    check(app.annotation_editor.comment.text == "Existing comment Make this red" and voice.draft == "Separate gameplay voice draft", "dictation appends to the current picture comment only")
+    check(app.annotation_editor.visible and paused, "dictation without auto-send keeps the picture editor paused and editable")
+    await capture_picture("voice-picture-comment")
+    agent.busy = true
+    await shortcut("send_voice")
+    check(app.annotation_editor.visible and app.annotation_editor.comment.text.contains("Make this red"), "busy F9 retains the open picture and comment")
+    agent.busy = false
+    agent.reject = true
+    await shortcut("send_voice")
+    check(not app.annotation_editor.visible and app.draft_pictures.size() == 2 and app.chat_input.text == "Typed message", "rejected F9 retains typed text and all attached pictures")
+    check(app.draft_pictures[1].caption == "Existing comment Make this red" and agent.received.contains("First picture") and agent.received.contains("Make this red"), "F9 submits the complete message with both picture comments")
+    agent.reject = false
+    app._edit_picture(1)
+    check(app.annotation_editor.comment.text == "Existing comment Make this red", "editing a queued picture restores its comment")
+    voice.settings.voice_auto_send = true
+    app._toggle_voice()
+    app._toggle_voice()
+    voice._consume_result({"id":voice.request_id, "ok":true, "text":"And brighter"})
+    check(not app.annotation_editor.visible and app.draft_pictures.is_empty() and app.chat_input.text == "", "picture auto-send attaches and sends the current message through admission")
+    check(agent.received.contains("Typed message") and agent.received.contains("Make this red And brighter") and voice.draft == "Separate gameplay voice draft", "auto-send includes text, queued pictures and appended dictation without consuming gameplay draft")
+    app.annotation_editor.open(image)
+    app._toggle_voice()
+    app._toggle_voice()
+    var stale_id = voice.request_id
+    app._cancel_annotation()
+    app.annotation_editor.open(image)
+    voice._consume_result({"id":stale_id, "ok":true, "text":"Wrong picture"})
+    check(app.annotation_editor.comment.text == "" and voice.state == "idle", "closing the editor cancels recognition before another picture can receive it")
+    voice.settings.voice_auto_send = false
+    app.annotation_editor.comment.text = "Manual comment"
+    app._toggle_voice()
+    app._attach_picture(image, image, [])
+    check(voice.state == "idle" and app.draft_pictures[0].caption == "Manual comment", "manual attach preserves the comment and stops picture recording")
+    app._edit_picture(0)
+    voice.settings.voice_auto_send = true
+    app._toggle_voice()
+    app._toggle_voice()
+    agent.busy = true
+    voice._consume_result({"id":voice.request_id, "ok":true, "text":"Keep while busy"})
+    agent.busy = false
+    await settle()
+    check(app.annotation_editor.visible and app.annotation_editor.comment.text == "Manual comment Keep while busy", "busy picture auto-send keeps its comment without sending later")
+    var last_request = agent.received
+    app._toggle_voice()
+    app._toggle_voice()
+    voice._consume_result({"id":voice.request_id, "ok":true, "text":""})
+    check(app.annotation_editor.visible and agent.received == last_request, "silence in the picture editor never auto-sends")
+    app._toggle_voice()
+    app._toggle_voice()
+    voice._consume_result({"id":voice.request_id, "ok":false, "error":"Recognition failed"})
+    check(app.annotation_editor.comment.text == "Manual comment Keep while busy" and agent.received == last_request, "recognition failure preserves the comment without auto-send")
+    app._toggle_voice()
+    var escape := InputEventKey.new()
+    escape.keycode = KEY_ESCAPE
+    escape.pressed = true
+    app._input(escape)
+    check(app.annotation_editor.visible and voice.state == "idle" and app.annotation_editor.comment.text.contains("Keep while busy"), "Escape cancels picture recording before closing the editor")
+    app._cancel_annotation()
+    app.settings_dialog.show()
+    app._toggle_voice()
+    check(voice.state == "idle", "other host dialogs still block voice shortcuts")
+    app.settings_dialog.hide()
 
 func run() -> void:
     var app = load("res://main.tscn").instantiate()
@@ -243,6 +340,8 @@ func run() -> void:
     check(capture.state == "installing" and capture.status == "Installing local recognition", "navigation and settings changes leave explicit installation running")
     capture.state = "idle"
     capture.queue_free()
+    await picture_voice(app, agent, image)
+    voice = app.voice
     app._show_library()
     check(voice.game_name == "" and voice.draft == "", "library navigation clears voice context")
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
