@@ -10,6 +10,7 @@ import time
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 import wave
 
 spec = importlib.util.spec_from_file_location("voice_worker", Path(__file__).resolve().parents[1] / "tools/voice/worker.py")
@@ -137,6 +138,55 @@ class RecognitionTests(unittest.TestCase):
             result = worker.handle_request(self.engine, self.root, {"id":"escape", "audio":str(sentinel)})
             self.assertFalse(result["ok"])
             self.assertEqual(sentinel.read_bytes(), b"keep")
+
+
+class InstallationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.session = self.root / "sessions" / "install"
+        self.session.mkdir(parents=True)
+        self.environment = self.root / "environment"
+        self.python = self.environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        self.python.parent.mkdir(parents=True)
+        self.python.write_text("old interpreter")
+        self.model = self.root / "models" / "keep-model"
+        self.model.parent.mkdir()
+        self.model.write_text("cached weights")
+
+    def create_environment(self, path, **kwargs):
+        self.assertEqual(path, self.environment)
+        self.python.write_text(sys.executable)
+
+    def test_failed_install_retry_rebuilds_incomplete_environment_with_selected_python(self):
+        failed = SimpleNamespace(poll=lambda: 1, returncode=1)
+        succeeded = SimpleNamespace(poll=lambda: 0, returncode=0)
+        with mock.patch.object(worker.venv, "create", side_effect=self.create_environment) as create, \
+             mock.patch.object(worker.subprocess, "Popen", side_effect=[failed, succeeded]) as pip:
+            with mock.patch.object(worker.sys, "executable", "selected-python-3.13"):
+                worker.install(self.root, self.session, os.getpid())
+            self.assertFalse(json.loads((self.session / "installed.json").read_text())["ok"])
+            self.assertFalse((self.root / "installed.json").exists())
+            with mock.patch.object(worker.sys, "executable", "selected-python-3.12"):
+                worker.install(self.root, self.session, os.getpid())
+            self.assertEqual(create.call_count, 2)
+            create.assert_has_calls([mock.call(self.environment, with_pip=True, clear=True)] * 2)
+            self.assertEqual(self.python.read_text(), "selected-python-3.12")
+            self.assertEqual(pip.call_args.args[0][:4], [str(self.python), "-m", "pip", "install"])
+            self.assertTrue(json.loads((self.session / "installed.json").read_text())["ok"])
+            self.assertTrue((self.root / "installed.json").exists())
+            self.assertEqual(self.model.read_text(), "cached weights")
+
+    def test_failed_reinstall_invalidates_previous_success_marker(self):
+        worker.atomic_json(self.root / "installed.json", {"packages": worker.PACKAGES})
+        failed = SimpleNamespace(poll=lambda: 1, returncode=1)
+        with mock.patch.object(worker.venv, "create") as create, \
+             mock.patch.object(worker.subprocess, "Popen", return_value=failed):
+            worker.install(self.root, self.session, os.getpid())
+        create.assert_not_called()
+        self.assertFalse((self.root / "installed.json").exists())
+        self.assertFalse(json.loads((self.session / "installed.json").read_text())["ok"])
 
 
 if __name__ == "__main__":

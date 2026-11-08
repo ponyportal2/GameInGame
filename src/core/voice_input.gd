@@ -40,8 +40,14 @@ func configure(values: Dictionary) -> void:
 
 func bind_game(value: String) -> void:
     if value == game_name: return
-    cancel()
     draft = ""
+    rebind_game(value)
+
+func rebind_game(value: String) -> void:
+    # Rename keeps the same logical draft, but in-flight recognition belongs to
+    # the old binding and must not append after it changes.
+    if value == game_name: return
+    cancel()
     game_name = value
     if state != "installing": status = ""
     changed.emit()

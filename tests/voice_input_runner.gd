@@ -90,6 +90,14 @@ func picture_voice(app, agent, image: Image) -> void:
     app.draft_pictures[0].caption = "First picture"
     app.annotation_editor.open(image)
     app.annotation_editor.comment.text = "Existing comment"
+    voice.configure({"voice_enabled":false})
+    var previous_status = voice.status
+    var previous_message = agent.received
+    await shortcut("record_voice")
+    await shortcut("send_voice")
+    check(voice.state == "idle" and voice.status == previous_status and voice.starts == 0, "disabled F8 does not start recording or report an error")
+    check(app.annotation_editor.visible and app.annotation_editor.comment.text == "Existing comment" and app.draft_pictures.size() == 1 and app.chat_input.text == "Typed message" and agent.received == previous_message, "disabled F9 leaves the picture, comment and complete message untouched")
+    voice.configure({"voice_enabled":true})
     await shortcut("record_voice")
     check(voice.state == "recording", "F8 starts recording while the picture editor is modal")
     await shortcut("record_voice")
@@ -186,6 +194,12 @@ func run() -> void:
     var voice = app.voice
     check(voice.settings.get("voice_model", "base") == "base" and not voice.enabled(), "existing settings default to disabled multilingual base")
     check(not app.voice_composer.visible, "disabled voice does not expand the chat composer")
+    voice.set_draft("Existing disabled draft")
+    await shortcut("send_voice")
+    check(voice.draft == "Existing disabled draft" and agent.received == "", "disabled send shortcut preserves a gameplay voice draft")
+    app.voice_send_button.pressed.emit()
+    check(agent.received == "Existing disabled draft" and voice.draft == "", "explicit Send voice still submits an existing draft with shortcuts disabled")
+    agent.received = ""
     voice.configure({"voice_enabled":true})
     voice.bind_game(app.current_game)
     for arg in OS.get_cmdline_user_args():
@@ -264,8 +278,17 @@ func run() -> void:
     app.voice_draft_edit.text = "Edited transcript"
     app.voice_draft_edit.text_changed.emit()
     check(voice.draft == "Edited transcript", "voice transcript is editable independently of chat")
+    voice.request_id = "before-rename"
+    voice.request_game = app.current_game
+    voice.state = "transcribing"
+    app._open_rename(app.current_game)
+    app.rename_edit.text = "Voice UI renamed"
+    app._rename_game()
+    check(app.current_game == "Voice UI renamed" and voice.game_name == app.current_game and voice.draft == "Edited transcript" and voice.state == "idle", "renaming the current game preserves its voice draft and cancels active transcription")
+    voice._consume_result({"id":"before-rename", "ok":true, "text":"stale rename result"})
+    check(voice.draft == "Edited transcript", "a cancelled transcription cannot append after rename")
     voice.request_id = "old-request"
-    voice.request_game = "Voice UI"
+    voice.request_game = app.current_game
     voice.state = "transcribing"
     voice.bind_game("Another game")
     voice._consume_result({"id":"old-request", "ok":true, "text":"stale text"})
@@ -299,6 +322,25 @@ func run() -> void:
     check(Rect2(Vector2.ZERO, Vector2(root.size)).encloses(app.send_button.get_global_rect()), "voice editor and queued picture leave Send visible at minimum window size")
     await capture_picture("voice-chat")
     app._open_settings()
+    var voice_ui = preload("res://src/ui/voice_ui.gd")
+    var microphone = app.voice_settings.microphone
+    voice_ui.refresh_microphones(microphone, "USB microphone", PackedStringArray(["Default", "USB microphone"]))
+    check(microphone.item_count == 2 and voice_ui.values(app).voice_microphone == "USB microphone", "refreshed microphone choices select a newly connected device")
+    voice_ui.refresh_microphones(microphone, "USB microphone", PackedStringArray(["Default"]))
+    check(voice_ui.values(app).voice_microphone == "USB microphone" and microphone.get_item_text(microphone.selected).contains("unavailable"), "an absent saved microphone remains selected without changing its stored value")
+    voice_ui.refresh_microphones(microphone, "USB microphone", PackedStringArray(["Default", "USB microphone"]))
+    check(microphone.item_count == 2 and microphone.get_item_text(microphone.selected) == "USB microphone", "a reconnected microphone replaces its unavailable entry")
+    voice_ui.refresh_microphones(microphone, "USB microphone", PackedStringArray())
+    check(microphone.item_count == 1 and voice_ui.values(app).voice_microphone == "USB microphone", "an empty device list still preserves the remembered microphone")
+    app.metadata.save_global_settings({"voice_microphone":"Missing fixture microphone"})
+    app._open_settings()
+    check(voice_ui.values(app).voice_microphone == "Missing fixture microphone" and microphone.get_item_text(microphone.selected).contains("unavailable"), "reopening Settings preserves an unavailable saved device through the save-value path")
+    app.metadata.save_global_settings({"voice_microphone":"Default"})
+    microphone.add_item("stale device")
+    app._open_settings()
+    var device_names: Array = []
+    for i in microphone.item_count: device_names.append(microphone.get_item_text(i))
+    check(not device_names.has("stale device") and voice_ui.values(app).voice_microphone == "Default", "opening Settings refreshes actual devices and selects the saved microphone")
     var tabs = app.settings_dialog.find_child("SettingsTabs", true, false)
     tabs.current_tab = 3
     await settle()
@@ -326,6 +368,11 @@ func run() -> void:
     check(request.model == "tiny" and request.audio == audio_path, "recording request carries selected model and session-owned audio")
     capture.cancel()
     check(capture.state == "idle" and not FileAccess.file_exists(audio_path), "cancelling removes temporary recording and request")
+    capture.set_draft("Keep on rename")
+    capture.toggle_recording()
+    var capture_stops = capture.stops
+    capture.rebind_game("Capture test renamed")
+    check(capture.state == "idle" and capture.stops == capture_stops + 1 and capture.draft == "Keep on rename", "rename cancels recording and releases capture while retaining the draft")
     capture.toggle_recording()
     capture._process(60.1)
     check(capture.state == "transcribing", "maximum recording duration stops automatically")

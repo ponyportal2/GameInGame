@@ -174,7 +174,7 @@ func _process(_delta: float) -> void:
         _approve_agent_reload()
     if current_game != "" and not _host_modal_open() and Input.is_action_just_pressed("mark_game_picture"):
         _capture_annotation()
-    if current_game != "" and _voice_shortcuts_allowed():
+    if current_game != "" and voice.enabled() and _voice_shortcuts_allowed():
         if Input.is_action_just_pressed("record_voice"): _toggle_voice()
         if Input.is_action_just_pressed("send_voice"): _send_voice()
 
@@ -1087,7 +1087,7 @@ func _rename_game() -> void:
             game_edit_guard = destination_guard
             agent.editor_guard = game_edit_guard
         current_game = new_name
-        voice.bind_game(new_name)
+        voice.rebind_game(new_name)
         picture_store.game_name = new_name
         if is_instance_valid(runner):
             runner.rebind_workspace(store.game_path(old), store.game_path(new_name))

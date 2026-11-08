@@ -117,10 +117,17 @@ def parent_alive(pid):
 def install(root, directory, parent):
     """Explicit, isolated install; stop pip if the host disappears."""
     log = directory / "install.log"
-    python = root / "environment" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    environment = root / "environment"
+    python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    installed = root / "installed.json"
     try:
-        if not python.exists():
-            venv.create(root / "environment", with_pip=True)
+        rebuild = not installed.is_file() or not python.exists()
+        # A failed/partial install must be retried with the selected interpreter,
+        # not the interpreter left in a half-created environment. Models are kept
+        # separately and survive rebuilding this one private directory.
+        installed.unlink(missing_ok=True)
+        if rebuild:
+            venv.create(environment, with_pip=True, clear=True)
         with log.open("w", encoding="utf-8") as output:
             process = subprocess.Popen([str(python), "-m", "pip", "install", "--disable-pip-version-check", *PACKAGES],
                                        stdout=output, stderr=subprocess.STDOUT,
@@ -134,7 +141,7 @@ def install(root, directory, parent):
                 time.sleep(0.2)
         if process.returncode:
             raise RuntimeError("Installation failed. Choose a supported Python executable (3.11/3.12 recommended). " + log.read_text(encoding="utf-8", errors="replace")[-1000:])
-        atomic_json(root / "installed.json", {"packages": PACKAGES})
+        atomic_json(installed, {"packages": PACKAGES})
         atomic_json(directory / "installed.json", {"ok": True})
     except Exception as error:
         atomic_json(directory / "installed.json", {"ok": False, "error": str(error)[:1500]})

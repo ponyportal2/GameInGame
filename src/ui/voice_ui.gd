@@ -53,10 +53,7 @@ static func build_settings(app, tabs: TabContainer) -> void:
     U.paragraph(page, "Local recognition, independent of the coding harness. Recording and sending voice leave gameplay running. No audio is sent to a provider.")
     fields.model = options(page, "Whisper model", [["Tiny · fastest", "tiny"], ["Base · default", "base"], ["Small", "small"], ["Medium", "medium"], ["Large v3", "large-v3"], ["Turbo", "turbo"]], "Multilingual models download on first use into GameSmith user data, never the game or repository. Larger models need more memory/time. CPU/int8 keeps the game's GPU free.")
     fields.language = options(page, "Language", [["Detect automatically", "auto"], ["English", "en"], ["Russian", "ru"]])
-    var devices: Array = []
-    for device in AudioServer.get_input_device_list(): devices.append([device, device])
-    if devices.is_empty(): devices.append(["Default", "Default"])
-    fields.microphone = options(page, "Microphone", devices)
+    fields.microphone = options(page, "Microphone", [])
     var keys: Array = []
     for code in [KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12]: keys.append([OS.get_keycode_string(code), code])
     fields.record_key = options(page, "Record / stop shortcut", keys, "Shortcuts apply while GameSmith is focused. Escape cancels active recording/transcription. Recordings stop after 60 seconds.")
@@ -79,12 +76,22 @@ static func select(option: OptionButton, value: Variant) -> void:
             option.select(i)
             return
 
+static func refresh_microphones(option: OptionButton, saved: String, devices: PackedStringArray) -> void:
+    option.clear()
+    for device in devices:
+        option.add_item(device)
+        option.set_item_metadata(option.item_count - 1, device)
+    if saved not in devices:
+        option.add_item(saved + " (unavailable)")
+        option.set_item_metadata(option.item_count - 1, saved)
+    select(option, saved)
+
 static func load_settings(app, settings: Dictionary) -> void:
     var fields = app.voice_settings
     fields.enabled.button_pressed = bool(settings.get("voice_enabled", false))
     select(fields.model, str(settings.get("voice_model", "base")))
     select(fields.language, str(settings.get("voice_language", "auto")))
-    select(fields.microphone, str(settings.get("voice_microphone", "Default")))
+    refresh_microphones(fields.microphone, str(settings.get("voice_microphone", "Default")), AudioServer.get_input_device_list())
     select(fields.record_key, int(settings.get("voice_record_key", KEY_F8)))
     select(fields.send_key, int(settings.get("voice_send_key", KEY_F9)))
     fields.auto_send.button_pressed = bool(settings.get("voice_auto_send", false))
