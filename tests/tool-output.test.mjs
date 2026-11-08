@@ -8,22 +8,34 @@ import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
 const dir=mkdtempSync(join(tmpdir(),'gs-output-'));
 assembleHarnessRuntime('opencode',dir);
 const mod=await import(pathToFileURL(join(dir,'host-tools.mjs')));
-test('detached rg forwards scope, waits through existing poll, and preserves paged identities',async()=>{
+test('detached rg filters a completed page and preserves scope and paged identities',async()=>{
  const handle={scope:'detached',run_id:'run-7',path:'Enemy201',instance_id:'123',game_generation:'detached:run-7:9'};
  const nodes=[{handle,class:'Node2D',values:{visible:true}}];
  const calls=[];
  const result=await mod.executeHostTool('rg_search',{target:'runtime',run_id:'run-7',pattern:'Enemy201',root:'.',properties:['visible'],runtime_offset:200},{workspace:dir,callHost:async(name,args)=>{
   calls.push([name,args]);
-  if(name==='inspect_runtime'){
-   assert.equal(args.run_id,'run-7');assert.equal(args.offset,200);
-   return {ok:true,scope:'detached',run_id:'run-7',pending:true,action_id:'observed-action'};
-  }
-  assert.equal(name,'test_game_action');assert.deepEqual(args,{run_id:'run-7',action:'poll',action_id:'observed-action'});
-  if(calls.length===2)return {ok:true,pending:true,action_id:'observed-action',run_id:'run-7'};
-  return {ok:true,scope:'detached',run_id:'run-7',nodes,next_offset:null,truncated_by:[],game_generation:handle.game_generation};
+  assert.equal(name,'inspect_runtime');
+  assert.equal(args.run_id,'run-7');assert.equal(args.offset,200);
+  return {ok:true,scope:'detached',run_id:'run-7',nodes:[...nodes,{handle:{...handle,path:'OtherEnemy',instance_id:'124'},class:'Node2D',values:{visible:true}}],next_offset:300,truncated_by:['result_limit'],game_generation:handle.game_generation};
  }});
- assert.equal(calls.length,3);assert.equal(result.scope,'detached');assert.equal(result.run_id,'run-7');
+ assert.equal(calls.length,1);assert.equal(result.scope,'detached');assert.equal(result.run_id,'run-7');
  assert.deepEqual(result.nodes,nodes);assert.equal(result.game_generation,handle.game_generation);
+ assert.equal(result.runtime_next_offset,300);assert.deepEqual(result.runtime_truncated_by,['result_limit']);
+});
+test('detached rg returns a permanently pending inspection unchanged without polling',async()=>{
+ const pending={ok:true,scope:'detached',run_id:'hung-getter',pending:true,action_id:'original-inspection'};
+ const calls=[];
+ const controller=new AbortController();
+ // Safety deadline makes the old unbounded loop fail rather than hang the suite.
+ const timer=setTimeout(()=>controller.abort(new Error('rg did not return pending inspection')),1000);
+ try {
+  const result=await mod.executeHostTool('rg_search',{target:'runtime',run_id:pending.run_id,pattern:'foo',properties:['foo']},{workspace:dir,signal:controller.signal,callHost:async(name,args)=>{
+   calls.push([name,args]);return pending;
+  }});
+  assert.deepEqual(result,pending);
+  assert.equal(calls.length,1);assert.equal(calls[0][0],'inspect_runtime');
+  assert.deepEqual(calls[0][1].properties,['foo']);
+ } finally {clearTimeout(timer);controller.abort();}
 });
 test('source rg rejects run_id and detached rg propagates lifecycle errors',async()=>{
  const bad=await mod.executeHostTool('rg_search',{target:'source',run_id:'x',pattern:'x'},{workspace:dir});
@@ -32,7 +44,7 @@ test('source rg rejects run_id and detached rg propagates lifecycle errors',asyn
  assert.deepEqual(await mod.executeHostTool('rg_search',{target:'runtime',run_id:'expired',pattern:'x'},{workspace:dir,callHost:async()=>error}),error);
 });
 
-test('detached rg cancellation stops pending-page polling',async()=>{
+test('detached rg preserves cancellation during inspection',async()=>{
  const controller=new AbortController();let calls=0;
  const search=mod.executeHostTool('rg_search',{target:'runtime',run_id:'run-7',pattern:'x'},{workspace:dir,signal:controller.signal,callHost:async()=>{
   calls++;controller.abort(new Error('cancel detached search'));

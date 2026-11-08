@@ -24,6 +24,16 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
   const actions=shared.hostTools.test_game_action.properties;
   assert.equal(shared.hostTools.inspect_runtime.properties.run_id?.type,'string');
   assert.equal(shared.hostTools.rg_search.properties.run_id?.type,'string');
+  assert.match(shared.hostTools.rg_search.description,/without internal polling/);
+  assert.match(shared.hostTools.rg_search.description,/unfiltered inspection page/);
+  const pending={ok:true,pending:true,scope:'detached',run_id:'pending-run',action_id:'pending-inspection'};
+  let inspectionCalls=0;
+  const pendingSearch=await shared.executeHostTool('rg_search',{target:'runtime',run_id:pending.run_id,pattern:'Enemy'},{workspace:directory,callHost:async(name)=>{
+    assert.equal(name,'inspect_runtime');
+    assert.equal(++inspectionCalls,1,'pending search must not poll internally');
+    return pending;
+  }});
+  assert.deepEqual(pendingSearch,pending);
   assert.equal(shared.hostTools.read_runtime_log.properties.session_id?.type,'string');
   assert.equal(shared.hostTools.read_runtime_log.properties.session,undefined);
   let forwardedSession;

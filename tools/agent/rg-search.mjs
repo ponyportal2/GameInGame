@@ -1,6 +1,5 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {setTimeout as delay} from 'node:timers/promises';
 import {workspacePath} from './workspace-paths.mjs';
 
 export async function rgSearch(args,{workspace,callHost,signal}) {
@@ -29,13 +28,10 @@ export async function rgSearch(args,{workspace,callHost,signal}) {
       const query={discover_properties:false,limit:100,offset:args.runtime_offset??0};
       for(const key of ['root','depth','class','script','group','properties','run_id'])if(args[key]!==undefined)query[key]=args[key];
       inspection=await callHost('inspect_runtime',query,signal);
-      // Detached inspection uses the existing action bridge. Search consumes the
-      // completed page, never a pending placeholder or invented node identities.
-      while(inspection.ok && inspection.pending && args.run_id) {
-        await delay(25,undefined,{signal});
-        inspection=await callHost('test_game_action',{run_id:args.run_id,action:'poll',action_id:inspection.action_id},signal);
-      }
-      if(!inspection.ok)return inspection;
+      signal?.throwIfAborted();
+      // Keep the action bridge bounded even when a generated getter hangs.
+      // Polling this action returns its inspection page, without regex filtering.
+      if(!inspection.ok || inspection.pending)return inspection;
       input=inspection.nodes.map(node=>JSON.stringify(node)).join('\n')+'\n';
       flags.push('--regexp',pattern,'--','-');
     }

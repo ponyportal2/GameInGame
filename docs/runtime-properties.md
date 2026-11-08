@@ -173,9 +173,14 @@ alone cannot discover nodes beyond that depth or the inspection traversal bound.
 `has_more`. Separately, `runtime_next_offset` continues inspection: pass it as
 `runtime_offset` and reset match offset to 0. `runtime_truncated_by` retains the
 inspection limitations. Pages can shift as the game changes.
-Add `run_id` to search a detached runtime with the same semantics. The search
-waits for its inspection page using the existing action/poll bridge, then runs
-system rg; returned records keep their detached scope and original handles.
+Add `run_id` to search a detached runtime with the same semantics. If inspection
+completes within the bridge's bounded wait, system rg filters that page; returned
+records keep their detached scope and original handles. Otherwise search returns
+the original `pending` response with `run_id` and `action_id`, without polling
+internally. Use `test_game_action(action="poll")` to retrieve the inspection page
+or stop the test if it hangs. The polled page is unfiltered: the original regex
+does not automatically resume. Inspect that page rather than resubmitting a
+potentially hung getter.
 `run_id` is rejected for source search.
 
 Use `root` to select a runtime subtree; `path` and `glob` belong only to source
