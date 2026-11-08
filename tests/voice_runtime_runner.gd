@@ -68,6 +68,22 @@ func run() -> void:
     var previous = JsonStore.read_dict(marker)
     JsonStore.write_dict(marker, {"packages":["legacy system-Python installation"]})
     check(not voice.installed(), "legacy system-Python marker requires reinstall with included runtime")
+    # Simulate installed packages while varying only extraction readiness. Keep
+    # real optional acceptance installations intact and restore their marker.
+    var packages = voice.ROOT.path_join("environment/faster_whisper")
+    var had_packages = DirAccess.dir_exists_absolute(packages)
+    DirAccess.make_dir_recursive_absolute(packages)
+    JsonStore.write_dict(marker, {"runtime":voice._bundle().python.version})
+    var ready = voice._runtime_directory().path_join("ready.json")
+    var bundle = JsonStore.read_dict(ready)
+    check(voice.installed(), "matching readiness and recognition records report installed")
+    DirAccess.remove_absolute(ready)
+    check(not voice.installed(), "interrupted refresh without readiness cannot report installed")
+    JsonStore.write_dict(ready, {"python":{"version":"obsolete"}})
+    check(not voice.installed(), "mismatched runtime readiness cannot report installed")
+    JsonStore.write_dict(ready, bundle)
+    check(voice.installed(), "restoring matching readiness restores installed status")
+    if not had_packages: DirAccess.remove_absolute(packages)
     if previous.is_empty(): DirAccess.remove_absolute(marker)
     else: JsonStore.write_dict(marker, previous)
     var output := []

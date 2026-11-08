@@ -56,8 +56,13 @@ func enabled() -> bool:
     return bool(settings.get("voice_enabled", false))
 
 func installed() -> bool:
+    var bundle = _bundle()
+    var ready = JsonStore.read_dict(_runtime_directory().path_join("ready.json"))
     var marker = JsonStore.read_dict(ROOT.path_join("installed.json"))
-    return FileAccess.file_exists(_python()) and marker.get("runtime", "") == _bundle().python.version and DirAccess.dir_exists_absolute(ROOT.path_join("environment/faster_whisper"))
+    return (ready == bundle
+        and FileAccess.file_exists(_python())
+        and marker.get("runtime", "") == bundle.python.version
+        and DirAccess.dir_exists_absolute(ROOT.path_join("environment/faster_whisper")))
 
 func set_draft(text: String) -> void:
     draft = text.left(4000)
