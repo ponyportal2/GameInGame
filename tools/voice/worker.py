@@ -121,13 +121,10 @@ def install(root, directory, parent):
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     installed = root / "installed.json"
     try:
-        rebuild = not installed.is_file() or not python.exists()
-        # A failed/partial install must be retried with the selected interpreter,
-        # not the interpreter left in a half-created environment. Models are kept
-        # separately and survive rebuilding this one private directory.
+        # Explicit installation always uses the selected interpreter, including
+        # reinstalls after success. Models live outside this private directory.
         installed.unlink(missing_ok=True)
-        if rebuild:
-            venv.create(environment, with_pip=True, clear=True)
+        venv.create(environment, with_pip=True, clear=True)
         with log.open("w", encoding="utf-8") as output:
             process = subprocess.Popen([str(python), "-m", "pip", "install", "--disable-pip-version-check", *PACKAGES],
                                        stdout=output, stderr=subprocess.STDOUT,

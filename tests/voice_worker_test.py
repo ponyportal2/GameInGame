@@ -178,13 +178,33 @@ class InstallationTests(unittest.TestCase):
             self.assertTrue((self.root / "installed.json").exists())
             self.assertEqual(self.model.read_text(), "cached weights")
 
+    def test_successful_reinstall_rebuilds_with_new_selected_python(self):
+        succeeded = SimpleNamespace(poll=lambda: 0, returncode=0)
+        with mock.patch.object(worker.venv, "create", side_effect=self.create_environment) as create, \
+             mock.patch.object(worker.subprocess, "Popen", return_value=succeeded) as pip:
+            with mock.patch.object(worker.sys, "executable", "selected-python-A"):
+                worker.install(self.root, self.session, os.getpid())
+            self.assertTrue(json.loads((self.session / "installed.json").read_text())["ok"])
+            self.assertTrue((self.root / "installed.json").exists())
+            self.assertEqual(self.python.read_text(), "selected-python-A")
+            with mock.patch.object(worker.sys, "executable", "selected-python-B"):
+                worker.install(self.root, self.session, os.getpid())
+            create.assert_has_calls([mock.call(self.environment, with_pip=True, clear=True)] * 2)
+            self.assertEqual(create.call_count, 2)
+            self.assertEqual(self.python.read_text(), "selected-python-B")
+            self.assertEqual(pip.call_count, 2)
+            self.assertEqual(pip.call_args.args[0][:4], [str(self.python), "-m", "pip", "install"])
+            self.assertTrue(json.loads((self.session / "installed.json").read_text())["ok"])
+            self.assertTrue((self.root / "installed.json").exists())
+            self.assertEqual(self.model.read_text(), "cached weights")
+
     def test_failed_reinstall_invalidates_previous_success_marker(self):
         worker.atomic_json(self.root / "installed.json", {"packages": worker.PACKAGES})
         failed = SimpleNamespace(poll=lambda: 1, returncode=1)
         with mock.patch.object(worker.venv, "create") as create, \
              mock.patch.object(worker.subprocess, "Popen", return_value=failed):
             worker.install(self.root, self.session, os.getpid())
-        create.assert_not_called()
+        create.assert_called_once_with(self.environment, with_pip=True, clear=True)
         self.assertFalse((self.root / "installed.json").exists())
         self.assertFalse(json.loads((self.session / "installed.json").read_text())["ok"])
 

@@ -5,7 +5,9 @@ harness. It is disabled by default.
 
 1. Open **Settings → Voice**. Choose a Python executable (3.11 or 3.12 recommended)
    and click **Install local recognition**. Installation creates a private Python
-   environment; it does not change global packages or harness settings.
+   environment; it does not change global packages or harness settings. Clicking
+   Install again recreates that environment with the selected Python and keeps
+   downloaded models.
 2. Enable microphone shortcuts, choose your microphone/model/language, and save.
 3. While playing, press **F8** to start recording and **F8** again to transcribe.
    The game keeps running. **Escape** cancels recording or pending transcription;
