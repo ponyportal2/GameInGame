@@ -1,15 +1,18 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
+import {setTimeout as delay} from 'node:timers/promises';
 import {workspacePath} from './workspace-paths.mjs';
 
 export async function rgSearch(args,{workspace,callHost,signal}) {
     signal?.throwIfAborted();
     const {target,pattern}=args;
-    const allowed=['target','pattern','case_sensitive','offset','limit',...(target==='runtime'?['root','depth','class','script','group','properties','runtime_offset']:['path','glob'])];
+    const allowed=['target','pattern','case_sensitive','offset','limit',...(target==='runtime'?['root','depth','class','script','group','properties','runtime_offset','run_id']:['path','glob'])];
     for(const key of Object.keys(args))if(!allowed.includes(key))
       return {ok:false,error:`Unknown argument '${key.slice(0,64)}' for ${target} search. Use root for runtime inspection; path/glob are source-only.`};
     if(!['source','runtime'].includes(target) || typeof pattern!=='string' || !pattern || pattern.length>1024)
       return {ok:false,error:'Expected source/runtime target and a regex pattern of 1..1024 characters.'};
+    if(args.run_id!==undefined && (typeof args.run_id!=='string'||!args.run_id||args.run_id.length>128))
+      return {ok:false,scope:'detached',reason:'invalid_run_id',error:'Expected a nonempty run_id of at most 128 characters; omit it for live search.'};
     const offset=args.offset??0,limit=args.limit??100;
     if(!Number.isInteger(offset)||offset<0||offset>10000||!Number.isInteger(limit)||limit<1||limit>100 || args.case_sensitive!==undefined && typeof args.case_sensitive!=='boolean')
       return {ok:false,error:'Expected offset 0..10000, limit 1..100 and optional case_sensitive boolean.'};
@@ -24,8 +27,14 @@ export async function rgSearch(args,{workspace,callHost,signal}) {
       flags.push('--regexp',pattern,'--',path);
     } else {
       const query={discover_properties:false,limit:100,offset:args.runtime_offset??0};
-      for(const key of ['root','depth','class','script','group','properties'])if(args[key]!==undefined)query[key]=args[key];
+      for(const key of ['root','depth','class','script','group','properties','run_id'])if(args[key]!==undefined)query[key]=args[key];
       inspection=await callHost('inspect_runtime',query,signal);
+      // Detached inspection uses the existing action bridge. Search consumes the
+      // completed page, never a pending placeholder or invented node identities.
+      while(inspection.ok && inspection.pending && args.run_id) {
+        await delay(25,undefined,{signal});
+        inspection=await callHost('test_game_action',{run_id:args.run_id,action:'poll',action_id:inspection.action_id},signal);
+      }
       if(!inspection.ok)return inspection;
       input=inspection.nodes.map(node=>JSON.stringify(node)).join('\n')+'\n';
       flags.push('--regexp',pattern,'--','-');
@@ -69,7 +78,7 @@ export async function rgSearch(args,{workspace,callHost,signal}) {
         }
         finish(null,{ok:true,[target==='runtime'?'nodes':'matches']:rows,has_more:hasMore,next_offset:hasMore?offset+rows.length:null,
           ...(hints.length?{recovery:'Search incomplete; zero returned nodes does not prove there are no matches. '+hints.join(' ')}:{}),
-          ...(inspection?{game_generation:inspection.game_generation,runtime_next_offset:inspection.next_offset,runtime_truncated_by:inspection.truncated_by}:{}),engine:'system_rg'});
+          ...(inspection?{scope:inspection.scope??'live',...(inspection.run_id?{run_id:inspection.run_id}:{}),game_generation:inspection.game_generation,runtime_next_offset:inspection.next_offset,runtime_truncated_by:inspection.truncated_by}:{}),engine:'system_rg'});
       });
       child.stdin.end(input);
     });

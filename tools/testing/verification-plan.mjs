@@ -47,7 +47,7 @@ export const INPUT_CONSUMERS = {
   'tools/testing/README.md': ['node:pi-pin'],
   'THIRD_PARTY_NOTICES.md': ['node:pi-pin'],
   'GameSmith-Windows/THIRD_PARTY_NOTICES.md': ['node:pi-pin'],
-  'src/core/runtime_properties.gd': ['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly'],
+  'src/core/runtime_properties.gd': ['host:runtime_properties','host:test_workflow','node:runtime-properties','node:tool-output','host:harness_assembly'],
   'src/agent/game_prompt.gd': ['host:prompt_contract','host:harness_assembly','node:verification'],
   'tests/runtime_wall_response.gd': ['node:runtime-properties','node:verification'],
   // Hot core files. A preload search is not a consumer graph, so each list was

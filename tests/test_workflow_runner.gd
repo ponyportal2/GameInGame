@@ -48,10 +48,67 @@ func settled_action(id: String, args: Dictionary) -> Dictionary:
         result = await action(id, {"action": "poll", "action_id": result.action_id})
     return result
 
+func inspect_run(id: String, args: Dictionary) -> Dictionary:
+    args = args.duplicate(true)
+    args.run_id = id
+    var result = await command("inspect_runtime", args)
+    var deadline = Time.get_ticks_msec() + 10000
+    while result.get("pending", false) and Time.get_ticks_msec() < deadline:
+        await create_timer(0.05).timeout
+        result = await action(id, {"action": "poll", "action_id": result.action_id})
+    return result
+
+func inspect_checks(id: String, runner: Node) -> void:
+    var spawned = await settled_action(id, {"action": "call", "method": "spawn_inspection_fixture"})
+    check(spawned.get("ok", false), "detached inspection fixture creates 215 siblings")
+    var handles: Array = []
+    for offset in [0, 100, 200]:
+        var page = await inspect_run(id, {"class": "Node2D", "group": "inspection", "properties": ["position"], "offset": offset, "limit": 100})
+        check(page.get("ok", false) and page.get("scope") == "detached" and page.get("run_id") == id, "detached inspection returns explicit scope through public bridge")
+        check(page.get("nodes", []).size() == (15 if offset == 200 else 100) and page.get("next_offset") == (null if offset == 200 else offset + 100), "detached matching-node pagination retains all siblings")
+        for item in page.get("nodes", []):
+            var index = handles.size()
+            var position = item.values.get("position", {})
+            check(item.handle.path == "Enemy%d" % index and position.get("type") == "Vector2" and position.get("x") == index and position.get("y") == index * 2, "detached requested properties belong to each actual matching node")
+            check(item.handle.get("scope") == "detached" and item.handle.get("run_id") == id and str(item.handle.game_generation).begins_with("detached:" + id + ":"), "detached identity is namespaced per run")
+            handles.append(item.handle)
+    check(handles.size() == 215 and not runner.active_game.has_node("Enemy0"), "inspection stays in detached tree")
+    var actual_id = await settled_action(id, {"action": "call", "method": "inspection_instance_id"})
+    check(not handles.is_empty() and handles[0].instance_id == actual_id.get("value"), "inspection instance identity matches actual detached node")
+    var discovered = await inspect_run(id, {"discover_properties": true, "root": "."})
+    var filtered = await inspect_run(id, {"script": discovered.get("nodes", [{}])[0].get("script", ""), "depth": 0})
+    check(filtered.get("nodes", []).size() == 1, "detached inspector supports actual script filters and discovery")
+    for args in [{"root": "../Enemy0"}, {"root": "Missing"}]:
+        var result = await inspect_run(id, args)
+        check(not result.ok and result.get("reason") == ("invalid_root" if args.root.begins_with("..") else "root_not_found") and result.get("scope") == "detached" and result.get("run_id") == id, "detached root errors distinguish syntax and absence with scope")
+    var legacy = await settled_action(id, {"action": "inspect", "depth": 1, "properties": ["ready_count"]})
+    check(legacy.has("children") and legacy.get("properties", {}).get("ready_count") == "1" and not legacy.has("nodes"), "legacy nested inspect response remains compatible")
+    var invalid_legacy = await settled_action(id, {"action": "inspect", "path": "../escape"})
+    check(invalid_legacy.get("reason") == "invalid_root" and invalid_legacy.get("scope") == "detached", "legacy inspect path errors also distinguish malformed roots")
+    var unknown = await inspect_run("unknown-run", {})
+    check(not unknown.ok and unknown.get("scope") == "detached" and unknown.get("run_id") == "unknown-run", "unknown detached runs use supervisor rejection without falling back live")
+    for invalid_id in ["", 42]:
+        var invalid = await command("inspect_runtime", {"run_id": invalid_id})
+        check(not invalid.ok and invalid.get("reason") == "invalid_run_id" and invalid.get("scope") == "detached", "invalid run selection never falls back live")
+    JsonStore.write_dict(agent.tools.tests()._test_root().path_join("retention.json"), {"expired": [{"run_id": "expired-run"}]})
+    var expired = await inspect_run("expired-run", {})
+    check(not expired.ok and expired.get("error") == "retention_expired" and expired.get("run_id") == "expired-run" and expired.get("scope") == "detached", "expired runs use existing retention rejection")
+    var pending = await command("inspect_runtime", {"run_id": id, "root": ".", "depth": 0, "properties": ["slow_read"]})
+    check(pending.get("pending", false) and pending.get("scope") == "detached" and pending.get("run_id") == id, "slow inspection preserves detached provenance when bounded wait expires")
+    var deadline = Time.get_ticks_msec() + 5000
+    while pending.get("pending", false) and Time.get_ticks_msec() < deadline:
+        await create_timer(0.1).timeout
+        pending = await action(id, {"action": "poll", "action_id": pending.action_id})
+    check(pending.get("ok", false) and pending.get("nodes", [{}])[0].get("values", {}).get("slow_read") == 42 and pending.get("scope") == "detached", "existing poll completes the exact detached inspection")
+    var reads = await inspect_run(id, {"depth": 0, "properties": ["slow_reads"]})
+    check(reads.get("nodes", [{}])[0].get("values", {}).get("slow_reads") == 1, "polling never repeats a property getter")
+
 func run():
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(workspace))
     put("main.gd", "extends Node3D\nvar mode = 'menu'\nvar ready_count = 0\nvar cam = null\nvar pos = Vector3.ZERO\nvar fx = null\nvar enemies = []\nvar explosions = 0\nvar damage = 0.0\nfunc _ready():\n\tready_count += 1\nfunc start_play():\n\tmode = 'playing'\nfunc _explode_at(_at, _radius, amount, _owner):\n\texplosions += 1\n\tdamage += amount\nfunc slow():\n\tOS.delay_msec(900)\n\treturn 7\nfunc announce():\n\tprint('AFTER_CURSOR')\n")
     put("grenade.gd", FileAccess.get_file_as_string("res://tests/fixtures/warframe-grenade.gd"))
+    put("main.gd", FileAccess.get_file_as_string(workspace.path_join("main.gd")) + "\nvar slow_reads := 0\nvar slow_read: int:\n\tget:\n\t\tslow_reads += 1\n\t\tOS.delay_msec(650)\n\t\treturn 42\n")
+    put("main.gd", FileAccess.get_file_as_string(workspace.path_join("main.gd")) + "\nfunc spawn_inspection_fixture():\n\tfor i in range(215):\n\t\tvar child = Node2D.new()\n\t\tchild.name = 'Enemy%d' % i\n\t\tchild.position = Vector2(i, i * 2)\n\t\tadd_child(child)\n\t\tchild.add_to_group('inspection')\nfunc inspection_instance_id():\n\treturn str(get_node('Enemy0').get_instance_id())\n")
     var earlier_log = preload("res://src/core/runtime_log.gd").new()
     earlier_log.start(workspace.get_file(), workspace)
     earlier_log.add("print", "EARLIER_SESSION_ONLY")
@@ -81,6 +138,7 @@ func run():
     while agent.tools.tests().status(id).get("state") == "starting" and Time.get_ticks_msec() < deadline:
         await process_frame
     check(agent.tools.tests().status(id).get("state") == "running", "one detached process reaches smoke-tested running")
+    await inspect_checks(id, runner)
     var result = await action(id, {"action": "inspect", "properties": ["ready_count"]})
     check(result.get("ok", false) and not result.get("pending", true), "fast action returns actual result without a poll")
     result = await action(id, {"action": "call", "method": "start_play"})
@@ -137,6 +195,8 @@ func run():
     check(result.get("ok", false) and not result.get("pending", true) and result.get("value") == "7", "same action ID completes without resubmission")
     result = await command("stop_test_game", {"run_id": id})
     check(result.get("state") == "exited" and result.get("stop_method") == "graceful", "single detached process stops cleanly")
+    var ended = await inspect_run(id, {})
+    check(not ended.ok and ended.get("scope") == "detached" and ended.get("run_id") == id, "exited detached run cannot inspect or fall back live")
     agent.free()
     runner.free()
     print("WORKFLOW TESTS: ", passed, " passed, ", failed, " failed")

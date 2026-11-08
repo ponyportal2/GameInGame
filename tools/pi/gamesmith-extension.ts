@@ -338,7 +338,7 @@ export default async function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "reload_game",
     label: "reload_game",
-    description: "After successful headless testing, request compiling/instantiating the workspace when a full reload is needed; replace the active game only if valid. Successful live parameter patches need no reload. Waits without timeout for Shift+F5 or Allow Reload in chat unless automatic approval is enabled. Stop cancels the wait. Loads the workspace as it exists when allowed, including edits made while waiting; the request does not freeze a revision.",
+    description: "After successful headless or rendered detached testing of the current edits, request compiling/instantiating the workspace when a full reload is needed; replace the active game only if valid. Mandatory isolated headless preflight still runs. Successful live parameter patches need no reload. Waits without timeout for Shift+F5 or Allow Reload in chat unless automatic approval is enabled. Stop cancels the wait. Loads the workspace as it exists when allowed, including edits made while waiting; the request does not freeze a revision.",
     promptSnippet: "reload_game: Compile and reload the generated Godot game when a full refresh is needed",
     parameters: Type.Object({}),
     annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },

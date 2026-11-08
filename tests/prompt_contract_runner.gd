@@ -52,6 +52,10 @@ func run() -> void:
                 # This is the same virtual method production startup writes to prompt.md.
                 prompt = controller._native_prompt()
             var label = str(entry.id) + " blender=" + str(blender_enabled)
+            check("successful headless or rendered detached test" in prompt and "current edit set" in prompt, label + " rendered smoke can satisfy manual pre-reload startup validation")
+            check(not "Before calling reload_game, run a successful headless test" in prompt, label + " no redundant mandatory manual headless launch")
+            check("proportionate additive component" in prompt and "preflight/consent" in prompt, label + " property limitations do not imply no live option")
+            check("inspect_attachment" in prompt and "ambiguity materially changes" in prompt, label + " opens visual attachments and clarifies consequential ambiguity")
             if entry.id == "codebuddy":
                 check("Use only tools supplied by the gamesmith MCP server; do not use native or external tools." in prompt, label + " uses the dynamic MCP schemas without a partial tool allowlist")
             check("verify the actual before-to-after transition" in prompt and "before editing defaults" in prompt, label + " preserves transition test conditions")

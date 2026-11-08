@@ -97,6 +97,25 @@ func read_runtime_log(args: Dictionary = {}) -> Dictionary:
     if runner == null: return {"ok": false, "error": "Runner unavailable."}
     return runner.runtime_log.read(args, true)
 
+func inspect_runtime(args: Dictionary) -> Dictionary:
+    if not args.has("run_id"):
+        return preload("res://src/core/runtime_properties.gd").new(runner).inspect(args)
+    var id = args.run_id
+    if not id is String or id.is_empty() or id.length() > 128:
+        return {"ok": false, "scope": "detached", "reason": "invalid_run_id", "error": "run_id must be a nonempty test run ID (at most 128 characters). Omit it for live inspection."}
+    var state: Dictionary = tests().status(id)
+    var result: Dictionary
+    if not state.get("ok", false):
+        result = state
+    elif state.get("state") != "running":
+        result = {"ok": false, "reason": "run_not_running", "error": "Detached run is not running.", "state": state.get("state", "unknown")}
+    else:
+        var query = args.duplicate(true)
+        query.erase("run_id")
+        result = tests().request_action(id, {"action": "inspect_runtime", "query": query})
+    result.merge({"scope": "detached", "run_id": id}, true)
+    return result
+
 func runtime_child(command: String, args: Dictionary) -> Dictionary:
     var pending := {"ok": true, "pending": true}
     _perform_runtime_child(pending, command, args.duplicate(true), reload_token)
@@ -121,6 +140,9 @@ func _checked_runtime_child(command: String, args: Dictionary, token: int) -> Di
         return rejected
     var game = helper._game()
     var target = args.get("parent" if command == "add_runtime_child" else "target", {})
+    if target is Dictionary and helper._detached_handle(target):
+        rejected.merge(Children.error("detached_handle", "Detached inspection handles cannot mutate the live game. Inspect without run_id."), true)
+        return rejected
     if game == null or not target is Dictionary or target.size() != 3 or not target.get("path") is String or target.path.length() > 1024 or not target.get("instance_id") is String or not target.get("game_generation") is String:
         rejected.merge(Children.error("invalid_handle", "Copy an exact current handle from inspect_runtime."), true)
         return rejected
@@ -196,7 +218,7 @@ func _checked_runtime_child(command: String, args: Dictionary, token: int) -> Di
 func execute(name: String, args: Dictionary) -> Dictionary:
     match name:
         "inspect_attachment": return picture_store.inspect_picture(str(args.get("id", "")))
-        "inspect_runtime": return preload("res://src/core/runtime_properties.gd").new(runner).inspect(args)
+        "inspect_runtime": return inspect_runtime(args)
         "set_properties": return preload("res://src/core/runtime_properties.gd").new(runner).set_properties(args)
         "add_runtime_child", "remove_runtime_child": return runtime_child(name, args)
         "blender": return blender(args)
@@ -217,5 +239,8 @@ func execute(name: String, args: Dictionary) -> Dictionary:
         "start_test_game": return tests().start(workspace, str(args.get("mode", "headless")))
         "read_test_log": return tests().read_log(str(args.get("run_id", "")), args)
         "stop_test_game": return tests().request_stop(str(args.get("run_id", "")))
-        "test_game_action": return tests().request_action(str(args.get("run_id", "")), args)
+        "test_game_action":
+            var result: Dictionary = tests().request_action(str(args.get("run_id", "")), args)
+            result.merge({"scope": "detached", "run_id": str(args.get("run_id", ""))}, true)
+            return result
         _: return {"ok": false, "error": "Unknown tool: " + name}

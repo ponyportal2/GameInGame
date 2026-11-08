@@ -162,7 +162,7 @@ func run() -> void:
     app._show_library()
     app._open_new_game()
     check(not app.new_game_blender_check.button_pressed, "creation option resets for the next game")
-    check(prompt.contains("successful headless test") and prompt.contains("before finishing"), "shared instructions require testing before reload and handoff")
+    check(prompt.contains("successful headless or rendered detached test") and prompt.contains("current edit set") and prompt.contains("before finishing"), "shared instructions require current-edit testing before reload and handoff")
     app.queue_free()
     await process_frame
     quit(1 if failures else 0)

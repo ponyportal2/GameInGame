@@ -1,12 +1,16 @@
-# Live parameter iteration
+# Runtime inspection and live parameter iteration
 
 GameSmith exposes `inspect_runtime` and `set_properties` through every harness.
-They operate on the player's current generated game beneath `active_game`,
-not the host UI or a separate test process. No game hooks are required.
+Inspection defaults to the player's current generated game beneath `active_game`.
+An optional `run_id` selects a running detached test instead. Mutation always
+targets the player's live game, never the host UI or a detached test. No game
+hooks are required.
 
-For a parameter edit: inspect, edit persistent source, headlessly test that
-source, patch existing instances, and check the results. Reload remains the
-fallback for changes that cannot be represented as supported property writes,
+For a parameter edit: inspect, edit persistent source, test that source in a
+headless or rendered detached run, patch existing instances, and check the
+results. A rendered run covers the same startup smoke; do not repeat it headlessly
+solely to prove startup. Keep targeted tests that exercise additional behavior.
+Reload remains a fallback for changes that cannot use supported live operations,
 unless the player says not to reload. That constraint remains binding when
 inspection or patching fails: report the blocker. An explicitly temporary
 live-only experiment needs no source edit or headless source test.
@@ -26,6 +30,31 @@ contains a game-relative `path`, string `instance_id`, and string
 Generation identifies the current game root; replacing or unloading the game
 invalidates its handles. Renaming/reparenting also invalidates the old path.
 A successful mutation returns the current handle.
+
+Every inspection response identifies `scope: "live"` or `scope: "detached"`.
+Malformed roots return `reason: "invalid_root"`; valid paths absent from the
+selected tree return `reason: "root_not_found"`. A path alone does not identify
+which runtime it came from, so these errors do not infer a wrong-runtime mistake.
+
+```json
+{"run_id":"<observed test run ID>","group":"enemies","properties":["speed"],"offset":100,"limit":100}
+```
+
+Detached inspection reuses the same bounds, filters, values and pagination below.
+Its results and handles include `scope: "detached"` and `run_id`, with
+`game_generation: "detached:<run_id>:<generation>"`. Live handles retain their
+existing three-field shape. Detached identities are explicitly rejected by
+`set_properties`, `add_runtime_child` and `remove_runtime_child`, even if numeric
+instance IDs happen to coincide across processes. Never strip or reconstruct
+handles to use them in another runtime.
+
+Detached inspection uses the existing test action bridge. Fast calls finish in
+the same tool response; if `pending: true` is returned, poll the returned
+`action_id` with `test_game_action(run_id=..., action="poll", action_id=...)`.
+Do not resubmit the inspection: property getters may have side effects. Unknown,
+exited and retention-expired runs fail through the existing supervisor lifecycle,
+without falling back to live inspection. The older nested-tree
+`test_game_action(action="inspect")` response remains available unchanged.
 
 For property discovery, inspect one representative node:
 
@@ -144,6 +173,10 @@ alone cannot discover nodes beyond that depth or the inspection traversal bound.
 `has_more`. Separately, `runtime_next_offset` continues inspection: pass it as
 `runtime_offset` and reset match offset to 0. `runtime_truncated_by` retains the
 inspection limitations. Pages can shift as the game changes.
+Add `run_id` to search a detached runtime with the same semantics. The search
+waits for its inspection page using the existing action/poll bridge, then runs
+system rg; returned records keep their detached scope and original handles.
+`run_id` is rejected for source search.
 
 Use `root` to select a runtime subtree; `path` and `glob` belong only to source
 search. Unknown inspection/search arguments are rejected, rather than silently
@@ -165,8 +198,10 @@ offsets to 0 when changing root, filters, depth, pattern or requested properties
 offsets continue the same query only. No unbounded whole-tree scan is performed.
 
 Mesh material colors are resource properties and remain outside node-only
-mutation. Once this is established, report the limitation instead of repeatedly
-discovering base-node properties or trying equivalent unsupported writes.
+`set_properties`. A proportionate additive component may sometimes edit those
+resources under the existing preflight/consent rules. Otherwise report the
+limitation instead of repeatedly discovering base-node properties or trying
+equivalent unsupported writes.
 
 Textual GameSmith results across the harness adapters are bounded to 50 KiB of
 UTF-8 JSON or 2,000 logical lines, whichever comes first. Logical lines include

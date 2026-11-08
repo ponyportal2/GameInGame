@@ -32,6 +32,28 @@ func run() -> void:
         quit(1)
         return
     var game = runner.active_game
+    for invalid in ["../Enemy0", "/root", "Enemy0:speed", "", 42]:
+        var bad_root = tools.execute("inspect_runtime", {"root": invalid})
+        check(not bad_root.ok and bad_root.get("reason") == "invalid_root" and bad_root.get("scope") == "live", "malformed live root has scoped stable reason")
+    var missing_root = tools.execute("inspect_runtime", {"root": "DoesNotExist"})
+    check(not missing_root.ok and missing_root.get("reason") == "root_not_found" and missing_root.get("scope") == "live", "valid missing live root is distinct from invalid syntax")
+    var live_root = tools.execute("inspect_runtime", {"depth": 0})
+    check(live_root.get("scope") == "live" and live_root.nodes[0].handle.size() == 3, "live result is scoped without changing legacy handle shape")
+    # Force numeric identity collisions; process-local IDs are not provenance.
+    var collision = live_root.nodes[0].handle.duplicate()
+    collision.scope = "detached"
+    collision.run_id = "another-process"
+    var refused = tools.execute("set_properties", {"targets": [collision], "values": {"visible": false}})
+    check(not refused.ok and refused.get("reason") == "detached_handle" and game.visible, "explicit detached provenance rejects even matching live numeric IDs before writes")
+    collision.erase("scope")
+    collision.erase("run_id")
+    collision.game_generation = "detached:another-process:" + str(game.get_instance_id())
+    refused = tools.execute("set_properties", {"targets": [collision], "values": {"visible": false}})
+    check(not refused.ok and refused.get("reason") == "detached_handle" and game.visible, "namespaced generation also rejects if detached metadata was stripped")
+    for command_name in ["add_runtime_child", "remove_runtime_child"]:
+        var child_args = {"parent" if command_name == "add_runtime_child" else "target": collision}
+        var child_rejected = await tools.wait_reload(tools.execute(command_name, child_args))
+        check(not child_rejected.ok and child_rejected.get("reason") == "detached_handle" and not child_rejected.get("live_attempted", true), "live child tool rejects detached provenance before preflight: " + command_name)
     var budget_handles = tools.execute("inspect_runtime", {"group": "enemies", "properties": ["title"]}).nodes.map(func(entry): return entry.handle)
     var rejected_batch = tools.execute("set_properties", {"targets": budget_handles, "values": {"title": "new"}})
     check(not rejected_batch.ok and rejected_batch.get("writes_started", true) == false and "Split" in rejected_batch.get("error", ""), "oversized possible string readback rejected before writes")

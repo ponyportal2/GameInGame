@@ -111,7 +111,7 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  check(['tests/runtime_node_lifecycle_runner.gd.uid'],['host:runtime_node_lifecycle','node:verification','package:contents']);
  check(['tests/tool-output.test.mjs'],['node:tool-output','node:verification']);
  check(['tests/package_contents_runner.gd'],['package:contents','node:verification']);
- check(['src/core/runtime_properties.gd'],['host:runtime_properties','node:runtime-properties','node:tool-output','host:harness_assembly','package:contents']);
+ check(['src/core/runtime_properties.gd'],['host:runtime_properties','host:test_workflow','node:runtime-properties','node:tool-output','host:harness_assembly','package:contents']);
  check(['src/agent/game_prompt.gd'],['host:prompt_contract','host:harness_assembly','node:verification','package:contents']);
  check(['src/core/game_runner.gd'],['host:cache_edge_regression','host:cache_regression','host:diagnostics','host:game_assets','host:library_actions','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:runtime_properties','host:script_load_policy','host:test_process','host:test','host:test_workflow','package:contents','host:harness_assembly','node:verification']);
  check(['src/core/game_tools.gd'],['host:chat_annotations','host:chat_picture_ui','host:runtime_properties','host:reliability','host:reload_preflight','host:reload_settings','host:runtime_children','host:test_process','host:test_workflow','host:workspace_ops','host:blender','host:image_generation','package:contents','host:harness_assembly','node:verification']);

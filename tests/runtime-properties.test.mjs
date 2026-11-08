@@ -22,6 +22,8 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     assert.equal(schema.since_sequence,undefined);
   }
   const actions=shared.hostTools.test_game_action.properties;
+  assert.equal(shared.hostTools.inspect_runtime.properties.run_id?.type,'string');
+  assert.equal(shared.hostTools.rg_search.properties.run_id?.type,'string');
   assert.equal(shared.hostTools.read_runtime_log.properties.session_id?.type,'string');
   assert.equal(shared.hostTools.read_runtime_log.properties.session,undefined);
   let forwardedSession;
@@ -45,6 +47,8 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
     await (await import(pathToFileURL(join(directory,'gamesmith-extension.ts')))).default({on(){},registerTool(tool){registered.push(tool);}});
     for(const name of ['inspect_attachment','inspect_runtime','set_properties','rg_search','add_runtime_child','remove_runtime_child']) assert(registered.some(t=>t.name===name),name);
     assert.equal(registered.find(t=>t.name==='inspect_runtime').parameters.properties.offset.maximum,1000);
+    assert.match(registered.find(t=>t.name==='reload_game').description,/headless or rendered detached testing/);
+    assert.match(registered.find(t=>t.name==='reload_game').description,/Mandatory isolated headless preflight/);
     assert.deepEqual(registered.find(t=>t.name==='test_game_action').parameters.required,['run_id','action']);
   }else if(harness.id==='command-code'){
     const registered=[];

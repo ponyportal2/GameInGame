@@ -9,9 +9,11 @@ const MAX_STRING = 1024
 const SUPPORTED = [TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME, TYPE_VECTOR2, TYPE_VECTOR3, TYPE_COLOR]
 
 var runner: Node
+var run_id := ""
 
-func _init(game_runner: Node) -> void:
+func _init(game_runner: Node, detached_run_id: String = "") -> void:
     runner = game_runner
+    run_id = detached_run_id
 
 func _error(message: String) -> Dictionary:
     return {"ok": false, "error": message}
@@ -33,17 +35,28 @@ func _within(node: Variant, game: Variant) -> bool:
         ancestor = ancestor.get_parent()
     return false
 
+func _valid_path(path: Variant) -> bool:
+    return path is String and path.length() <= MAX_STRING and path != "" and not path.begins_with("/") and not ":" in path and not ".." in path.split("/")
+
 func _path(game: Node, path: Variant) -> Node:
-    if not path is String or path.length() > MAX_STRING or path == "" or path.begins_with("/") or ":" in path or ".." in path.split("/"):
-        return null
+    if not _valid_path(path): return null
     var node = game.get_node_or_null(NodePath(path))
     return node if _within(node, game) else null
 
+func _generation(game: Node) -> String:
+    return str(game.get_instance_id()) if run_id == "" else "detached:%s:%s" % [run_id, str(game.get_instance_id())]
+
+func _detached_handle(handle: Dictionary) -> bool:
+    return handle.get("scope") == "detached" or handle.has("run_id") or str(handle.get("game_generation", "")).begins_with("detached:")
+
 func _handle(node: Node, game: Node) -> Dictionary:
     # IDs are strings because native JSON consumers cannot represent all int64s.
-    return {"path": str(game.get_path_to(node)), "instance_id": str(node.get_instance_id()), "game_generation": str(game.get_instance_id())}
+    var handle = {"path": str(game.get_path_to(node)), "instance_id": str(node.get_instance_id()), "game_generation": _generation(game)}
+    if run_id != "": handle.merge({"scope": "detached", "run_id": run_id})
+    return handle
 
 func _resolve(handle: Dictionary, game: Node) -> Node:
+    if _detached_handle(handle): return null
     if handle.get("game_generation") != str(game.get_instance_id()):
         return null
     var node = _path(game, handle.get("path"))
@@ -112,14 +125,24 @@ func _decode(value: Variant, type: int) -> Dictionary:
     return {"ok": true, "value": decoded} if encoded.ok else encoded
 
 func inspect(args: Dictionary) -> Dictionary:
+    var result = _inspect(args)
+    result.scope = "live" if run_id == "" else "detached"
+    if run_id != "": result.run_id = run_id
+    return result
+
+func _inspect(args: Dictionary) -> Dictionary:
     for key in args:
         if key not in ["root", "depth", "limit", "offset", "discover_properties", "class", "script", "group", "properties"]:
             return _error("Unknown argument '%s'. Use 'root' to select the inspection root; 'path' is not an inspection argument." % str(key).left(64))
     var game = _game()
     if game == null: return _error("No active game.")
-    var generation = str(game.get_instance_id())
-    var origin = _path(game, args.get("root", "."))
-    if origin == null: return _error("Root must be a node path beneath active_game, without parent traversal or subnames.")
+    var generation = _generation(game)
+    var root_path = args.get("root", ".")
+    if not _valid_path(root_path):
+        return {"ok": false, "reason": "invalid_root", "error": "Root must be a relative game node path, without parent traversal or subnames."}
+    var origin = _path(game, root_path)
+    if origin == null:
+        return {"ok": false, "reason": "root_not_found", "error": "Root '%s' was not found in %s. Paths are relative to that game's root ('.')." % [root_path, "the live game" if run_id == "" else "detached run " + run_id]}
     var discover = args.get("discover_properties", false)
     if not discover is bool: return _error("Expected discover_properties boolean.")
     var depth = args.get("depth", 0 if discover else 3)
@@ -217,6 +240,8 @@ func set_properties(args: Dictionary) -> Dictionary:
         return _error("Expected 1..100 explicit target handles and 1..16 property values.")
     var seen = {}
     for handle in targets:
+        if handle is Dictionary and _detached_handle(handle):
+            return {"ok": false, "reason": "detached_handle", "writes_started": false, "error": "Detached inspection handles cannot mutate the live game. Inspect the live game without run_id."}
         if not handle is Dictionary or handle.size() != 3 or not handle.get("instance_id") is String or not handle.get("game_generation") is String or not handle.get("path") is String or seen.has(handle.instance_id):
             return _error("Expected unique inspection handles with string path, instance_id and game_generation.")
         if handle.path.length() > MAX_STRING or handle.instance_id.length() > 20 or handle.game_generation.length() > 20:

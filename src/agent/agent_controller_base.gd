@@ -292,13 +292,13 @@ func _dispatch_host_request(request: Dictionary, directory: String) -> void:
     elif command == "remove_runtime_child":
         _runtime_child_request(request, directory, operation_id)
         return
-    elif command in ["read_runtime_log", "inspect_runtime", "set_properties", "inspect_attachment"]:
+    elif command in ["read_runtime_log", "set_properties", "inspect_attachment"]:
         result = tools.execute(command, request.get("args", {}))
     elif command in ["git_status", "git_diff", "git_log", "git_commit", "delete_path", "move_path"]:
         result = tools.execute(command, request.get("args", {}))
-    elif command in ["start_test_game", "read_test_log", "stop_test_game", "test_game_action"]:
+    elif command in ["start_test_game", "read_test_log", "stop_test_game", "test_game_action", "inspect_runtime"]:
         result = tools.execute(command, request.get("args", {}))
-        if command == "test_game_action" and result.get("pending", false) and request.get("args", {}).get("action") != "poll":
+        if command in ["test_game_action", "inspect_runtime"] and result.get("pending", false) and request.get("args", {}).get("action") != "poll":
             pending_test_commands.append({"request": request, "run_id": request.get("args", {}).get("run_id", ""), "command": command, "action_id": result.action_id, "deadline": Time.get_ticks_msec() + 300, "bridge_dir": directory, "operation_id": operation_id})
             return
         if result.get("ok", false) and command == "stop_test_game" and result.get("state", "") != "exited":
@@ -356,10 +356,11 @@ func _service_pending_test_commands() -> void:
         var result: Dictionary = {}
         if pending.command == "stop_test_game" and state.get("state") == "exited":
             result = tools.execute("stop_test_game", {"run_id": pending.run_id})
-        if pending.command == "test_game_action":
+        if pending.command in ["test_game_action", "inspect_runtime"]:
             var polled = tools.tests().request_action(pending.run_id, {"action": "poll", "action_id": pending.action_id})
             if not polled.get("pending", false) or Time.get_ticks_msec() >= pending.deadline:
                 result = polled
+                if pending.command == "inspect_runtime": result.merge({"scope": "detached", "run_id": pending.run_id}, true)
         if not result.is_empty():
             pending_test_commands.erase(pending)
             _write_host_response(bridge_dir, pending.request, result)

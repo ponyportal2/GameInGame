@@ -107,8 +107,15 @@ func perform_action(args: Dictionary) -> void:
     if node != null and node != game and not game.is_ancestor_of(node):
         node = null
     match str(args.get("action", "")):
+        "inspect_runtime":
+            result = preload("res://src/core/runtime_properties.gd").new(runner, str(config.run_id)).inspect(args.get("query", {}))
         "inspect":
-            if node != null:
+            var inspector = preload("res://src/core/runtime_properties.gd").new(runner)
+            var path = args.get("path", ".")
+            if path == "": path = "." # Legacy empty path selects the root.
+            if not inspector._valid_path(path):
+                result = {"ok": false, "reason": "invalid_root", "error": "Path must be game-relative, without parent traversal or subnames."}
+            elif node != null:
                 var description = _describe_node(node, game, clampi(int(args.get("depth", 1)), 0, 4), [100])
                 var properties: Dictionary = {}
                 for property in args.get("properties", []).slice(0, 32):
@@ -116,7 +123,7 @@ func perform_action(args: Dictionary) -> void:
                 result = description
                 result.merge({"ok": true, "properties": properties})
             else:
-                result = {"ok": false, "error": "Game node not found."}
+                result = {"ok": false, "reason": "root_not_found", "error": "Game node not found in detached run " + str(config.run_id) + "."}
         "call":
             if node != null and node.has_method(str(args.get("method", ""))):
                 result = {"ok": true, "value": str(node.callv(str(args.method), args.get("arguments", []))).left(4000)}
@@ -164,6 +171,8 @@ func perform_action(args: Dictionary) -> void:
         result.requested_path = str(args.get("path", ""))
         result.available_children = _describe_node(game, game, 1, [10]).get("children", []) if game != null else []
     result.action_id = args.get("action_id", "")
+    result.scope = "detached"
+    result.run_id = str(config.run_id)
     result.pending = false
     JsonStore.write_dict(config.control_dir.path_join("action-result.json"), result)
 
