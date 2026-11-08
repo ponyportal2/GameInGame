@@ -102,6 +102,8 @@ jobs:
             GameSmith-Windows/runtime/
           cp THIRD_PARTY_NOTICES.md GameSmith-Windows/
           cp .ci-godot/README.txt GameSmith-Windows/README.txt
+          mkdir -p GameSmith-Windows/licenses/voice
+          cp -a tools/voice/licenses/. GameSmith-Windows/licenses/voice/
           python3 tools/testing/verify_windows_package.py
           sha256sum GameSmith-Windows/GameSmith.exe GameSmith-Windows/GameSmith.pck GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe
 

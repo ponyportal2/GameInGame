@@ -71,7 +71,7 @@ func clear_draft() -> void:
 func install_recognition() -> void:
     if state != "idle": return
     _stop_worker()
-    if not _prepare_runtime(): return
+    if not _prepare_runtime(true): return
     if not _prepare_directory(): return
     state = "installing"
     status = "Installing local recognition…"
@@ -248,14 +248,16 @@ func _runtime_directory() -> String:
 func _python() -> String:
     return _runtime_directory().path_join("python.exe")
 
-func _prepare_runtime() -> bool:
+func _prepare_runtime(refresh: bool = false) -> bool:
     if OS.get_name() != "Windows" or not OS.has_feature("x86_64"):
         _error("Included voice recognition currently requires Windows x64.")
         return false
     var bundle = _bundle()
     var destination = _runtime_directory()
     var ready = destination.path_join("ready.json")
-    if JsonStore.read_dict(ready) == bundle and FileAccess.file_exists(_python()) and FileAccess.file_exists(destination.path_join("pip.whl")):
+    # Normal use can reuse extracted files. Explicit Install restores every
+    # bundled file even when a damaged cached copy still has a valid marker.
+    if not refresh and JsonStore.read_dict(ready) == bundle and FileAccess.file_exists(_python()) and FileAccess.file_exists(destination.path_join("pip.whl")):
         return true
     if DirAccess.make_dir_recursive_absolute(destination) != OK:
         _error("Could not create the private voice runtime directory.")
@@ -264,6 +266,10 @@ func _prepare_runtime() -> bool:
     var pip_path = "res://tools/voice/" + str(bundle.pip.file)
     if FileAccess.get_sha256(archive_path) != bundle.python.sha256 or FileAccess.get_sha256(pip_path) != bundle.pip.sha256:
         _error("Included voice runtime is damaged. Reinstall GameSmith.")
+        return false
+    # A failed refresh must not leave an old readiness claim for partial files.
+    if FileAccess.file_exists(ready) and DirAccess.remove_absolute(ready) != OK:
+        _error("Could not refresh the private voice runtime. Check file access and antivirus restrictions.")
         return false
     var archive = ZIPReader.new()
     if archive.open(archive_path) != OK:

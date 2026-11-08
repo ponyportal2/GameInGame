@@ -6,8 +6,9 @@ harness. It is disabled by default.
 1. On Windows x64, open **Settings → Voice** and click **Install local recognition**.
    Python is included; no system Python installation or executable selection is
    needed. This downloads recognition packages into a private directory without
-   changing global packages or harness settings. Clicking Install again replaces
-   those packages and keeps downloaded models. Existing users of the previous
+   changing global packages or harness settings. Clicking Install again repairs
+   the included Python/package installer from verified bundled archives and
+   replaces recognition packages while keeping downloaded models. Existing users of the previous
    system-Python version should click Install once to migrate.
 2. Enable microphone shortcuts, choose your microphone/model/language, and save.
 3. While playing, press **F8** to start recording and **F8** again to transcribe.

@@ -4,9 +4,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
+import textwrap
 import time
 import tempfile
 from types import SimpleNamespace
@@ -143,6 +145,41 @@ class RecognitionTests(unittest.TestCase):
 
 
 class BundledRuntimeTests(unittest.TestCase):
+    def test_clean_windows_workflow_assembly_includes_every_canonical_license(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/build-windows-package.yml").read_text()
+        step = workflow.split("- name: Assemble self-contained Windows folder\n", 1)[1].split("\n      - name:", 1)[0]
+        script = textwrap.dedent(step.split("run: |\n", 1)[1])
+        # Execute the actual workflow assembly, not a second copy of its logic.
+        # Git Bash is used on Windows; the CI production step runs Bash on Linux.
+        bash = str(Path(shutil.which("git")).resolve().parents[1] / "bin/bash.exe") if os.name == "nt" else shutil.which("bash")
+        self.assertTrue(bash and Path(bash).is_file(), "Bash is required for the package assembly regression")
+        with tempfile.TemporaryDirectory() as temporary:
+            staging = Path(temporary)
+            (staging / "GameSmith-Windows").mkdir()
+            (staging / "GameSmith-Windows/README.txt").write_text("fixture readme")
+            (staging / "THIRD_PARTY_NOTICES.md").write_text("fixture notices")
+            (staging / ".ci-godot/windows").mkdir(parents=True)
+            (staging / ".ci-godot/README.txt").write_text("fixture readme")
+            (staging / ".ci-godot/GameSmith.exe").write_bytes(b"MZ fixture launcher")
+            (staging / ".ci-godot/GameSmith.pck").write_bytes(b"fixture pack")
+            with (staging / ".ci-godot/windows/Godot_v4.7.2-stable_win64.exe").open("wb") as runtime:
+                runtime.write(b"MZ")
+                runtime.truncate(100 * 1024 * 1024)
+            (staging / "tools/testing").mkdir(parents=True)
+            shutil.copyfile(root / "tools/testing/verify_windows_package.py", staging / "tools/testing/verify_windows_package.py")
+            shutil.copytree(root / "tools/voice/licenses", staging / "tools/voice/licenses")
+            environment = dict(os.environ, TEST_PYTHON=sys.executable.replace("\\", "/"))
+            run = subprocess.run([bash, "--noprofile", "--norc", "-c",
+                                  'python3() { "$TEST_PYTHON" "$@"; }\n' + script],
+                                 cwd=staging, env=environment, capture_output=True, text=True, timeout=20)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            canonical = staging / "tools/voice/licenses"
+            packaged = staging / "GameSmith-Windows/licenses/voice"
+            expected = {file.relative_to(canonical): file.read_bytes() for file in canonical.rglob("*") if file.is_file()}
+            actual = {file.relative_to(packaged): file.read_bytes() for file in packaged.rglob("*") if file.is_file()}
+            self.assertEqual(actual, expected)
+
     def test_bundled_archives_match_manifest_and_include_licenses(self):
         assets = Path(__file__).resolve().parents[1] / "tools/voice"
         manifest = json.loads((assets / "bundled.json").read_text())

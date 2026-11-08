@@ -10,15 +10,18 @@ Godot verifies the archives before extracting them into the versioned
 On explicit Install, pip runs directly from its wheel with `--isolated` and
 installs binary wheels into `user://host/voice/environment` using `--target`.
 This does not need pip/venv support in the embedded distribution, a system Python,
-or changes to user Python configuration. Explicit reinstall replaces packages
-only; models remain in the separate `models` directory.
+or changes to user Python configuration. Explicit Install always restores the
+included interpreter and pip from verified archives before replacing recognition
+packages, repairing damaged extracted files. Models remain in the separate
+`models` directory.
 
 To update, download official artifacts using the manifest URLs, update their
 versions/hashes, and recopy all upstream licenses from the archives. Python's
 complete `LICENSE.txt` (including bundled-component notices) is retained as
 `licenses/PYTHON-LICENSE.txt`. pip's license and vendored license/provenance files
 retain their archive paths under `licenses/pip/`. The Windows distribution has
-identical copies under `GameSmith-Windows/licenses/voice/`. Update both top-level
+identical copies under `GameSmith-Windows/licenses/voice/`; clean CI assembly
+copies this canonical license directory into the distribution. Update both top-level
 third-party notices and run source/package/runtime checks before delivery.
 
 Recognition dependencies are installed on demand; their wheel metadata/licenses

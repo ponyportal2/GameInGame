@@ -2,6 +2,14 @@ extends SceneTree
 
 var failed := 0
 
+class RepairVoice:
+    extends "res://src/core/voice_input.gd"
+
+    # Exercise the public Install path through real extraction, stopping before
+    # package installation so corruption recovery needs no network or models.
+    func _prepare_directory() -> bool:
+        return false
+
 func _init() -> void: call_deferred("run")
 
 func check(value: bool, message: String) -> void:
@@ -29,6 +37,33 @@ func run() -> void:
         quit(1)
         return
     check(voice._prepare_runtime(), "prepared runtime can be reused")
+    var repair = RepairVoice.new()
+    root.add_child(repair)
+    var model_path = ProjectSettings.globalize_path(voice.ROOT.path_join("models/repair-sentinel"))
+    DirAccess.make_dir_recursive_absolute(model_path.get_base_dir())
+    var model = FileAccess.open(model_path, FileAccess.WRITE)
+    model.store_string("keep downloaded model")
+    model.close()
+    for file in ["python313.dll", "pip.whl"]:
+        var damaged_path = voice._runtime_directory().path_join(file)
+        var original = FileAccess.get_file_as_bytes(damaged_path)
+        if file.ends_with(".dll"):
+            DirAccess.remove_absolute(damaged_path)
+        else:
+            var damaged = FileAccess.open(damaged_path, FileAccess.WRITE)
+            damaged.store_string("corrupt wheel")
+            damaged.close()
+        repair.install_recognition()
+        var restored = FileAccess.get_file_as_bytes(damaged_path) == original
+        check(restored, "explicit Install restores damaged " + file + " despite a valid ready marker")
+        # Keep the rest of this runner usable on the red regression revision.
+        if not restored:
+            var restore = FileAccess.open(damaged_path, FileAccess.WRITE)
+            restore.store_buffer(original)
+            restore.close()
+        check(FileAccess.get_file_as_string(model_path) == "keep downloaded model", "runtime repair preserves cached models for " + file)
+    DirAccess.remove_absolute(model_path)
+    repair.queue_free()
     var marker = voice.ROOT.path_join("installed.json")
     var previous = JsonStore.read_dict(marker)
     JsonStore.write_dict(marker, {"packages":["legacy system-Python installation"]})
