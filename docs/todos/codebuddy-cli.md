@@ -1,0 +1,24 @@
+# CodeBuddy CLI harness
+
+- [x] Regress inventory, native tool policy, streaming, session resume, Stop and recovery before implementation.
+- [x] Add CodeBuddy ACP adapter using the shipped assembly and bounded GameSmith MCP tools.
+- [x] Exercise host settings, consent, session reset and deterministic lifecycle.
+- [x] Check installed CodeBuddy 2.181.0 against a local deterministic provider.
+- [x] Rebuild and verify Windows package and launcher; commit and push.
+
+Provider/model/reasoning/compaction remain CodeBuddy-owned. No global configuration changes, native shell access, extra permission framework, or bundled CLI.
+
+## Implementation and evidence
+
+- TDD: the initial `node --test tests/codebuddy.test.mjs` failed on the missing production adapter before implementation. Fixtures then exercise the assembled production worker/server/MCP, including failed admission, persisted sessions, exact permission metadata, cancellation and mismatched resume identities.
+- Focused source run: **6/6 entries passed**, 98.4 seconds (`%TEMP%/gamesmith-verify-ACCcYZ/results.json`): both new Node files, CodeBuddy lifecycle, all-harness prompt contracts and canonical assembly. The lifecycle covers explicit reload consent, detached testing, native context, Stop/forced retirement, stale-session reset and automatic reload approval. Native-settings assertions were added afterward and are included in final validation.
+- Installed CLI discovery: `codebuddy --version` reports **2.181.0**. Direct production ACP/MCP acceptance performed actual file writes/reads, rejected outside paths and resumed the saved native session against a local streaming provider.
+- That installed check caught a real policy mismatch: `--tools ''` suppresses MCP tools too, and plain MCP names remain deferred by default. Production now uses exact `NoDefer(mcp__gamesmith__...)` entries, CLI tool mode and non-deferred MCP metadata. Actual inference requests must contain exactly the 25 GameSmith tools, excluding native shell/file/delegation tools and external MCP servers.
+- Installed acceptance through the verifier: **2/2 entries passed**, 22.9 seconds (`%TEMP%/gamesmith-verify-YjRTuf/results.json`). It additionally cancels a genuinely stalled native provider stream and resumes the same saved session afterward. No paid provider/model calls or global settings edits.
+- Earlier acceptance runs exposed verifier dispatch and test-provider classification errors (a CodeBuddy background conversation-summary request was incorrectly treated as a gameplay inference request). Those runs failed; explicit Node dispatch and identification of tool-free title/summary requests fixed the acceptance test. They are not counted as passing evidence.
+
+- Broad affected run (the shared inventory/verifier changes select the exhaustive deterministic surface): **115 selected / 117 entries**, 1,359.6 seconds (`%TEMP%/gamesmith-verify-V5JzeZ/results.json`). **114 passed, 3 failed**, with no blocked/interrupted/reused/skipped entries. All existing host lifecycle/recovery suites, new CodeBuddy recovery, both new Node suites, package contents/structure and launcher unit tests passed. Failures were an existing OpenCode Stop timing assertion, a stale recovery-count assertion, and the new settings test comparing whole dictionaries across JSON's integer-to-float normalization.
+- Corrected the recovery count to include CodeBuddy and compare each preserved settings value individually, producing named assertions rather than an ambiguous whole-dictionary comparison. No production behavior changed. The failed-only rerun with a fresh package build passed **5/5 entries / 87 assertions**, 79.4 seconds (`%TEMP%/gamesmith-verify-VEt10h/results.json`). OpenCode passed unchanged; CodeBuddy lifecycle passed **52/52**. This is failed-only follow-up evidence, not a claim that the original broad run was green.
+- Direct packaged CodeBuddy lifecycle: **52/52 assertions passed**, exit zero, no fatal script errors. Executed the rebuilt PCK from an isolated temporary directory with its own application data and a copied external fixture (`%TEMP%/gamesmith-codebuddy-package-f7vZ4B/results.json`). Tested PCK SHA-256: `89ea83b090453eb8d40d308604e82fa0715bb106fdd205fa4dc78b10b89ff0e0`.
+- Windows launcher rebuilt with `go build -trimpath -ldflags '-s -w -H=windowsgui'`; launcher unit tests passed in the broad run. No GitHub CI or paid-provider inference was dispatched.
+- After removing one trailing blank line, rebuilt and checked the final package again: **6/6 entries passed**, 66.2 seconds, both CodeBuddy Node suites plus package contents/structure (`%TEMP%/gamesmith-verify-DxCctk/results.json`). Final shipped PCK SHA-256: `d59e0a2f186fef9461b047ff1599e10bb30ce701dea2b90718862e518e727839`. The earlier packaged lifecycle hash above identifies its exact prior bytes; the only subsequent executable-source edit was that whitespace cleanup.

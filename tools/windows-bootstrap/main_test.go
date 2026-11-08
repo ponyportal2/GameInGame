@@ -29,7 +29,7 @@ func TestMissingHarnessInstallGuidance(t *testing.T) {
 func TestEitherHarnessAvailable(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 	t.Setenv("USERPROFILE", t.TempDir())
-	for _, available := range []string{"pi", "command-code", "opencode", "codex", "cline", "cursor-agent", "grok", "agy", "kimi", "kiro-cli", "kilo", "copilot", "crush", "omp"} {
+	for _, available := range []string{"pi", "command-code", "opencode", "codex", "cline", "cursor-agent", "grok", "agy", "kimi", "kiro-cli", "kilo", "copilot", "crush", "omp", "codebuddy"} {
 		lookup := func(name string) (string, error) {
 			if name == available {
 				return name, nil

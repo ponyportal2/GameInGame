@@ -3,7 +3,7 @@
 [Voice input](docs/voice-input.md): optional local Whisper dictation. F8 records/stops;
 F9 sends the transcript while gameplay continues. Enable and install it in Settings → Voice.
 
-GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, **Cline**, **Cursor**, **Grok Build**, **AGY (experimental)**, **Kimi Code**, **Kiro CLI**, **Kilo CLI**, **Copilot CLI**, **Crush CLI**, or **OMP** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
+GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, **Cline**, **Cursor**, **Grok Build**, **AGY (experimental)**, **Kimi Code**, **Kiro CLI**, **Kilo CLI**, **Copilot CLI**, **Crush CLI**, **OMP**, or **CodeBuddy CLI** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
 
 For an existing game, open **Settings → This game → Coding harness**, choose an installed harness, then **Save**. Wait for the current request to finish or Stop it first. Switching closes the previous backend while preserving the running game, workspace, Git history, readable chat, and each harness's separate native session. Switching back resumes that harness's session; native agent histories are not merged. Reopen settings after switching to see the selected harness's provider/model/compaction controls.
 
@@ -87,6 +87,16 @@ The adapter uses native [persistent stream-JSON](https://antigravity.google/docs
 GameSmith prepares a private `.agents/agents/gamesmith.md` with its game instructions and MCP server, plus a [PreToolUse hook](https://antigravity.google/docs/hooks). The hook checks the current conversation, exact `call_mcp_tool` identity, `ServerName=gamesmith`, and a known `ToolName`; native filesystem/shell/browser/delegation and external MCP requests are denied by that policy. The MCP adapter separately rejects idle calls and enforces the shared workspace boundary. Reload waits for ordinary host approval (or the player's automatic approval preference). Global native configuration is not edited. **Actual native hook execution and model-driven MCP calls remain unverified** because inference is unavailable; this is not a claim of tested native tool isolation.
 
 Verification: deterministic Node and Godot fixtures cover streaming/final reconciliation, MCP edits/headless tests/reload approval, process reuse, explicit resume, ownership, reset, failures and Stop. Installed AGY successfully discovered the GameSmith MCP tools and resumed the same conversation ID, then returned `FAILED_PRECONDITION: User location is not supported for the API use` on both attempts. **No successful model invocation or live generated-game acceptance has been performed.** Run `node --test tests/agy.test.mjs tests/agy-server.test.mjs` and `node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-stable_win64.exe agy_lifecycle_runner.gd` for fixture verification.
+
+## CodeBuddy CLI
+
+Choose **CodeBuddy CLI** when creating a game or under **Settings > This game > Coding harness**. The integration is tested with the installed **CodeBuddy 2.181.0** (`npm install -g @tencent-ai/codebuddy-code@2.181.0`). Discovery uses `codebuddy` on PATH; `GAMESMITH_CODEBUDDY_BIN` selects an explicit executable or JavaScript wrapper. Node.js is required. Configure authentication, provider, model and reasoning in CodeBuddy itself; GameSmith leaves those native settings and compaction alone.
+
+The adapter uses CodeBuddy's ACP stdio transport with an exact, non-deferred GameSmith MCP tool allowlist. Native shell, file tools, delegation and external MCP servers are excluded. File tools operate on the game workspace even though the native CLI runs in a private metadata directory. Reloads and injected live child code retain their existing player approval controls. This is cooperative tool policy, not a sandbox for generated game code.
+
+Ordinary turns reuse the backend and explicit native conversation. Reopening and returning after Stop resume the ID in `codebuddy/session.json`; `codebuddy/backend.json` records the selected native model. Stop cancels the native prompt, then retires its process tree before resuming in a fresh backend. If a saved session cannot resume, the reference remains intact; **Settings > This game > Start new CodeBuddy session** confirms and archives only that reference, retaining files, readable chat and CodeBuddy's native history.
+
+Deterministic coverage: `node tools/testing/verify.mjs --suite codebuddy --output summary`. Installed CLI acceptance: `node tools/testing/verify.mjs --test acceptance:codebuddy --output summary`. The latter uses a localhost provider, checks the actual exposed tool list, performs real MCP writes/reads and outside-path rejection, and exercises resume, Stop and continuation without paid model calls. See [verification evidence](docs/todos/codebuddy-cli.md).
 
 ## Kimi Code CLI
 
@@ -196,7 +206,7 @@ Pi games expect a global `pi` executable. Install the pinned build with:
 npm install -g @earendil-works/pi-coding-agent@1.4.0
 ```
 
-On Windows, `GameSmith.exe` checks for Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo, Copilot CLI, Crush CLI, or OMP at startup, including their `GAMESMITH_*_BIN` overrides and the standard Windows Cursor/Grok/AGY/Kimi/Kiro installations. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
+On Windows, `GameSmith.exe` checks for Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY, Kimi Code, Kiro CLI, Kilo, Copilot CLI, Crush CLI, OMP, or CodeBuddy CLI at startup, including their `GAMESMITH_*_BIN` overrides and the standard Windows Cursor/Grok/AGY/Kimi/Kiro installations. If none is installed, it shows a non-blocking installation warning and still opens GameSmith. Restart after installing a harness. If Pi is installed outside `PATH`, set `GAMESMITH_PI_BIN` to the executable path (for npm on Windows, typically a `pi.cmd` shim).
 
 For development on Linux:
 

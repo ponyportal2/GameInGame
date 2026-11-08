@@ -48,7 +48,7 @@ func run() -> void:
     for key in before:
         check(after.get(key) == before[key], "command-code preserves setting " + key)
     app._show_library()
-    check(app.harness_option.item_count == 14, "new games offer all fourteen harnesses, including OMP")
+    check(app.harness_option.item_count == 15, "new games offer all fifteen harnesses, including CodeBuddy")
     if app.harness_option.item_count >= 3:
         app.name_edit.text = "OpenCode fixture"
         app.harness_option.select(2)

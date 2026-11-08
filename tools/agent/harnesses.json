@@ -903,6 +903,72 @@
       "host_runners": [
         "tests/omp_lifecycle_runner.gd"
       ]
+    },
+    {
+      "id": "codebuddy",
+      "label": "CodeBuddy",
+      "selector_label": "CodeBuddy CLI",
+      "controller": "src/agent/codebuddy_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_CODEBUDDY_BIN",
+        "command": "codebuddy"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "codebuddy/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "codebuddy/server.mjs"
+        ],
+        [
+          "protocol.mjs",
+          "codebuddy/protocol.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "kimi/mcp.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
+        ],
+        [
+          "acp-updates.mjs",
+          "kimi/protocol.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/codebuddy.test.mjs",
+        "tests/codebuddy-server.test.mjs"
+      ],
+      "host_runners": [
+        "tests/codebuddy_lifecycle_runner.gd"
+      ]
     }
   ]
 }

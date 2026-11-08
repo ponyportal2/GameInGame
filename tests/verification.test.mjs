@@ -222,7 +222,7 @@ test('fingerprints invalidate content, runtime, suite and environment changes',t
 });
 test('inventory paths and launcher stay synchronized; affected mapping is conservative',()=>{
  const catalog=JSON.parse(readFileSync('tools/agent/harnesses.json'));
- assert.equal(new Set(inventory(root).map(h=>h.id)).size,14);
+ assert.equal(new Set(inventory(root).map(h=>h.id)).size,15);
  for(const h of catalog.harnesses){
   assert(existsSync(h.controller));assert(new Set(h.modules.map(p=>p[0])).size===h.modules.length);
   for(const [target,source] of h.modules){assert(!target.includes('..')&&!target.includes('/'));assert(existsSync('tools/'+source));for(const match of readFileSync('tools/'+source,'utf8').matchAll(/(?:from\s*|import\s*\()\s*['"]\.\/([^'"]+)['"]/g))assert(h.modules.some(([name])=>name===match[1]),h.id+' runtime missing '+match[1]);}
@@ -243,6 +243,7 @@ test('inventory paths and launcher stay synchronized; affected mapping is conser
  for(const parent of ['opencode','cline'])assert.equal(selectTests(root,'affected',['src/agent/'+parent+'_agent_controller.gd']).length,selectTests(root,'all').length,'inherited '+parent+' controller needs broad coverage');
  assert.equal(resolveTest(root,'host:opencode_stop').file,'tests/opencode_stop_runner.gd');
  assert.equal(resolveTest(root,'acceptance:windowed').phase,'acceptance');
+ assert.equal(resolveTest(root,'acceptance:codebuddy').file,'tools/testing/verify-codebuddy.mjs');
  assert.throws(()=>resolveTest(root,'host:codex_integration'),/Unknown test/);
  assert.throws(()=>resolveTest(root,'host:../outside'),/Unknown test/);
 });
@@ -267,7 +268,7 @@ test('harness coverage defaults to Pi and expands only on an explicit all reques
  // explicit suite runs only its own scenario, while an edit to the shared
  // source still selects every scenario.
  assert.deepEqual(selectTests(root,'copilot').filter(t=>t.id.startsWith('host:native_recovery')).map(t=>t.id),['host:native_recovery_copilot']);
- assert.equal(selectTests(root,'affected',['tests/native_recovery_runner.gd']).filter(t=>t.id.startsWith('host:native_recovery')).length,13);
+ assert.equal(selectTests(root,'affected',['tests/native_recovery_runner.gd']).filter(t=>t.id.startsWith('host:native_recovery')).length,14);
  assert.deepEqual(resolveTest(root,'host:native_recovery_copilot').args,['copilot']);
  assert(ids('release').has('host:copilot_lifecycle'),'release remains the comprehensive gate');
  assert([...full].some(id=>!core.has(id)));

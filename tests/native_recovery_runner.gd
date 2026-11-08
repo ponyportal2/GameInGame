@@ -1,7 +1,7 @@
 extends SceneTree
 
 # Canonical scenario order. Entries are selected by harness id, not by position.
-const HARNESSES = ["command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp"]
+const HARNESSES = ["command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp", "codebuddy"]
 
 var failures := 0
 func _init() -> void: call_deferred("run")
@@ -45,7 +45,7 @@ func run() -> void:
         app._create_game()
         # Exercise real IPC/retirement/resume while avoiding 8 seconds per fixture.
         app.agent.recovery_delays = [0.02, 0.02, 0.02, 0.02]
-        if harness in ["cline", "cursor", "grok-build", "kimi", "kiro", "copilot"]:
+        if harness in ["cline", "cursor", "grok-build", "kimi", "kiro", "copilot", "codebuddy"]:
             var failure_env = "GAMESMITH_" + harness.replace("-", "_").to_upper() + "_FAIL_METHOD"
             var first_session_file = app.metadata.game_meta_dir(app.current_game).path_join(harness + "/session.json")
             var observed: Array = []

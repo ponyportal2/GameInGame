@@ -17,7 +17,7 @@ func _init() -> void:
                 quit(1)
                 return
         print("PASS: canonical runtime assembled " + str(harness.id))
-    if ids.size() != 14 or Inventory.assemble_runtime("unknown", "user://unknown").ok:
+    if ids.size() != 15 or Inventory.assemble_runtime("unknown", "user://unknown").ok:
         push_error("FAIL: inventory coverage/unknown harness")
         quit(1)
         return
