@@ -55,7 +55,7 @@ async function prompt(request,operation){
   try {
     await ready();if(operation.cancelled)return;
     operation.accepted=true;state(true);emit({type:'response',id:request.id,success:true});
-    operation.prompt=server.request('session/prompt',{sessionId:session,prompt:[{type:'text',text:readFileSync(config.prompt_path,'utf8')+'\n\nPlayer request:\n'+request.message}]});
+    operation.prompt=server.request('session/prompt',{sessionId:session,prompt:[{type:'text',text:request.message}]});
     const result=await operation.prompt;
     // A matching prompt response confirms this request, unlike unkeyed updates.
     operation.requestPreserved=true;

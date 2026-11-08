@@ -55,6 +55,21 @@ test('native launch restricts tools without changing native model configuration'
  assert.equal((await f.until(r=>r.type==='context')).tokens,425);
 });
 
+test('each ACP user turn contains only its request, including recovery on resume',{timeout:15000},async t=>{
+ const f=fixture(t);f.send({type:'prompt',id:'one',message:'hello'});assert((await f.until(r=>r.type==='complete')).ok);
+ f.send({type:'prompt',id:'two',message:'follow up'});
+ await f.until(r=>r.id==='two');
+ while(f.records.filter(r=>r.type==='complete').length<2)await new Promise(r=>setTimeout(r,10));
+ const prompts=readFileSync(join(f.directory,'native-workspace','.codebuddy-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse).filter(r=>r.method==='session/prompt');
+ assert.deepEqual(prompts.map(r=>r.params.prompt),['hello','follow up'].map(text=>[{type:'text',text}]));
+ const resumed=fixture(t,{},'codebuddy-fixture-session');
+ const recovery='Recover the unfinished request.\nKeep existing changes.';
+ resumed.send({type:'prompt',id:'recovery',message:recovery});assert((await resumed.until(r=>r.type==='complete')).ok);
+ const requests=readFileSync(join(resumed.directory,'native-workspace','.codebuddy-fixture-requests.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+ assert(requests.some(r=>r.method==='session/load'));
+ assert.deepEqual(requests.find(r=>r.method==='session/prompt').params.prompt,[{type:'text',text:recovery}]);
+});
+
 test('resume cannot silently substitute another native conversation',{timeout:15000},async t=>{
  const f=fixture(t,{GAMESMITH_CODEBUDDY_DIFFERENT_SESSION:'1'},'codebuddy-fixture-session');
  f.send({type:'prompt',id:'one',message:'hello'});const r=await f.until(r=>r.type==='response');

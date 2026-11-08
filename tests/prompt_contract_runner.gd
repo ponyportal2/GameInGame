@@ -52,6 +52,8 @@ func run() -> void:
                 # This is the same virtual method production startup writes to prompt.md.
                 prompt = controller._native_prompt()
             var label = str(entry.id) + " blender=" + str(blender_enabled)
+            if entry.id == "codebuddy":
+                check("Use only tools supplied by the gamesmith MCP server; do not use native or external tools." in prompt, label + " uses the dynamic MCP schemas without a partial tool allowlist")
             check("verify the actual before-to-after transition" in prompt and "before editing defaults" in prompt, label + " preserves transition test conditions")
             check("already-existing objects" in prompt and "future spawns" in prompt, label + " distinguishes existing-object and spawn evidence")
             check("prepare needed observability up front" in prompt and "Reuse the same running test" in prompt and "immediately before input" in prompt, label + " plans evidence and reuses detached tests")

@@ -29,7 +29,7 @@ async function connectMcp(server){
 }
 async function run(r){
   try {
-    const message=r.params.prompt.at(-1).text.split('Player request:\n').at(-1);
+    const message=r.params.prompt.at(-1).text;
     update({sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Fixture reasoning'}});
     if(message==='wait' || message==='stuck-stop')return;
     if(message==='provider-error')throw new Error('Fixture provider error');

@@ -35,6 +35,10 @@ test('ACP launch disables builtins and external MCP without overriding native mo
  assert.equal(args[args.indexOf('--tool-mode')+1],'cli');
  assert(args.includes('--strict-mcp-config'));assert.equal(args[args.indexOf('--mcp-config')+1],'{"mcpServers":{}}');
  assert.equal(args[args.indexOf('--permission-mode')+1],'default');
+ assert.equal(args[args.indexOf('--setting-sources')+1],'user');
+ assert(args.includes('--settings'),'Subprocess settings disable inherited hooks');
+ assert.deepEqual(JSON.parse(args[args.indexOf('--settings')+1]),{disableAllHooks:true,hooks:null});
+ assert.equal(args[args.indexOf('--append-system-prompt')+1],'GameSmith instructions');
  for(const flag of ['--model','--effort','--dangerously-skip-permissions','--continue','--resume-create-missing'])assert(!args.includes(flag));
 });
 

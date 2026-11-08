@@ -17,9 +17,12 @@ export function resolveExecutable(bin=process.env.GAMESMITH_CODEBUDDY_BIN || 'co
 }
 export function launchArgs(config){
   // Exact, non-deferred GameSmith tool registry; exclude native tools and other MCPs.
-  // Keep user auth/model settings, ignore workspace/local policy and MCP files.
+  // Keep native auth/model settings, but disable user hooks for this subprocess.
+  // 2.181.0's classic hook runner also needs hooks cleared ({} merges them).
+  // Workspace/local policy and MCP files remain excluded.
   return ['--acp','--tool-mode','cli','--tools',toolSpecs().map(t=>'NoDefer(mcp__gamesmith__'+t.name.slice(10)+')').join(','),'--strict-mcp-config','--mcp-config','{"mcpServers":{}}',
-    '--permission-mode','default','--setting-sources','user','--append-system-prompt',readFileSync(config.prompt_path,'utf8')];
+    '--permission-mode','default','--setting-sources','user','--settings','{"disableAllHooks":true,"hooks":null}',
+    '--append-system-prompt',readFileSync(config.prompt_path,'utf8')];
 }
 export class CodeBuddyServer {
   constructor(config,{onEvent=()=>{},onRequest=async()=>{throw new Error('Unsupported ACP request');},onExit=()=>{},onStderr=()=>{}}={}){
