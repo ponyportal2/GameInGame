@@ -2,6 +2,7 @@
 
 [Voice input](docs/voice-input.md): optional local Whisper dictation. F8 records/stops;
 F9 sends the transcript while gameplay continues. Enable and install it in Settings → Voice.
+Windows x64 includes a private Python runtime; recognition packages and models download on demand.
 
 GameSmith is a Godot 4.7 host for creating and iterating on small games by chatting with a coding agent. Every generated game lives in its own Git workspace. Choose **Pi**, **Command-code**, **OpenCode**, **Codex**, **Cline**, **Cursor**, **Grok Build**, **AGY (experimental)**, **Kimi Code**, **Kiro CLI**, **Kilo CLI**, **Copilot CLI**, **Crush CLI**, **OMP**, or **CodeBuddy CLI** when creating a game. The globally installed harness owns agent behavior; GameSmith owns the game library/UI, workspace boundary, Git milestones, Godot reload/verification, readable transcript, logs, and host policy controls. Existing games without a harness field continue using Pi.
 

@@ -348,9 +348,8 @@ func run() -> void:
     check(app.voice_settings.model.get_item_metadata(app.voice_settings.model.selected) == "base", "Voice settings expose default model")
     app.voice_settings.model.select(0)
     app.voice_settings.enabled.button_pressed = true
-    app.voice_settings.python.text = "custom-python"
     var saved = preload("res://src/ui/voice_ui.gd").values(app)
-    check(saved.voice_model == "tiny" and saved.voice_enabled and saved.voice_python == "custom-python", "Voice settings return chosen model and private-install Python")
+    check(saved.voice_model == "tiny" and saved.voice_enabled and not saved.has("voice_python") and not app.voice_settings.has("python"), "Voice settings use included Python without a system executable field")
     app.metadata.save_global_settings(saved)
     app.settings_dialog.hide()
     app._apply_voice_settings()

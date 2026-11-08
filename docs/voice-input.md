@@ -3,11 +3,12 @@
 Voice dictation uses local Whisper recognition, independently of the coding
 harness. It is disabled by default.
 
-1. Open **Settings → Voice**. Choose a Python executable (3.11 or 3.12 recommended)
-   and click **Install local recognition**. Installation creates a private Python
-   environment; it does not change global packages or harness settings. Clicking
-   Install again recreates that environment with the selected Python and keeps
-   downloaded models.
+1. On Windows x64, open **Settings → Voice** and click **Install local recognition**.
+   Python is included; no system Python installation or executable selection is
+   needed. This downloads recognition packages into a private directory without
+   changing global packages or harness settings. Clicking Install again replaces
+   those packages and keeps downloaded models. Existing users of the previous
+   system-Python version should click Install once to migrate.
 2. Enable microphone shortcuts, choose your microphone/model/language, and save.
 3. While playing, press **F8** to start recording and **F8** again to transcribe.
    The game keeps running. **Escape** cancels recording or pending transcription;
@@ -50,8 +51,12 @@ sent to the selected coding agent only when submitted.
 The environment, downloaded models, and temporary recordings live under
 `user://host/voice` (on Windows, normally
 `%APPDATA%/Godot/app_userdata/GameSmithHost/host/voice`). Temporary WAV files are
-removed after recognition or cancellation. No model weights or Python packages
-are bundled in the repository or Windows package.
+removed after recognition or cancellation. The Windows package includes pinned
+CPython 3.13.17 and pip 25.3; their licenses are listed in
+[the third-party notices](../THIRD_PARTY_NOTICES.md). Recognition dependencies and
+model weights download on demand; no model weights are included in the repository.
+The interpreter ignores global/user Python packages and environment configuration.
+Other platforms do not currently have an included voice runtime.
 
 This follows [Hermes's local faster-whisper approach](https://github.com/NousResearch/hermes-agent/blob/main/tools/transcription_tools.py).
 It is batch dictation, not streaming recognition, an always-listening assistant,

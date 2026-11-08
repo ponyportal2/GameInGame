@@ -623,7 +623,7 @@ func _send_picture_message() -> void:
     if not annotation_editor.visible: _send_chat()
 
 func _install_voice() -> void:
-    voice.install_recognition(str(voice_settings.python.text).strip_edges())
+    voice.install_recognition()
 
 func _voice_changed() -> void:
     if not is_instance_valid(voice_status): return

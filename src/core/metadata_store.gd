@@ -107,7 +107,6 @@ func global_settings() -> Dictionary:
         "voice_record_key": KEY_F8,
         "voice_send_key": KEY_F9,
         "voice_auto_send": false,
-        "voice_python": "python",
     })
 
 func save_global_settings(data: Dictionary) -> bool:

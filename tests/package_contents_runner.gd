@@ -43,6 +43,27 @@ func _run() -> void:
         push_error("FAIL: exported GameSmith.pck is missing local voice recognition")
         quit(1)
         return
+    for file in ["bundled.json", "python-3.13.17-embed-amd64.zip", "pip-25.3-py3-none-any.whl", "licenses/PYTHON-LICENSE.txt"]:
+        if not FileAccess.file_exists("res://tools/voice/" + file):
+            push_error("FAIL: packaged voice runtime is missing " + file)
+            quit(1)
+            return
+    if OS.get_name() == "Windows" and OS.has_feature("x86_64"):
+        var voice = preload("res://src/core/voice_input.gd").new()
+        if not voice._prepare_runtime():
+            push_error("FAIL: packaged voice runtime cannot be extracted")
+            voice.free()
+            quit(1)
+            return
+        var voice_output := []
+        var voice_code = OS.execute(voice._python(), ["-I", "-c", "import sys,ssl;print(sys.version.split()[0])"], voice_output, true)
+        var runtime_ok = voice_code == 0 and "".join(voice_output).strip_edges() == voice._bundle().python.version
+        voice.free()
+        if not runtime_ok:
+            push_error("FAIL: packaged voice interpreter cannot execute")
+            quit(1)
+            return
+        print("PASS: packaged voice runtime extracts and runs its included interpreter")
     for script in ["workspace_ui.gd", "settings_ui.gd", "theme_factory.gd", "annotation_canvas.gd", "annotation_editor.gd", "voice_ui.gd"]:
         if not ResourceLoader.exists("res://src/ui/" + script):
             push_error("FAIL: exported GameSmith.pck is missing " + script)

@@ -71,3 +71,28 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+## Included local voice runtime
+
+The Windows x64 distribution includes **CPython 3.13.17** (official embeddable
+package, unmodified), distributed under the Python Software Foundation License
+Version 2 and its accompanying license history and bundled-component notices.
+Copyright Python Software Foundation and the other copyright holders identified
+in the upstream license. The complete license, including third-party notices for
+included libraries, is retained in `tools/voice/licenses/PYTHON-LICENSE.txt` in the
+source tree and `licenses/voice/PYTHON-LICENSE.txt` in the Windows distribution.
+Source and release: https://www.python.org/downloads/release/python-31317/
+
+The distribution also includes **pip 25.3** (unmodified wheel), under the MIT
+license, Copyright The pip developers (see AUTHORS.txt in the wheel). pip vendors
+additional libraries under their own licenses. All license and vendoring notice
+files from the wheel are retained with their original paths under
+`tools/voice/licenses/pip/` in the source tree and `licenses/voice/pip/` in the
+Windows distribution. The wheel itself also retains its original notices.
+Source: https://github.com/pypa/pip/tree/25.3
+
+Exact artifact URLs and SHA-256 hashes are recorded in `tools/voice/bundled.json`
+(and within GameSmith.pck). Recognition packages and model weights are downloaded
+on demand rather than shipped; their licenses remain with those installed
+packages. No model weights are included in this distribution.

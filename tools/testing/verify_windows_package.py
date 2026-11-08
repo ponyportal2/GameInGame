@@ -11,6 +11,8 @@ required = {
     package / "runtime" / "Godot_v4.7.2-stable_win64.exe",
     package / "README.txt",
     package / "THIRD_PARTY_NOTICES.md",
+    package / "licenses/voice/PYTHON-LICENSE.txt",
+    package / "licenses/voice/pip/pip-25.3.dist-info/licenses/LICENSE.txt",
 }
 
 if not package.is_dir():

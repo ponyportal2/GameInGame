@@ -62,9 +62,7 @@ static func build_settings(app, tabs: TabContainer) -> void:
     fields.auto_send.text = "Send automatically after transcription"
     page.add_child(fields.auto_send)
     U.paragraph(page, "Off by default: review the transcript and press Send voice. If the agent is busy, the transcript stays as a draft; it is never sent later automatically.")
-    fields.python = LineEdit.new()
-    fields.python.placeholder_text = "python"
-    S.field(page, "Python executable", fields.python, "For one-time installation. Python 3.11/3.12 recommended. GameSmith creates a private environment; global packages/settings are unchanged.")
+    U.paragraph(page, "The Windows x64 recognition runtime is included. Install downloads recognition packages into GameSmith user data; models download on first use. No Python setup is required.")
     fields.install = U.button(page, "Install local recognition", app._install_voice, "QuietButton")
     fields.install_status = U.paragraph(page, "")
     app.voice_settings = fields
@@ -95,7 +93,6 @@ static func load_settings(app, settings: Dictionary) -> void:
     select(fields.record_key, int(settings.get("voice_record_key", KEY_F8)))
     select(fields.send_key, int(settings.get("voice_send_key", KEY_F9)))
     fields.auto_send.button_pressed = bool(settings.get("voice_auto_send", false))
-    fields.python.text = str(settings.get("voice_python", "python"))
 
 static func values(app) -> Dictionary:
     var fields = app.voice_settings
@@ -106,6 +103,5 @@ static func values(app) -> Dictionary:
         "voice_microphone":fields.microphone.get_item_metadata(fields.microphone.selected),
         "voice_record_key":fields.record_key.get_item_metadata(fields.record_key.selected),
         "voice_send_key":fields.send_key.get_item_metadata(fields.send_key.selected),
-        "voice_auto_send":fields.auto_send.button_pressed,
-        "voice_python":fields.python.text.strip_edges() if fields.python.text.strip_edges() != "" else "python"
+        "voice_auto_send":fields.auto_send.button_pressed
     }

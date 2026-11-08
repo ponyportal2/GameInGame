@@ -56,7 +56,8 @@ func enabled() -> bool:
     return bool(settings.get("voice_enabled", false))
 
 func installed() -> bool:
-    return FileAccess.file_exists(_python()) and FileAccess.file_exists(ROOT.path_join("installed.json"))
+    var marker = JsonStore.read_dict(ROOT.path_join("installed.json"))
+    return FileAccess.file_exists(_python()) and marker.get("runtime", "") == _bundle().python.version and DirAccess.dir_exists_absolute(ROOT.path_join("environment/faster_whisper"))
 
 func set_draft(text: String) -> void:
     draft = text.left(4000)
@@ -67,17 +68,17 @@ func clear_draft() -> void:
     status = ""
     changed.emit()
 
-func install_recognition(executable: String = "") -> void:
+func install_recognition() -> void:
     if state != "idle": return
     _stop_worker()
+    if not _prepare_runtime(): return
     if not _prepare_directory(): return
     state = "installing"
     status = "Installing local recognition…"
-    if executable.strip_edges() == "": executable = str(settings.get("voice_python", "python")).strip_edges()
-    worker_pid = OS.create_process(executable, _arguments(true), false)
+    worker_pid = OS.create_process(_python(), _arguments(true), false)
     work_started = Time.get_ticks_msec()
     if worker_pid <= 0:
-        _error("Python could not start. Choose its executable in Voice settings.")
+        _error("Included voice runtime could not start. Reinstall GameSmith or check antivirus restrictions.")
     changed.emit()
 
 func toggle_recording(keep_in_draft: bool = true) -> void:
@@ -213,7 +214,7 @@ func _process(delta: float) -> void:
         else:
             _consume_result(result)
     elif worker_pid <= 0 or not OS.is_process_running(worker_pid):
-        _error("Voice worker stopped. Check Python / reinstall recognition in Voice settings.")
+        _error("Voice worker stopped. Reinstall recognition in Voice settings.")
         _stop_worker()
     elif Time.get_ticks_msec() - work_started > WORK_TIMEOUT_MS:
         _stop_worker()
@@ -238,8 +239,72 @@ func _consume_result(result: Dictionary) -> void:
     changed.emit()
     transcribed.emit(text)
 
+func _bundle() -> Dictionary:
+    return JsonStore.read_dict("res://tools/voice/bundled.json")
+
+func _runtime_directory() -> String:
+    return ProjectSettings.globalize_path(ROOT.path_join("python-" + str(_bundle().python.version)))
+
 func _python() -> String:
-    return ProjectSettings.globalize_path(ROOT.path_join("environment/Scripts/python.exe" if OS.get_name() == "Windows" else "environment/bin/python"))
+    return _runtime_directory().path_join("python.exe")
+
+func _prepare_runtime() -> bool:
+    if OS.get_name() != "Windows" or not OS.has_feature("x86_64"):
+        _error("Included voice recognition currently requires Windows x64.")
+        return false
+    var bundle = _bundle()
+    var destination = _runtime_directory()
+    var ready = destination.path_join("ready.json")
+    if JsonStore.read_dict(ready) == bundle and FileAccess.file_exists(_python()) and FileAccess.file_exists(destination.path_join("pip.whl")):
+        return true
+    if DirAccess.make_dir_recursive_absolute(destination) != OK:
+        _error("Could not create the private voice runtime directory.")
+        return false
+    var archive_path = "res://tools/voice/" + str(bundle.python.file)
+    var pip_path = "res://tools/voice/" + str(bundle.pip.file)
+    if FileAccess.get_sha256(archive_path) != bundle.python.sha256 or FileAccess.get_sha256(pip_path) != bundle.pip.sha256:
+        _error("Included voice runtime is damaged. Reinstall GameSmith.")
+        return false
+    var archive = ZIPReader.new()
+    if archive.open(archive_path) != OK:
+        _error("Could not open the included voice runtime.")
+        return false
+    # The official embeddable ZIP has flat entries. Never extract paths outside
+    # the versioned app-owned runtime directory.
+    for file in archive.get_files():
+        if file != file.get_file() or file in [".", ".."]:
+            archive.close()
+            _error("Invalid included voice runtime archive.")
+            return false
+        var output = FileAccess.open(destination.path_join(file), FileAccess.WRITE)
+        if output == null:
+            archive.close()
+            _error("Could not unpack the included voice runtime.")
+            return false
+        output.store_buffer(archive.read_file(file))
+        output.flush()
+        var write_error = output.get_error()
+        output.close()
+        if write_error != OK:
+            archive.close()
+            _error("Could not write the included voice runtime. Check available disk space.")
+            return false
+    archive.close()
+    var pip_output = FileAccess.open(destination.path_join("pip.whl"), FileAccess.WRITE)
+    if pip_output == null:
+        _error("Could not prepare the included package installer.")
+        return false
+    pip_output.store_buffer(FileAccess.get_file_as_bytes(pip_path))
+    pip_output.flush()
+    var pip_error = pip_output.get_error()
+    pip_output.close()
+    if pip_error != OK:
+        _error("Could not write the included package installer. Check available disk space.")
+        return false
+    if not JsonStore.write_dict(ready, bundle):
+        _error("Could not finish preparing the included voice runtime.")
+        return false
+    return true
 
 func _prepare_directory() -> bool:
     directory = ProjectSettings.globalize_path(ROOT.path_join("sessions/" + Crypto.new().generate_random_bytes(12).hex_encode()))
@@ -255,7 +320,7 @@ func _prepare_directory() -> bool:
     return true
 
 func _arguments(installing: bool = false) -> PackedStringArray:
-    var args = PackedStringArray([directory.path_join("worker.py"), "--root", ProjectSettings.globalize_path(ROOT), "--directory", directory, "--parent", str(OS.get_process_id())])
+    var args = PackedStringArray(["-I", directory.path_join("worker.py"), "--root", ProjectSettings.globalize_path(ROOT), "--directory", directory, "--parent", str(OS.get_process_id())])
     if installing: args.append("--install")
     return args
 

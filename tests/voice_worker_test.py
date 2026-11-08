@@ -1,5 +1,6 @@
 """No downloads, microphone access or provider calls in deterministic tests."""
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 import wave
+import zipfile
 
 spec = importlib.util.spec_from_file_location("voice_worker", Path(__file__).resolve().parents[1] / "tools/voice/worker.py")
 worker = importlib.util.module_from_spec(spec)
@@ -140,6 +142,35 @@ class RecognitionTests(unittest.TestCase):
             self.assertEqual(sentinel.read_bytes(), b"keep")
 
 
+class BundledRuntimeTests(unittest.TestCase):
+    def test_bundled_archives_match_manifest_and_include_licenses(self):
+        assets = Path(__file__).resolve().parents[1] / "tools/voice"
+        manifest = json.loads((assets / "bundled.json").read_text())
+        for key in ("python", "pip"):
+            item = manifest[key]
+            payload = (assets / item["file"]).read_bytes()
+            self.assertEqual(hashlib.sha256(payload).hexdigest(), item["sha256"])
+            with zipfile.ZipFile(assets / item["file"]) as archive:
+                self.assertTrue(any("license" in name.lower() for name in archive.namelist()))
+                if key == "python":
+                    self.assertIn("python.exe", archive.namelist())
+                    self.assertFalse(any(".." in Path(name).parts for name in archive.namelist()))
+
+    def test_upstream_licenses_are_complete_and_mirrored_into_windows_distribution(self):
+        root = Path(__file__).resolve().parents[1]
+        assets = root / "tools/voice"
+        manifest = json.loads((assets / "bundled.json").read_text())
+        with zipfile.ZipFile(assets / manifest["python"]["file"]) as archive:
+            expected = {"PYTHON-LICENSE.txt": archive.read("LICENSE.txt")}
+        with zipfile.ZipFile(assets / manifest["pip"]["file"]) as archive:
+            for name in archive.namelist():
+                if not name.endswith("/") and ("license" in Path(name).name.lower() or "copying" in Path(name).name.lower() or name.endswith("vendor.txt")):
+                    expected["pip/" + name] = archive.read(name)
+        for relative, payload in expected.items():
+            for directory in (assets / "licenses", root / "GameSmith-Windows/licenses/voice"):
+                self.assertEqual((directory / relative).read_bytes(), payload, str(directory / relative))
+
+
 class InstallationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -148,52 +179,56 @@ class InstallationTests(unittest.TestCase):
         self.session = self.root / "sessions" / "install"
         self.session.mkdir(parents=True)
         self.environment = self.root / "environment"
-        self.python = self.environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        self.python = self.environment / "Scripts/python.exe"
         self.python.parent.mkdir(parents=True)
         self.python.write_text("old interpreter")
         self.model = self.root / "models" / "keep-model"
         self.model.parent.mkdir()
         self.model.write_text("cached weights")
 
-    def create_environment(self, path, **kwargs):
-        self.assertEqual(path, self.environment)
-        self.python.write_text(sys.executable)
-
-    def test_failed_install_retry_rebuilds_incomplete_environment_with_selected_python(self):
+    def test_failed_install_retry_replaces_private_packages_with_included_python(self):
         failed = SimpleNamespace(poll=lambda: 1, returncode=1)
         succeeded = SimpleNamespace(poll=lambda: 0, returncode=0)
-        with mock.patch.object(worker.venv, "create", side_effect=self.create_environment) as create, \
-             mock.patch.object(worker.subprocess, "Popen", side_effect=[failed, succeeded]) as pip:
-            with mock.patch.object(worker.sys, "executable", "selected-python-3.13"):
+        included = str(self.root / "python-3.13.17/python.exe")
+        with mock.patch.object(worker.subprocess, "Popen", side_effect=[failed, succeeded]) as pip:
+            with mock.patch.object(worker.sys, "executable", included):
                 worker.install(self.root, self.session, os.getpid())
             self.assertFalse(json.loads((self.session / "installed.json").read_text())["ok"])
             self.assertFalse((self.root / "installed.json").exists())
-            with mock.patch.object(worker.sys, "executable", "selected-python-3.12"):
+            partial = self.environment / "partial.py"
+            partial.write_text("incomplete installation")
+            with mock.patch.object(worker.sys, "executable", included):
                 worker.install(self.root, self.session, os.getpid())
-            self.assertEqual(create.call_count, 2)
-            create.assert_has_calls([mock.call(self.environment, with_pip=True, clear=True)] * 2)
-            self.assertEqual(self.python.read_text(), "selected-python-3.12")
-            self.assertEqual(pip.call_args.args[0][:4], [str(self.python), "-m", "pip", "install"])
+            self.assertFalse(self.python.exists())
+            self.assertFalse(partial.exists())
+            command = pip.call_args.args[0]
+            self.assertEqual(command[:3], [included, "-I", "-c"])
+            self.assertEqual(command[4:7], [str(Path(included).parent / "pip.whl"), "--isolated", "install"])
+            self.assertIn("--only-binary=:all:", command)
+            self.assertEqual(command[command.index("--target") + 1], str(self.environment))
             self.assertTrue(json.loads((self.session / "installed.json").read_text())["ok"])
             self.assertTrue((self.root / "installed.json").exists())
             self.assertEqual(self.model.read_text(), "cached weights")
 
-    def test_successful_reinstall_rebuilds_with_new_selected_python(self):
+    def test_successful_reinstall_removes_stale_packages_but_preserves_models_and_runtime(self):
         succeeded = SimpleNamespace(poll=lambda: 0, returncode=0)
-        with mock.patch.object(worker.venv, "create", side_effect=self.create_environment) as create, \
-             mock.patch.object(worker.subprocess, "Popen", return_value=succeeded) as pip:
-            with mock.patch.object(worker.sys, "executable", "selected-python-A"):
-                worker.install(self.root, self.session, os.getpid())
+        runtime = self.root / "python-3.13.17"
+        runtime.mkdir()
+        sentinel = runtime / "python.exe"
+        sentinel.write_text("included interpreter")
+        with mock.patch.object(worker.subprocess, "Popen", return_value=succeeded) as pip, \
+             mock.patch.object(worker.sys, "executable", str(sentinel)):
+            worker.install(self.root, self.session, os.getpid())
             self.assertTrue(json.loads((self.session / "installed.json").read_text())["ok"])
             self.assertTrue((self.root / "installed.json").exists())
-            self.assertEqual(self.python.read_text(), "selected-python-A")
-            with mock.patch.object(worker.sys, "executable", "selected-python-B"):
-                worker.install(self.root, self.session, os.getpid())
-            create.assert_has_calls([mock.call(self.environment, with_pip=True, clear=True)] * 2)
-            self.assertEqual(create.call_count, 2)
-            self.assertEqual(self.python.read_text(), "selected-python-B")
+            stale = self.environment / "stale.py"
+            stale.write_text("old package")
+            worker.install(self.root, self.session, os.getpid())
+            self.assertFalse(stale.exists())
+            self.assertEqual(sentinel.read_text(), "included interpreter")
             self.assertEqual(pip.call_count, 2)
-            self.assertEqual(pip.call_args.args[0][:4], [str(self.python), "-m", "pip", "install"])
+            self.assertEqual(pip.call_args.args[0][0], str(sentinel))
+            self.assertEqual(json.loads((self.root / "installed.json").read_text())["runtime"], sys.version.split()[0])
             self.assertTrue(json.loads((self.session / "installed.json").read_text())["ok"])
             self.assertTrue((self.root / "installed.json").exists())
             self.assertEqual(self.model.read_text(), "cached weights")
@@ -201,10 +236,19 @@ class InstallationTests(unittest.TestCase):
     def test_failed_reinstall_invalidates_previous_success_marker(self):
         worker.atomic_json(self.root / "installed.json", {"packages": worker.PACKAGES})
         failed = SimpleNamespace(poll=lambda: 1, returncode=1)
-        with mock.patch.object(worker.venv, "create") as create, \
-             mock.patch.object(worker.subprocess, "Popen", return_value=failed):
+        with mock.patch.object(worker.subprocess, "Popen", return_value=failed):
             worker.install(self.root, self.session, os.getpid())
-        create.assert_called_once_with(self.environment, with_pip=True, clear=True)
+        self.assertFalse((self.root / "installed.json").exists())
+        self.assertFalse(json.loads((self.session / "installed.json").read_text())["ok"])
+
+    def test_parent_exit_kills_package_installer_without_marking_success(self):
+        process = mock.Mock()
+        process.poll.return_value = None
+        with mock.patch.object(worker.subprocess, "Popen", return_value=process), \
+             mock.patch.object(worker, "parent_alive", return_value=False):
+            worker.install(self.root, self.session, os.getpid())
+        process.kill.assert_called_once()
+        process.wait.assert_called_once()
         self.assertFalse((self.root / "installed.json").exists())
         self.assertFalse(json.loads((self.session / "installed.json").read_text())["ok"])
 

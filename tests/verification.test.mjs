@@ -103,9 +103,10 @@ test('affected selection enumerates known consumers and isolates test edits',()=
  const ids=paths=>selectTests(root,'affected',paths).map(t=>t.id).sort();
  const check=(paths,expected)=>assert.deepEqual(ids(paths),expected.sort(),paths.join(', '));
  check(['tests/runtime_properties_runner.gd'],['host:runtime_properties','node:verification','package:contents']);
- check(['tools/voice/worker.py'],['node:voice','host:voice_input','package:contents']);
+ check(['tools/voice/worker.py'],['node:voice','host:voice_runtime','host:voice_input','package:contents']);
  check(['tests/voice_worker_test.py'],['node:voice','node:verification']);
- check(['src/core/voice_input.gd'],['node:voice','host:voice_input','host:chat_picture_ui','host:ui_layout','package:contents']);
+ check(['src/core/voice_input.gd'],['node:voice','host:voice_runtime','host:voice_input','host:chat_picture_ui','host:ui_layout','package:contents']);
+ for(const artifact of ['bundled.json','python-3.13.17-embed-amd64.zip','pip-25.3-py3-none-any.whl'])check(['tools/voice/'+artifact],['node:voice','host:voice_runtime','package:structure','package:contents']);
  check(['src/ui/voice_ui.gd'],['host:voice_input','host:chat_picture_ui','host:ui_layout','package:contents']);
  check(['tests/runtime_node_lifecycle_runner.gd.uid'],['host:runtime_node_lifecycle','node:verification','package:contents']);
  check(['tests/tool-output.test.mjs'],['node:tool-output','node:verification']);

@@ -10,11 +10,11 @@ import ctypes
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
 import time
-import venv
 import wave
 
 MODELS = ("tiny", "base", "small", "medium", "large-v3", "turbo")
@@ -118,15 +118,20 @@ def install(root, directory, parent):
     """Explicit, isolated install; stop pip if the host disappears."""
     log = directory / "install.log"
     environment = root / "environment"
-    python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     installed = root / "installed.json"
     try:
-        # Explicit installation always uses the selected interpreter, including
-        # reinstalls after success. Models live outside this private directory.
+        # Explicit reinstall replaces only private packages, including legacy
+        # venvs. Models and the bundled interpreter live outside this directory.
         installed.unlink(missing_ok=True)
-        venv.create(environment, with_pip=True, clear=True)
+        if environment.exists():
+            shutil.rmtree(environment)
+        environment.mkdir(parents=True)
+        pip = Path(sys.executable).parent / "pip.whl"
+        bootstrap = "import runpy,sys;sys.path.insert(0,sys.argv.pop(1));runpy.run_module('pip',run_name='__main__')"
         with log.open("w", encoding="utf-8") as output:
-            process = subprocess.Popen([str(python), "-m", "pip", "install", "--disable-pip-version-check", *PACKAGES],
+            process = subprocess.Popen([sys.executable, "-I", "-c", bootstrap, str(pip), "--isolated", "install",
+                                        "--disable-pip-version-check", "--cache-dir", str(root / "pip-cache"), "--only-binary=:all:",
+                                        "--target", str(environment), *PACKAGES],
                                        stdout=output, stderr=subprocess.STDOUT,
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             deadline = time.monotonic() + 600
@@ -137,8 +142,8 @@ def install(root, directory, parent):
                     raise RuntimeError("Voice installation cancelled or timed out")
                 time.sleep(0.2)
         if process.returncode:
-            raise RuntimeError("Installation failed. Choose a supported Python executable (3.11/3.12 recommended). " + log.read_text(encoding="utf-8", errors="replace")[-1000:])
-        atomic_json(installed, {"packages": PACKAGES})
+            raise RuntimeError("Installation failed. Check the download connection and retry Install local recognition. " + log.read_text(encoding="utf-8", errors="replace")[-1000:])
+        atomic_json(installed, {"packages": PACKAGES, "runtime": sys.version.split()[0]})
         atomic_json(directory / "installed.json", {"ok": True})
     except Exception as error:
         atomic_json(directory / "installed.json", {"ok": False, "error": str(error)[:1500]})
@@ -172,6 +177,9 @@ def main():
     parser.add_argument("--install", action="store_true")
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
+    # The embedded interpreter ignores system/user Python paths. Recognition
+    # imports only packages explicitly installed into this app-owned directory.
+    sys.path.insert(0, str(args.root / "environment"))
     (install if args.install else serve)(args.root, args.directory, args.parent)
 
 

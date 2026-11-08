@@ -184,3 +184,10 @@ session reference. Ordinary messages reuse the backend; reopening or switching
 back resumes native history. Rename before the first Kilo turn: native Kilo
 history is tied to the workspace path, so later renames are blocked. Start new Kilo session in Settings asks for confirmation, archives the previous reference and releases rename protection until the next turn. Reload approval can wait for the player. Stop uses
 native abort with a five-second forced fallback. Restart GameSmith after updating.
+
+Local voice input (optional, Windows x64):
+Python is included. In Settings > Voice, click Install local recognition to
+download recognition packages, then enable microphone shortcuts. F8 records/stops
+and F9 sends the transcript while playing. Models download on first use; no model
+weights are bundled. Reinstall replaces private packages and preserves models.
+See THIRD_PARTY_NOTICES.md and licenses/voice/ for Python, pip and vendor licenses.
