@@ -969,6 +969,64 @@
       "host_runners": [
         "tests/codebuddy_lifecycle_runner.gd"
       ]
+    },
+    {
+      "id": "claude",
+      "label": "Claude Code",
+      "selector_label": "Claude Code",
+      "controller": "src/agent/claude_agent_controller.gd",
+      "reset": true,
+      "native_settings": true,
+      "experimental": false,
+      "launcher": {
+        "env": "GAMESMITH_CLAUDE_BIN",
+        "command": "claude"
+      },
+      "modules": [
+        [
+          "worker.mjs",
+          "claude/worker.mjs"
+        ],
+        [
+          "server.mjs",
+          "claude/server.mjs"
+        ],
+        [
+          "mcp.mjs",
+          "kimi/mcp.mjs"
+        ],
+        [
+          "workspace-tools.mjs",
+          "codex/tools.mjs"
+        ],
+        [
+          "workspace-paths.mjs",
+          "pi/workspace-paths.mjs"
+        ],
+        [
+          "host-tools.mjs",
+          "opencode/host-tools.mjs"
+        ],
+        [
+          "process-tree.mjs",
+          "agent/process-tree.mjs"
+        ],
+        [
+          "session-state.mjs",
+          "agent/session-state.mjs"
+        ],
+        [
+          "rg-search.mjs",
+          "agent/rg-search.mjs"
+        ]
+      ],
+      "node_suites": [
+        "tests/claude.test.mjs",
+        "tests/claude-server.test.mjs"
+      ],
+      "host_runners": [
+        "tests/claude_lifecycle_runner.gd"
+      ]
     }
   ]
 }

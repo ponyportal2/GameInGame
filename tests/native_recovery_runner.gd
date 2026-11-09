@@ -1,7 +1,7 @@
 extends SceneTree
 
 # Canonical scenario order. Entries are selected by harness id, not by position.
-const HARNESSES = ["command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp", "codebuddy"]
+const HARNESSES = ["command-code", "opencode", "codex", "cline", "cursor", "grok-build", "agy", "kimi", "kiro", "kilo", "copilot", "crush", "omp", "codebuddy", "claude"]
 
 var failures := 0
 func _init() -> void: call_deferred("run")

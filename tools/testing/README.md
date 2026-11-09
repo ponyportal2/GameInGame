@@ -46,7 +46,7 @@ Suites:
 - `affected`: explicit conservative path mapping in `verification-plan.mjs`. Known test-file changes select that test plus runner contracts; Test `.gd.uid` files follow their test source; explicitly mapped source UIDs follow the same map. `INPUT_CONSUMERS` enumerates audited shared inputs, including the hot core runner/tool files whose consumers were audited by behavior (preloads plus suites that drive the run/reload path or assert on tool-facade results). Harness-local changes select its protocol/lifecycle tests plus shared ownership/recovery/assembly coverage. Shared runtime modules select every inventory consumer. Pi and Command-code are concrete controllers with audited consumer lists; Command-code retains its UI/session-reset, approval, compaction and recovery integration tests. Changes to `AgentControllerBase`, `NativeAgentController`, inherited OpenCode or Cline controllers, verification infrastructure, and unknown code/fixture paths select every test: an unmapped shared file can change behavior in any harness, so a narrower guess could pass without the suite that would have caught it. The four Markdown Pi-pin authorities (root/testing README and root/Windows THIRD_PARTY_NOTICES) select only `node:pi-pin`; other documentation-only changes select none. Missing mapped consumers fail instead of silently reducing coverage.
 - `<harness>`: harness Node suites, lifecycle, harness switching, shared native recovery and assembly.
 - `core`: the intentionally narrowed everyday surface: core Node files, isolated host runners, PCK contents/structure and Go launcher tests, limited to the reference harness (Pi). No paid model calls.
-- `full`: every discovered deterministic test, including all fifteen harness suites.
+- `full`: every discovered deterministic test, including all sixteen harness suites.
 - `all`: the explicit name for the same exhaustive request as `full`. Each lifecycle suite costs roughly 40-50 seconds, which is why ordinary runs stop at `core`.
 - `acceptance`: installed Pi against the local provider emulator, process-level data migration and windowed input ownership. Windowed coverage is explicitly skipped only if Linux has neither a display nor `xvfb-run`.
 - `node`, `host`, `package`, `launcher`: complete phase selections, every harness included. `run-host-tests.mjs` calls `--suite host`, so these stay exhaustive rather than following `core`.
@@ -62,7 +62,7 @@ For final delivery, `--require-committed-package` adds a separate check **after*
 
 Reuse is opt-in and recorded per test as `status: "reused"` with `evidence_from`. It requires matching HEAD, working-tree content, suite definition, runtime identities and hashed environment knobs, plus existing complete logs. Changes during execution invalidate the run. Builds, live calls and acceptance are never reused. Runtime fingerprints include Node/platform, the Godot binary, Python/Go when needed, and installed Blender identity. Avoid editing sources while verification runs. No secret environment values are written to results.
 
-Use `affected` for development and deliberately choose `full` or `release` for broader milestones. Selection precision does not weaken fingerprints: they still cover all repository inputs. Shared wording lives in `src/agent/game_prompt.gd`; its focused selection runs `prompt_contract_runner.gd` through all fifteen production prompt generators (with Blender enabled/disabled), canonical assembly and runner/catalog contracts. Configuration changes in `pi_runtime_config.gd` retain full coverage because that file also configures providers, credentials and sessions. Prompt contracts assert semantic clauses, not a second prompt or an exact-text snapshot. Product waits, retry backoff and timeouts are unchanged.
+Use `affected` for development and deliberately choose `full` or `release` for broader milestones. Selection precision does not weaken fingerprints: they still cover all repository inputs. Shared wording lives in `src/agent/game_prompt.gd`; its focused selection runs `prompt_contract_runner.gd` through all sixteen production prompt generators (with Blender enabled/disabled), canonical assembly and runner/catalog contracts. Configuration changes in `pi_runtime_config.gd` retain full coverage because that file also configures providers, credentials and sessions. Prompt contracts assert semantic clauses, not a second prompt or an exact-text snapshot. Product waits, retry backoff and timeouts are unchanged.
 
 `--godot <executable>` or `GODOT_BIN` selects Godot; Windows defaults to the bundled executable. `--build-package` refreshes the PCK before testing. Live native inference is separate and explicit: `--live copilot`, for example. Codex live acceptance refuses to start unless `GAMESMITH_CODEX_BIN` points at `tools/testing/codex-luna-launcher.mjs`, which supplies the required explicit `-c model="gpt-6-luna"` override. No CI is dispatched by these commands.
 
@@ -81,7 +81,7 @@ The usual host tests also cover standalone process ownership, hung-action pollin
 The usual host tests include `cache_regression_runner.gd` and `cache_edge_regression_runner.gd`, covering changed dependencies, nested/shared preloads, repeated edits, first helper instantiation after rejected reloads, inheritance rollback, rejected-candidate cache cleanup, retained-resource cleanup and unused broken helpers. The reliability suite covers fallback snapshot preservation across reopening, startup failure rollback, changed dependencies (including preload), rename rebinding, immediate retry after Stop, cancelled compaction, atomic JSON replacement, and settings write failures. Node tests cover workspace roots, symlink/junction escapes, Git aliases, and exact versus unknown model capabilities. Pi acceptance also verifies a stalled provider connection is closed by Stop, immediate resume, and conversation preservation after rename.
 
 `runtime_properties_runner.gd` exercises live inspection and batch property
-mutation through GameTools and all fifteen controller bridges, including
+mutation through GameTools and all sixteen controller bridges, including
 identity/generation rejection, host boundaries, untyped fields, tagged 2D/3D
 values, setter readback, invalidation, bounds and partial failures.
 `runtime-properties.test.mjs` registers the tools from every canonically assembled
@@ -168,6 +168,10 @@ node tools/testing/run-host-tests.mjs GameSmith-Windows/runtime/Godot_v4.7.2-sta
 This isolates host and OpenCode test data. It verifies native file edits, separate
 headless tests, reopening the same native session, and a reload approval wait longer
 than the MCP default deadline. It deliberately contacts the configured/default provider.
+
+## Claude Code acceptance
+
+`node tools/testing/verify.mjs --test acceptance:claude --output summary` explicitly runs the installed Claude Code CLI with the assembled production adapter and your configured model/authentication. It exercises native file tools, an outside-path attempt, persistent turns, explicit session resume, Stop and continuation. `node tools/testing/verify.mjs --live claude --output summary` additionally drives the real host UI/controller, detached testing and reload approval/preflight. Both consume provider allowance and are excluded from deterministic/full suites; neither overrides your model or changes global settings. Tested baseline: Claude Code 2.1.317. Deterministic protocol, workspace-policy, recovery and UI coverage is available with `--suite claude`.
 
 ## CodeBuddy acceptance
 

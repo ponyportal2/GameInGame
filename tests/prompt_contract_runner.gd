@@ -13,6 +13,7 @@ const NATIVE_TOOLS = {
     "grok-build": "tool_name=gamesmith__<command>",
     "agy": "call_mcp_tool with ServerName=gamesmith",
     "kimi": "tools supplied by the gamesmith MCP server",
+    "claude": "tools supplied by the gamesmith MCP server",
     "codebuddy": "tools supplied by the gamesmith MCP server",
     "kiro": "tools supplied by the gamesmith MCP server",
     "copilot": "named gamesmith-<tool>",
@@ -36,7 +37,7 @@ func _init() -> void:
 func run() -> void:
     var metadata = Metadata.new()
     var entries = Inventory.all()
-    check(entries.size() == 15, "prompt contracts cover every catalog harness")
+    check(entries.size() == 16, "prompt contracts cover every catalog harness")
     for entry in entries:
         var controller = load("res://" + str(entry.controller)).new()
         controller.game_name = "Prompt contract " + str(entry.id)

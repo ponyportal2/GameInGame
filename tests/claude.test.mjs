@@ -1,0 +1,30 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {assembleHarnessRuntime} from '../tools/testing/assembled-runtime.mjs';
+import {liveEnvironment} from '../tools/testing/verification-live.mjs';
+
+test('Claude production launch keeps native model/auth, excludes builtins and supplies one system prompt',async()=>{
+  const directory=mkdtempSync(join(tmpdir(),'gs-claude-contract-'));
+  assembleHarnessRuntime('claude',directory);
+  const {launchArgs,resolveExecutable}=await import(new URL('file:///'+join(directory,'server.mjs').replaceAll('\\','/')));
+  const prompt=join(directory,'prompt.md');writeFileSync(prompt,'Unique GameSmith rules');
+  const args=launchArgs({prompt_path:prompt,mcp:'mcp.mjs',config_path:'runtime.json',session:'sentinel'});
+  const value=flag=>args[args.indexOf(flag)+1];
+  assert.equal(value('--tools'),'');
+  assert(args.includes('--strict-mcp-config'));assert(args.includes('--disable-slash-commands'));
+  assert.equal(value('--setting-sources'),'user');
+  assert.equal(JSON.parse(value('--settings')).disableAllHooks,true);
+  assert.equal(JSON.parse(value('--settings')).autoMemoryEnabled,false);
+  assert.equal(value('--append-system-prompt'),'Unique GameSmith rules');
+  assert.equal(value('--resume'),'sentinel');
+  assert.equal(value('--system-prompt-snapshot'),'off');
+  assert(!args.includes('--model')&&!args.includes('--effort')&&!args.includes('--dangerously-skip-permissions'));
+  const mcp=JSON.parse(value('--mcp-config')).mcpServers;
+  assert.deepEqual(Object.keys(mcp),['gamesmith']);assert.equal(mcp.gamesmith.command,process.execPath);
+  assert.deepEqual(mcp.gamesmith.args,['mcp.mjs','runtime.json']);
+  assert.equal(resolveExecutable(process.execPath).bin,process.execPath);
+  assert.deepEqual(liveEnvironment('claude',{CLAUDE_CONFIG_DIR:'native-profile'}),{CLAUDE_CONFIG_DIR:'native-profile'});
+});

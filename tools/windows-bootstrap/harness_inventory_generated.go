@@ -17,4 +17,5 @@ var harnessInventory = []struct{ id, env, command string }{
 	{"crush", "GAMESMITH_CRUSH_BIN", "crush"},
 	{"omp", "GAMESMITH_OMP_BIN", "omp"},
 	{"codebuddy", "GAMESMITH_CODEBUDDY_BIN", "codebuddy"},
+	{"claude", "GAMESMITH_CLAUDE_BIN", "claude"},
 }

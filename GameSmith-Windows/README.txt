@@ -7,7 +7,19 @@ The Godot 4.7.2 Windows runtime is already bundled under runtime\, so GameSmith 
 
 Git for Windows must be installed and available on PATH for generated-game repositories.
 
-Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, Kiro CLI, Kilo, Copilot CLI, Crush CLI, or OMP when creating a game. Install the harness you want to use.
+Choose Pi, Command-code, OpenCode, Codex, Cline, Cursor, Grok Build, AGY (experimental), Kimi Code, Kiro CLI, Kilo, Copilot CLI, Crush CLI, OMP, CodeBuddy CLI, or Claude Code when creating a game. Install the harness you want to use.
+
+For Claude Code games:
+
+  https://code.claude.com/docs/en/setup
+
+Tested with Claude Code 2.1.317. Configure authentication and model in Claude Code.
+Node.js must be on PATH. Set GAMESMITH_CLAUDE_BIN for a custom executable.
+GameSmith supplies only its bounded MCP tools; native tools and user hooks are
+disabled for the subprocess. Reload and live-child code require normal consent.
+Ordinary messages share a native session; reopen and Stop preserve its identity.
+Settings > Start new Claude Code session confirms and archives only the saved
+reference when a fresh native conversation is needed.
 
 For OMP (Oh My Pi) games:
 

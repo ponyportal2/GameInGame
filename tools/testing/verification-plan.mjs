@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const HOST_SCRIPTS = ['voice_runtime','voice_input','chat_annotations','chat_picture_ui','native_controller','native_reset','test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','workspace_ops','image_generation','turn_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','codebuddy_lifecycle','kilo_stop','agent_shutdown','harness_assembly','pi_controller'];
+export const HOST_SCRIPTS = ['voice_runtime','voice_input','chat_annotations','chat_picture_ui','native_controller','native_reset','test_supervisor_exit','test_workflow','runtime_children','reload_preflight','prompt_contract','runtime_properties','runtime_node_lifecycle','chat_history','workspace_store','workspace_ops','image_generation','turn_recovery','game_assets','blender','test','reliability','diagnostics','cache_regression','cache_edge_regression','script_load_policy','test_process','chat_test_process','bridge_claim','maintenance','ui_layout','library_actions','reload_settings','harness','review_ownership','review_stop','command_code_lifecycle','command_code_compaction','opencode_lifecycle','codex_lifecycle','cline_lifecycle','cursor_lifecycle','grok_build_lifecycle','agy_lifecycle','kimi_lifecycle','kiro_lifecycle','kilo_lifecycle','copilot_lifecycle','crush_lifecycle','omp_lifecycle','codebuddy_lifecycle','claude_lifecycle','kilo_stop','agent_shutdown','harness_assembly','pi_controller'];
 
 export function inventory(root) {
   return JSON.parse(readFileSync(resolve(root,'tools/agent/harnesses.json'),'utf8')).harnesses;
@@ -9,7 +9,7 @@ export function inventory(root) {
 // One recovery scenario per non-Pi harness. The runner keeps the scenario
 // implementation shared and takes the harness as an argument, so a change that
 // only concerns one harness no longer executes the other twelve.
-export const RECOVERY_HARNESSES = ['command-code','opencode','codex','cline','cursor','grok-build','agy','kimi','kiro','kilo','copilot','crush','omp','codebuddy'];
+export const RECOVERY_HARNESSES = ['command-code','opencode','codex','cline','cursor','grok-build','agy','kimi','kiro','kilo','copilot','crush','omp','codebuddy','claude'];
 // The export ships project.godot, main.tscn, scripts and scenes under src/ and
 // tests/, plus the allowlisted tools/ modules; tools/testing is verifier-only.
 // This is a conservative model of the preset, not a parser: a change to any of
@@ -116,6 +116,7 @@ export async function runHostTests(tests,jobs,run,stopped=()=>false) {
 export const RELEASE_TESTS=[{id:'acceptance:pi-emulator',phase:'acceptance',file:'tools/testing/run-pi-e2e.mjs'},{id:'acceptance:migration',phase:'acceptance',file:'tools/testing/verify-migration.mjs'},{id:'acceptance:windowed',phase:'acceptance',file:'tests/windowed_input_runner.gd'}];
 
 export function resolveTest(root,id) {
+  if(id==='acceptance:claude')return {id,phase:'acceptance',file:'tools/testing/verify-claude.mjs'};
   if(id==='acceptance:codebuddy')return {id,phase:'acceptance',file:'tools/testing/verify-codebuddy.mjs'};
   if(id==='acceptance:opencode-permissions')return {id,phase:'acceptance',file:'tools/testing/verify-opencode-permissions.mjs'};
   const known=[...allTests(root),...RELEASE_TESTS].find(t=>t.id===id);

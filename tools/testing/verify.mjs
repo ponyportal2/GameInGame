@@ -175,7 +175,7 @@ export async function runVerification(options,root=ROOT){
     const acceptance=tests.filter(t=>t.phase==='acceptance');
     if(acceptance.length){phase('acceptance');for(const test of acceptance){
       if(test.id==='acceptance:pi-emulator')await run(test,process.execPath,[test.file,godot]);
-      else if(test.id==='acceptance:migration'||test.id==='acceptance:opencode-permissions'||test.id==='acceptance:codebuddy')await run(test,process.execPath,[test.file,godot]);
+      else if(test.id==='acceptance:migration'||test.id==='acceptance:opencode-permissions'||test.id==='acceptance:codebuddy'||test.id==='acceptance:claude')await run(test,process.execPath,[test.file,godot]);
       else if(process.platform==='win32'||process.env.DISPLAY)await run(test,godot,['--path',root,'--script','res://'+test.file],{APPDATA:join(directory,'windowed'),HOME:join(directory,'windowed'),XDG_DATA_HOME:join(directory,'windowed/data')});
       else if(spawnSync('xvfb-run',['--help'],{windowsHide:true}).status===0)await run(test,'xvfb-run',['-a',godot,'--path',root,'--script','res://'+test.file],{HOME:join(directory,'windowed')});
       else {result.tests.push({id:test.id,status:'skipped',reason:'No display or xvfb-run available'});progress.completed++;}
