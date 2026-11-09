@@ -43,6 +43,9 @@ for(const harness of inventory) test(`${harness.id}: assembled runtime exposes l
   assert(actions.action.enum.includes('mouse_button'));
   assert.equal(actions.button_index.maximum,9);
   assert.equal(actions.candidate_path.type,'string');
+  assert.deepEqual(actions.expected.required,['class','script']);
+  assert.equal(actions.expected.additionalProperties,false);
+  assert.match(shared.hostTools.test_game_action.description,/script=""/);
 
   const rejected=await shared.executeHostTool('rg_search',{target:'runtime',pattern:'Cliff',path:'GardenModel'},{workspace:directory,callHost:async()=>assert.fail('invalid arguments must not inspect')});
   assert.equal(rejected.ok,false);assert.match(rejected.error,/root/);

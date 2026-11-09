@@ -62,14 +62,19 @@ only in an already-running detached test. Enter gameplay first using existing
 `call`/input controls when the component depends on gameplay state. `candidate_path`
 is relative to the detached game root; `path` is not an injection alias.
 Optional `expected={"class":"Node3D","script":"main.gd"}` checks the parent.
+When supplied, both fields are required; use `{"class":"Node3D","script":""}`
+for an unscripted parent.
 The same constructor/property/load-policy validation and 4 process/3 physics
 survival smoke apply. The result includes actual smoke counters and the inserted
 handle. This neither applies code live nor requests live-code approval.
 A detached failure can have side effects inside that test; stop/restart when needed.
 
 Fast public test actions await up to 300 ms without blocking the host. Completed
-results return directly; otherwise poll the returned action ID. A timeout never
-resubmits the action. Log reads and Stop remain available while an action is pending.
+results return directly; otherwise collect the returned action ID before submitting
+another action on that run. Rejections with `reason="action_pending"` include the
+outstanding `run_id`, `action_id`, and complete `poll` arguments to recover its
+result. A timeout never resubmits the action. Log reads and Stop remain available
+while an action is pending.
 `action="mouse_button", button_index=3, pressed=true` sends an actual middle-button
 event; send `pressed=false` to release. Buttons 1-9 and optional finite numeric
 `position={"x":20,"y":30}` are supported. This is not arbitrary InputEvent decoding.

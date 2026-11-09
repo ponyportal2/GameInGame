@@ -269,7 +269,14 @@ func request_action(id: String, args: Dictionary) -> Dictionary:
         return {"ok": false, "error": "Test game is not running."}
     var run: Dictionary = runs[id]
     if run.action_pending:
-        return {"ok": false, "error": "A test action is already pending."}
+        return {
+            "ok": false,
+            "reason": "action_pending",
+            "error": "A test action is already pending. Poll it before submitting another action.",
+            "run_id": id,
+            "action_id": run.action_id,
+            "poll": {"run_id": id, "action": "poll", "action_id": run.action_id},
+        }
     run.erase("action_result")
     DirAccess.remove_absolute(run.path.path_join("action-result.json"))
     var action_id = Crypto.new().generate_random_bytes(8).hex_encode()

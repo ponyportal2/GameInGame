@@ -106,9 +106,10 @@ func inspect_checks(id: String, runner: Node) -> void:
 func run():
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(workspace))
     put("main.gd", "extends Node3D\nvar mode = 'menu'\nvar ready_count = 0\nvar cam = null\nvar pos = Vector3.ZERO\nvar fx = null\nvar enemies = []\nvar explosions = 0\nvar damage = 0.0\nfunc _ready():\n\tready_count += 1\nfunc start_play():\n\tmode = 'playing'\nfunc _explode_at(_at, _radius, amount, _owner):\n\texplosions += 1\n\tdamage += amount\nfunc slow():\n\tOS.delay_msec(900)\n\treturn 7\nfunc announce():\n\tprint('AFTER_CURSOR')\n")
-    put("grenade.gd", FileAccess.get_file_as_string("res://tests/fixtures/warframe-grenade.gd"))
+    put("grenade.gd", FileAccess.get_file_as_string("res://tests/fixtures/warframe-grenade.gd.txt"))
     put("main.gd", FileAccess.get_file_as_string(workspace.path_join("main.gd")) + "\nvar slow_reads := 0\nvar slow_read: int:\n\tget:\n\t\tslow_reads += 1\n\t\tOS.delay_msec(650)\n\t\treturn 42\n")
     put("main.gd", FileAccess.get_file_as_string(workspace.path_join("main.gd")) + "\nfunc spawn_inspection_fixture():\n\tfor i in range(215):\n\t\tvar child = Node2D.new()\n\t\tchild.name = 'Enemy%d' % i\n\t\tchild.position = Vector2(i, i * 2)\n\t\tadd_child(child)\n\t\tchild.add_to_group('inspection')\nfunc inspection_instance_id():\n\treturn str(get_node('Enemy0').get_instance_id())\n")
+    put("main.gd", FileAccess.get_file_as_string(workspace.path_join("main.gd")) + "\nfunc spawn_unscripted_parent():\n\tvar child = Node3D.new()\n\tchild.name = 'Unscripted'\n\tadd_child(child)\n")
     var earlier_log = preload("res://src/core/runtime_log.gd").new()
     earlier_log.start(workspace.get_file(), workspace)
     earlier_log.add("print", "EARLIER_SESSION_ONLY")
@@ -162,6 +163,15 @@ func run():
     result = await settled_action(id, injection)
     check(not result.get("ok", true) and result.get("reason") == "parent_mismatch", "explicit detached parent expectations are checked")
     injection.erase("expected")
+    put("tuning.gd", "extends Node\n")
+    var added_parent = await settled_action(id, {"action": "call", "method": "spawn_unscripted_parent"})
+    check(added_parent.get("ok", false), "fixture creates unscripted detached parent")
+    var unscripted = {"action": "inject_child", "candidate_path": "Unscripted", "name": "Tuning", "script_path": "tuning.gd", "expected": {"class": "Node3D"}}
+    result = await settled_action(id, unscripted)
+    check(not result.get("ok", true) and result.get("reason") == "parent_mismatch", "partial expected object is rejected")
+    unscripted.expected.script = ""
+    result = await settled_action(id, unscripted)
+    check(result.get("ok", false), "explicit empty expected script accepts unscripted parent")
     injection.path = "."
     result = await settled_action(id, injection)
     check(not result.get("ok", true) and result.get("reason") == "invalid_arguments", "injection rejects ignored path argument")
@@ -188,11 +198,19 @@ func run():
     result = await action(id, {"action": "call", "method": "slow"})
     check(result.get("pending", false) and Time.get_ticks_msec() - before < 800, "slow action returns pending within bounded wait")
     var pending_id = result.get("action_id", "")
+    var rejected = await action(id, {"action": "call", "method": "start_play"})
+    var recovery = rejected.get("poll", {})
+    check(not rejected.get("ok", true) and rejected.get("reason") == "action_pending" and rejected.get("run_id") == id and rejected.get("action_id") == pending_id, "pending-action rejection returns original outstanding identity")
+    check(recovery == {"run_id": id, "action": "poll", "action_id": pending_id}, "pending-action rejection supplies complete public poll arguments")
+    check(agent.tools.tests().runs[id].action_id == pending_id and agent.tools.tests().runs[id].action_pending, "rejected second action preserves original pending request")
     logs = await command("read_test_log", {"run_id": id})
     check(logs.get("ok", false), "logs remain available while child action is pending")
     await create_timer(1.0).timeout
     result = await action(id, {"action": "poll", "action_id": pending_id})
     check(result.get("ok", false) and not result.get("pending", true) and result.get("value") == "7", "same action ID completes without resubmission")
+    if not recovery.is_empty():
+        var recovered = await command("test_game_action", recovery)
+        check(recovered == result, "returned recovery arguments retrieve original result without resubmission")
     result = await command("stop_test_game", {"run_id": id})
     check(result.get("state") == "exited" and result.get("stop_method") == "graceful", "single detached process stops cleanly")
     var ended = await inspect_run(id, {})
