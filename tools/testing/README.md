@@ -178,3 +178,9 @@ than the MCP default deadline. It deliberately contacts the configured/default p
 ## CodeBuddy acceptance
 
 `node tools/testing/verify.mjs --test acceptance:codebuddy --output summary` explicitly runs the installed CodeBuddy CLI with the assembled production adapter and a deterministic localhost provider. It verifies system-only instructions (including resumed history), inherited-hook suppression with a positive hook control, the exact MCP tool surface, real workspace edits, outside-path denial, persisted session resume, native Stop and continuation. Native configuration is isolated; the test asserts user settings remain unchanged and native model selection survives the hook override. It uses subprocess-only provider/model overrides, never global settings or paid inference, and is separate from the deterministic/full suites. Tested baseline: CodeBuddy 2.181.0.
+
+## Native customization investigation
+
+`node tools/testing/probe-native-customization.mjs` is an opt-in Windows reproducer for installed Grok Build and Cursor. It uses isolated personal profiles, harmless hook/MCP marker files, synthetic credentials and a localhost metadata stub; it does not supply inference responses or copy your credentials. It exercises the assembled production server modules and a native control, with a 20-second limit per case and process-tree cleanup. Results and native diagnostics remain under the printed `%TEMP%/gs-native-customization-*` path.
+
+This is deliberately not an isolation acceptance gate or part of the deterministic/full suites. Its positive-control assertions reproduce known customization execution; adapter startup errors are recorded separately. It does not establish prompt-rule isolation, the complete GameSmith tool registry, native model/auth parity, or fresh/resumed provider behavior. See [findings and follow-ups](../../docs/todos/native-customization-probes.md).
