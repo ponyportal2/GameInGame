@@ -20,7 +20,8 @@ export function launchArgs(config){
     '--tools','','--allowedTools',toolSpecs().map(t=>'mcp__gamesmith__'+t.name.slice(10)).join(','),
     '--strict-mcp-config','--mcp-config',JSON.stringify({mcpServers:{gamesmith:{command:process.execPath,args:[config.mcp,config.config_path]}}}),
     '--permission-mode','default','--permission-prompts','none','--setting-sources','user',
-    '--settings',JSON.stringify({disableAllHooks:true,autoMemoryEnabled:false}),
+    // Preserve native auth/model settings; broad isolation modes also remove MCP or user model selection.
+    '--settings',JSON.stringify({disableAllHooks:true,autoMemoryEnabled:false,agent:'',env:{CLAUDE_CODE_DISABLE_CLAUDE_MDS:'1'}}),
     '--disable-slash-commands','--system-prompt-snapshot','off','--append-system-prompt',readFileSync(config.prompt_path,'utf8')];
   if(config.session)args.push('--resume',config.session);
   return args;

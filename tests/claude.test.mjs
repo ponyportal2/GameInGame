@@ -18,6 +18,9 @@ test('Claude production launch keeps native model/auth, excludes builtins and su
   assert.equal(value('--setting-sources'),'user');
   assert.equal(JSON.parse(value('--settings')).disableAllHooks,true);
   assert.equal(JSON.parse(value('--settings')).autoMemoryEnabled,false);
+  assert.equal(JSON.parse(value('--settings')).agent,'');
+  assert.equal(JSON.parse(value('--settings')).env.CLAUDE_CODE_DISABLE_CLAUDE_MDS,'1');
+  for(const flag of ['--bare','--safe-mode','--restricted'])assert(!args.includes(flag),'Preserve native auth, configuration and explicit MCP');
   assert.equal(value('--append-system-prompt'),'Unique GameSmith rules');
   assert.equal(value('--resume'),'sentinel');
   assert.equal(value('--system-prompt-snapshot'),'off');
